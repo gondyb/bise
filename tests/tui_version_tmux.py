@@ -13,7 +13,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 
 
@@ -34,7 +34,7 @@ def main():
     open(os.path.join(bise, "dev", "build"), "w").close()
     with tui_session(160, 42, "BISE_HOME=%s" % bise, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # the popup: tree and the commits, with the current one marked
         t.typed("/version ")
         sc = t.wait("the working tree")

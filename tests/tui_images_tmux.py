@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, tmux, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, tmux, wait_until, MAIN_IDLE  # noqa: E402
 from tui_composer_tmux import composer  # noqa: E402
 
 # 1x1 PNG
@@ -54,7 +54,7 @@ def main():
     E.env["BEND_IMAGE_DIR"] = store
     with tui_session(150, 42, "BEND_CLIPBOARD_IMAGE_FILE=%s" % clip, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # the @ popup: an image is attached, not inserted as a path
         t.typed("look @red-bl")
         t.wait("shots/red-blue.png")

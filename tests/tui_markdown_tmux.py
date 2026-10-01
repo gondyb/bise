@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, pane_rows, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, pane_rows, wait_until, MAIN_IDLE  # noqa: E402
 
 # theme.rs, dark and light: (dim, syntax_keyword, syntax_number, text)
 DIM = {(0xa3, 0x9c, 0x90), (0x6b, 0x64, 0x5a)}
@@ -91,7 +91,7 @@ def main():
     E = e2e.Env()
     with tui_session(120, 40, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # a list: ctrl+j continues it, tab nests, an empty item steps out
         # then ends the list
         typed(t, "- one")

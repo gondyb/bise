@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 CMD_A = "\x1b[97;9u"
 
@@ -17,7 +17,7 @@ CMD_A = "\x1b[97;9u"
 def main():
     with tui_session(120, 40) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("old draft one")
         t.keys("C-j")
         t.typed("old draft two")

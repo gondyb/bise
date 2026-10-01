@@ -9,13 +9,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 
 def check(cols, rows):
     with tui_session(cols, rows) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # /help: the commands and the essential keys
         t.typed("/help")
         t.keys("Enter")

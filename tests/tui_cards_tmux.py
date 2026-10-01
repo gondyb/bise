@@ -14,7 +14,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, in_view  # noqa: E402
+from tui_tmux import tui_session, run, in_view, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 
@@ -39,7 +39,7 @@ def main():
     # server: the override makes it sure)
     with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=1 BISE_CLICKS=1") as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed(" ".join([
             card("first: pick one\\n1. alpha\\n2. beta"),
             card("second: say something"),
@@ -57,7 +57,7 @@ def main():
         t.typed("hello main 1")
         t.wait("hello main 1")
         t.wait_re(in_view("main"))
-        t.wait("⏎ send   ctrl+1 inbox")
+        t.wait("/ commands   ctrl+1 inbox")
         # ctrl+g is gone: nothing happens
         t.keys("C-g")
         time.sleep(0.3)
@@ -102,12 +102,12 @@ def main():
     # on a row opens it
     with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=0 BISE_CLICKS=1") as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed(card("only: yes or no?\\n1. yes\\n2. no"))
         t.keys("Enter")
         sc = t.wait("click to open")
         assert "ctrl+1" not in sc, sc
-        t.wait("⏎ send   /inbox")
+        t.wait("/ commands   /inbox")
         click(t, " 1 ? main · only")
         t.wait("you → ? main · your answer")
         t.keys("Escape")

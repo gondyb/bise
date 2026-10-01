@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 MSG = "look at notes/plan.md:3 and missing/nope.md:2"
@@ -39,7 +39,7 @@ def click(t, x, y):
 def ask(t):
     """Send MSG; the reply's row and the path's column in it."""
     t.wait("bise :*")
-    t.wait(" idle")
+    t.wait_re(MAIN_IDLE)
     t.typed(MSG)
     t.keys("Enter")
     t.wait("ack: " + MSG)

@@ -55,6 +55,10 @@ fn panel_w(width: u16, w: u16) -> u16 {
 /// between the history's last column and the rule.
 const RULE_TO_TEXT: u16 = 2;
 const FEED_TO_RULE: u16 = 3;
+/// Framed, the panel runs 2 columns into the right margin (BISE-303,
+/// designer: the row's ψ 1 column from the frame, its last cell the
+/// row's own margin): its text ends at F − 2.
+const PANEL_EDGE: u16 = 2;
 /// The composer's padding: 1 blank bar row above its text and 1 under
 /// it, the same (BISE-111, user request: symmetric, half of BISE-108's);
 /// both go together under `PAD_FROM` rows.
@@ -104,9 +108,9 @@ pub(crate) fn framed(width: u16, height: u16) -> bool {
 }
 
 /// The columns of a `width` × `height` screen. Framed: text from column
-/// 3 to F − 4; F ≥ 100 a 28-column panel (text F − 31 .. F − 4) behind
-/// a rule at F − 33, the history ending at F − 36; 90–99 a 24-column
-/// panel (rule at F − 29); < 90 none. From 160, the panel grows by 1
+/// 3 to F − 4; F ≥ 100 a 30-column panel (text F − 31 .. F − 2,
+/// BISE-303) behind a rule at F − 33, the history ending at F − 36;
+/// 90–99 a 26-column panel (rule at F − 29); < 90 none. From 160, the panel grows by 1
 /// every 5 columns, 44 at most (`panel_w`).
 /// Unframed: margins of 1, the same panels 3 (2) columns from the feed,
 /// no rule. The column is 91 wide at most, centered in the feed area when
@@ -119,13 +123,15 @@ pub(crate) fn cols(width: u16, height: u16) -> Cols {
     let (feed_w, panel) = match tier {
         None => (inner.max(1), None),
         Some(t) if framed => {
-            // the panel text ends at the right margin; its rule 2 columns
-            // left of it; the history 3 left of the rule
+            // the panel starts `w` columns left of the right margin and
+            // runs into it (PANEL_EDGE, BISE-303): its rows end 1 column
+            // from the frame; its rule 2 columns left of it; the history
+            // 3 left of the rule
             let w = panel_w(width, t.w);
             let x = width - margin - w;
             let rule = x - RULE_TO_TEXT;
             let feed_w = (rule - FEED_TO_RULE + 1).saturating_sub(margin).max(1);
-            (feed_w, Some(Panel { x, w, rule: Some(rule) }))
+            (feed_w, Some(Panel { x, w: w + PANEL_EDGE, rule: Some(rule) }))
         }
         Some(t) => {
             let w = panel_w(width, t.w);
@@ -197,13 +203,14 @@ mod tests {
 
     #[test]
     fn framed_tiers() {
-        // 160 framed: the panel text F-31..F-4, its rule at F-33, the
-        // history ending at F-36, the column centered in the feed area
+        // 160 framed: the panel text F-31..F-2 (BISE-303), its rule at
+        // F-33, the history ending at F-36, the column centered in the
+        // feed area
         let c = cols(160, 40);
         assert!(c.framed);
         assert_eq!((c.margin, c.feed_x, c.pane_w), (3, 3, 154));
-        assert_eq!(c.panel, Some(Panel { x: 129, w: 28, rule: Some(127) }));
-        assert_eq!(c.panel.unwrap().x + 28 - 1, 160 - 4);
+        assert_eq!(c.panel, Some(Panel { x: 129, w: 30, rule: Some(127) }));
+        assert_eq!(c.panel.unwrap().x + 30 - 1, 160 - 2);
         assert_eq!(c.feed_x + c.feed_w - 1, 160 - 36);
         assert_eq!((c.feed_w, c.col_w, c.x0), (122, 91, 3 + (122 - 91) / 2));
         // tables and code: to the feed area's edge, 103 at most
@@ -219,7 +226,7 @@ mod tests {
         assert_eq!(c.panel.unwrap().rule, Some(67));
         // 95: panel 24, rule at F-29
         let c = cols(95, 40);
-        assert_eq!(c.panel, Some(Panel { x: 68, w: 24, rule: Some(66) }));
+        assert_eq!(c.panel, Some(Panel { x: 68, w: 26, rule: Some(66) }));
         assert_eq!(c.feed_x + c.feed_w - 1, 95 - 32);
         // 80: no panel, column 74 (3..76)
         let c = cols(80, 40);
@@ -231,15 +238,17 @@ mod tests {
 
     #[test]
     fn wide_screens_grow_the_panel() {
-        // up to 164: 28 as before; then 1 more every 5 columns, 44 from 240
+        // up to 164: 28 as before; then 1 more every 5 columns, 44 from
+        // 240; framed, 2 more into the right margin (BISE-303)
         for (width, w, feed_w) in
             [(100, 28, 62), (140, 28, 102), (164, 28, 126), (165, 29, 126), (180, 32, 138), (200, 36, 154), (240, 44, 186), (300, 44, 246)]
         {
             let c = cols(width, 40);
             let p = c.panel.unwrap();
-            assert_eq!((p.w, c.feed_w), (w, feed_w), "{width}");
-            // still flush right, the history 3 left of the rule
-            assert_eq!(p.x + p.w, width - 3, "{width}");
+            assert_eq!((p.w, c.feed_w), (w + PANEL_EDGE, feed_w), "{width}");
+            // flush right, 1 column from the frame; the history 3 left
+            // of the rule
+            assert_eq!(p.x + p.w, width - 1, "{width}");
             assert_eq!(c.feed_x + c.feed_w - 1, p.rule.unwrap() - 3, "{width}");
         }
         // the feed area never shrinks as the screen grows

@@ -3,9 +3,11 @@
 //! While you hold ctrl alone for [`DELAY`], the places where a ctrl
 //! shortcut changes something show it: the folds (`▸ 12 more lines` →
 //! `▸ ctrl+o expand`), the inbox rows' numbers (in accent: ctrl+N opens
-//! row N, BISE-302, card_draw.rs), the divider's state while the agent
-//! works (`ctrl+c interrupt`), and the key bar (every ctrl key of the
-//! moment). Released, or any other key:
+//! row N, BISE-302, card_draw.rs) and the key bar (every ctrl key of the
+//! moment); every word the screen leaves out at rest comes back in its
+//! place (BISE-303, [`words`]: the divider's `working · 1m` and long
+//! context, the panel's state words, the header's counts). Released, or
+//! any other key:
 //! back at once. A hint only writes over cells the frame already drew
 //! (text it replaces, padded with spaces, or the blank cells after a
 //! fold's mark): no row or column moves.
@@ -31,7 +33,6 @@
 use crate::{theme, App};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, ModifierKeyCode};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use ratatui::style::Style;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -201,6 +202,13 @@ pub(crate) fn on(app: &App) -> bool {
 pub(crate) fn held(app: &App) -> Option<Held> {
     let h = app.hold.which(Instant::now())?;
     (!quiet(app) && (h != Held::Cmd || app.cmd_keys)).then_some(h)
+}
+
+/// Ctrl held alone (BISE-303): every word the screen leaves out at rest
+/// comes back in its place (the divider's `working · 1m` and long
+/// context, the panel's state words, the header's counts).
+pub(crate) fn words(app: &App) -> bool {
+    held(app) == Some(Held::Ctrl)
 }
 
 /// Every key of the held modifier that does something now, for the key
@@ -379,7 +387,7 @@ fn row(buf: &Buffer, y: u16, x0: u16, x1: u16) -> Vec<String> {
 }
 
 /// The hints over the drawn frame (after the one-time hints, before the
-/// frame passes): the folds, the panel title, the divider. The key bar
+/// frame passes): the folds, the panel title. The key bar
 /// draws its own ([`pairs`]), the panel its numbers (`⌥1`, sb/panel.rs).
 pub(crate) fn draw(app: &App, buf: &mut Buffer) {
     // the find box has the keys: ctrl+o, ⌥↑↓ wait (BISE-297)
@@ -455,29 +463,31 @@ fn more_lines(s: &str) -> bool {
     matches!((w.next(), w.next(), w.next(), w.next()), (Some(n), Some("more"), Some("line" | "lines"), None) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// The panel title's keys (` · ⌥ + number`) become ` · ⌥↑↓ select`
-/// (they move the selection while the composer is empty) or ` · cmd+k
-/// find`.
+/// After the panel title, in its blank cells: ` · ⌥↑↓ select` (they
+/// move the selection while the composer is empty) or ` · cmd+k find`.
 fn panel(app: &App, buf: &mut Buffer, pair: Pair) {
     if crate::sb::ctrl_view(app).agents < 2 {
         return;
     }
     let (_, Some(p)) = crate::sb::split(buf.area) else { return };
-    let title = format!(" {}", crate::sb::PANEL_TITLE.0);
+    let title = format!(" {}", crate::sb::PANEL_TITLE);
     for y in p.y..p.bottom().min(buf.area.bottom()) {
         let cells = row(buf, y, p.x, p.right().min(buf.area.right()));
         let text = cells.concat();
         let Some(at) = text.find(&title) else { continue };
         let start = text[..at + title.len()].width();
-        // the keys run to the end of the title's text
-        let keys = text[at + title.len()..].trim_end();
-        if !keys.starts_with(" · ") && !keys.starts_with(" . ") {
+        // the blank cells after the title, its margin column kept
+        if !text[at + title.len()..].trim().is_empty() {
             return;
         }
-        let sep = " · ".width();
-        let w = keys.width().saturating_sub(sep);
+        let sep = if theme::ascii_mode() { " . " } else { " · " };
+        let w = (p.width as usize).saturating_sub(start + sep.width() + 1);
         if let Some(s) = fit(pair, w) {
-            put(buf, p.x + (start + sep) as u16, y, pair.0, &s);
+            let x = p.x + start as u16;
+            for (i, c) in sep.chars().enumerate() {
+                buf[(x + i as u16, y)].set_symbol(&c.to_string()).set_style(Style::default().fg(theme::faint()));
+            }
+            put(buf, x + sep.width() as u16, y, pair.0, s.trim_end());
         }
         return;
     }
@@ -487,18 +497,6 @@ fn panel(app: &App, buf: &mut Buffer, pair: Pair) {
 /// (⌥1 goes to that agent; ASCII mode: the number alone, in the accent).
 pub(crate) fn number(app: &App, n: usize) -> Option<String> {
     (n <= 9 && held(app) == Some(Held::Alt)).then(|| if theme::ascii_mode() { format!(" {n}") } else { format!("⌥{n}") })
-}
-
-/// The divider's state while the agent works: `ctrl+c interrupt`, in the
-/// state's cells (`state` is where the divider drew it).
-pub(crate) fn divider(app: &App, buf: &mut Buffer, state: Rect) {
-    if held(app) != Some(Held::Ctrl) || !app.pending || app.interrupt_requested || state.width == 0 {
-        return;
-    }
-    let pair = ("ctrl+c", "interrupt");
-    if let Some(s) = fit(pair, state.width as usize) {
-        put(buf, state.x, state.y, pair.0, &s);
-    }
 }
 
 #[cfg(test)]
@@ -735,24 +733,29 @@ mod frame_tests {
             assert_eq!(geometry(&app), g_off, "the hints moved the layout");
             let (a, b) = (text(&off), text(&on));
             // same cells, same frame and box lines at the same columns
+            // (the top edge: its corners; the header's counts may cover
+            // the panel's join, as the summary always could)
             assert_eq!(off.area, on.area);
-            assert_eq!(skeleton(&off), skeleton(&on), "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
-            // the rows that change: the fold, the divider, the key bar,
-            // nothing else (BISE-302: the panel title keeps `⌥ + number`)
+            let (mut s_off, mut s_on) = (skeleton(&off), skeleton(&on));
+            for s in [&mut s_off, &mut s_on] {
+                s[0].retain(|(_, c)| c != "┬");
+            }
+            assert_eq!(s_off, s_on, "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
+            // the rows that change: the fold, the header's counts, the
+            // panel's state words, the divider's words, the key bar,
+            // nothing else (BISE-303)
             let fold = row_of(&a, "▸ 46 more lines");
             assert!(b[fold].contains("│ ▸ ctrl+o expand          "), "{}", b[fold]);
+            assert!(!a[0].contains("needs you") && b[0].contains("? 1 needs you"), "{}\n{}", a[0], b[0]);
+            let main = row_of(&a, " 0 ");
+            let docs = row_of(&a, " 1 ? docs   ");
+            assert!(b[main].contains(" working ") && b[docs].contains(" you "), "{}\n{}", b[main], b[docs]);
             let div = row_of(&a, "you → main");
-            // the state's cells only: a short one keeps the key alone
-            // (designer: cut the label, keep the key), no state no hint
-            let hinted = a[div] != b[div];
-            assert!(!hinted || b[div].contains(" ctrl+c "), "{}", b[div]);
+            assert!(!a[div].contains("working") && b[div].contains(" working "), "{}\n{}", a[div], b[div]);
             let bar = a.len() - 2;
             assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+f find   ctrl+1 open an inbox item"), "{}", b[bar]);
             assert!(!b[bar].contains("ctrl+k/j") && !b[bar].contains("ctrl+g"), "{}", b[bar]);
-            let mut changed = vec![fold, bar];
-            if hinted {
-                changed.push(div);
-            }
+            let mut changed = vec![0, fold, main, docs, div, bar];
             changed.sort();
             let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();
             assert_eq!(diff, changed, "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
@@ -904,7 +907,7 @@ mod frame_tests {
         assert!(b[main].contains("⌥0 "), "{}", b[main]);
         let docs = row_of(&a, "docs");
         assert!(b[docs].contains("⌥1 "), "{}", b[docs]);
-        let title = row_of(&a, "agents · ");
+        let title = row_of(&a, " agents ");
         assert!(b[title].contains("agents · ⌥↑↓ select"), "{}", b[title]);
         assert!(bar.contains("⌥0-9 go to an agent   ⌥↑↓ select an agent   ⌥⏎ newline"), "{bar}");
         let mut changed = vec![main, docs, title, a.len() - 2];
@@ -917,10 +920,10 @@ mod frame_tests {
         let on = screen_held(&mut app, Held::Alt);
         assert_eq!(on[(x, main as u16)].fg, theme::accent());
         assert_eq!(on[(x + 1, main as u16)].fg, theme::accent());
-        // a draft: the word keys, the title keeps `⌥ + number`
+        // a draft: the word keys, the title alone
         app.ed.insert("ship it");
         let (a, b, bar) = held_screen(&mut app, Held::Alt);
-        let title = row_of(&a, "agents · ");
+        let title = row_of(&a, " agents ");
         assert_eq!(b[title], a[title]);
         assert!(bar.contains("⌥0-9 go to an agent   ⌥←→ word   ⌥⌫ delete a word   ⌥⏎ newline"), "{bar}");
         assert!(!bar.contains("⌥↑↓"), "{bar}");
@@ -956,7 +959,7 @@ mod frame_tests {
         assert_eq!(a, b, "no cmd key yet: nothing");
         app.cmd_keys = true;
         let (a, b, bar) = held_screen(&mut app, Held::Cmd);
-        let title = row_of(&a, "agents · ");
+        let title = row_of(&a, " agents ");
         assert!(b[title].contains("agents · cmd+k find"), "{}", b[title]);
         assert!(bar.contains("cmd+k find agent   cmd+f find   cmd+v paste"), "{bar}");
         let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();

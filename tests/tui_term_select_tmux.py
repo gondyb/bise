@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 TITLE = "terminal · ctrl+` hide"
 
@@ -39,7 +39,7 @@ def main():
     E.env["BEND_CLIPBOARD_FILE"] = clip
     with tui_session(150, 42, "SHELL=/bin/sh", E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.keys("C-Space")
         t.wait(TITLE)
         t.typed("export PS1='$ '; echo sel-$((6*7))-alpha beta-gamma")

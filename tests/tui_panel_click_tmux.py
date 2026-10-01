@@ -9,7 +9,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, panel_row, in_view  # noqa: E402
+from tui_tmux import tui_session, run, panel_row, in_view, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 
@@ -32,7 +32,7 @@ def click_on(t, label):
 def main():
     with tui_session(COLS, ROWS) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed('[[bash: sb spawn t1 --objective "first"]] [[bash: sb spawn t2 --objective "second"]]')
         t.keys("Enter")
         t.wait_re(panel_row(1, "t1"))

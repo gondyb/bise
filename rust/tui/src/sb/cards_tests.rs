@@ -122,7 +122,7 @@ fn the_strip_shows_every_card_most_blocking_first() {
     assert!(rows[dark].contains("…"), "cut: {}", rows[dark]);
     // right above the blank row and the divider
     assert!(rows[dark + 2].contains("you → main"), "{}", rows[dark + 2]);
-    assert!(bar(&app).starts_with("⏎ send   ctrl+1 inbox   "), "{}", bar(&app));
+    assert!(bar(&app).starts_with("@ file   $ skills   / commands   ctrl+1 inbox"), "{}", bar(&app));
     // the label follows the rows shown: 1 row, 2 rows
     app.sb.cards.truncate(2);
     let rows = draw(&mut app, 140, 40);
@@ -148,7 +148,7 @@ fn without_ctrl_digits_the_inbox_never_shows_them() {
     assert!(rows[lab].contains("click to open "), "{}", rows[lab]);
     assert!(rows[lab + 1].contains(" 1 ? release wants to run · "), "{}", rows[lab + 1]);
     assert!(!rows.iter().any(|r| r.contains("ctrl+1")), "{}", rows.join("\n"));
-    assert!(bar(&app).starts_with("⏎ send   /inbox   @ file"), "{}", bar(&app));
+    assert!(bar(&app).starts_with("@ file   $ skills   / commands   /inbox"), "{}", bar(&app));
     app.clicks = false;
     let rows = draw(&mut app, 140, 40);
     assert!(rows[lab].contains("/inbox opens it "), "{}", rows[lab]);

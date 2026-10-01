@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, wait_until, pane_rows  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, pane_rows, MAIN_IDLE  # noqa: E402
 
 
 def composer(sc):
@@ -49,11 +49,11 @@ def main():
     with tui_session(150, 40, "BISE_HOME=%s" % bise, E=E) as t:
         try:
             t.wait("bise :*")
-            t.wait(" idle")
+            t.wait_re(MAIN_IDLE)
             t.typed("the first prompt")
             t.keys("Enter")
             t.wait("the first prompt")
-            t.wait(" idle")
+            t.wait_re(MAIN_IDLE)
             pid0 = wait_until(repl_pid, 10, "no repl.pid")
             t.typed("half a thought")
             t.wait("half a thought")
@@ -68,7 +68,7 @@ def main():
             sc = t.wait("half a thought")
             assert "half a thought" in composer(sc), sc
             # its history goes on: the next request carries the first prompt
-            t.wait(" idle")
+            t.wait_re(MAIN_IDLE)
             n = len(E.fake_requests())
             t.keys("Enter")
             wait_until(lambda: len(E.fake_requests()) > n, 20, "no request after the reload")

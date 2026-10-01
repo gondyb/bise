@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 LABEL = re.compile(r"\d\d:\d\d · now")
@@ -31,11 +31,11 @@ def row_with(t, text):
 def main():
     with tui_session(COLS, ROWS) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("what time is it")
         t.keys("Enter")
         t.wait("ack: what time is it")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         assert not LABEL.search(t.screen()), t.screen()
         y, row = row_with(t, "ack: what time is it")
         x = row.find("ack:")

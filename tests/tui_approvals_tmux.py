@@ -25,7 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 140, 40
 
@@ -125,7 +125,7 @@ def session(E, env, home, bise, shot):
         sc = t.wait('you said no to main: git push origin main --force · "use a branch"')
         assert "you said deny" not in sc, sc
         shot(t, "fold-no", sc)
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # a task's call: the card shows in main's view and in the task's
         # a network call: it asks even when the sandbox contains the rest
         t.typed("/new t1: {{bash: curl -s -m 1 http://127.0.0.1:9/}}")

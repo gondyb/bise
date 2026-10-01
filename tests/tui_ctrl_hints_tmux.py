@@ -15,7 +15,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, tmux  # noqa: E402
+from tui_tmux import tui_session, run, tmux, MAIN_IDLE  # noqa: E402
 
 CTRL_DOWN = "\x1b[57442;5u"
 CTRL_UP = "\x1b[57442;1:3u"
@@ -35,7 +35,7 @@ def raw(t, s):
 def check(cols, rows):
     with tui_session(cols, rows) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         before = t.screen()
         assert HINT not in before, before
         # held alone: the hints come, the frame's rows stay where they are

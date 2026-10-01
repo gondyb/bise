@@ -10,11 +10,12 @@ An agent with another objective gets no tip.
 python3 -u tests/tui_demo_tips_tmux.py
 """
 import os
+import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, panel_row, in_view  # noqa: E402
+from tui_tmux import tui_session, run, panel_row, in_view, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 
@@ -30,7 +31,7 @@ def main_quiet(t, secs=2):
     since = [None]
 
     def quiet(sc):
-        if "┴ idle · " not in sc:
+        if not re.search(MAIN_IDLE, sc):
             since[0] = None
             return False
         since[0] = since[0] or time.time()
@@ -42,16 +43,17 @@ def main_quiet(t, secs=2):
 def settled(t):
     """Every agent idle and main too: a typed [[bash: …]] then runs in a
     turn of its own (sent into a running turn, the fake only acks it)."""
-    t.wait_re(r"4 \S+ dev-api \S*\s+idle", 60)
+    # BISE-303: the panel's glyph says idle (`○`), no word at rest
+    t.wait_re(r"4 ○ dev-api\b", 60)
     for n, name in ((2, "pm"), (3, "designer")):
-        t.wait_re(r"%d \S+ %s \S*\s+idle" % (n, name), 60)
-    t.wait_re(r"┴ idle · ", 60)
+        t.wait_re(r"%d ○ %s\b" % (n, name), 60)
+    t.wait_re(MAIN_IDLE, 60)
 
 
 def main():
     with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=1") as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # an ordinary agent: no tip
         t.typed('[[bash: sb spawn other --objective "fix the login"]]')
         t.keys("Enter")

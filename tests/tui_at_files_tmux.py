@@ -11,7 +11,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 from tui_composer_tmux import composer, wait_composer  # noqa: E402
 
 
@@ -31,7 +31,7 @@ def main():
             fh.write(body)
     with tui_session(150, 42, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # a task, so an agent is listed
         t.typed('crée [[bash: sb spawn notes --objective "écris {{bash: echo hi}}"]]')
         t.keys("Enter")

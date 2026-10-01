@@ -271,38 +271,60 @@ a symbol row (designer).
 ## 8. Layout
 
 ```
- bise :*                              ∿ 3 working · ? 1 needs you · ✓ 1 done    ← header
-                                                    │ agents · ⌥ + number
-  │  the login breaks on safari                     │ 0 ○ main :*
-  :* on it: auth-fix takes it.                      │ 1 ∿ auth-fix     12m · 21%
-    │ @ docs      → main      v1 or v2?             │ 2 ∿ release       3m · 8%
-    │ @ main      → docs      v2, the brief says so │ 3 ? docs              you
-  :* docs asked v1 or v2; the brief says v2,        │ 4 … api-v2     waits docs
-     so i answered. ▸ why                           │ 5 ✓ bench            done
+ bise :*                                          ~/acme · # 2 in the inbox    ← header
+                                                    │ agents
+  │  the login breaks on safari                     │ 0 ○ main :*          4%
+  :* on it: auth-fix takes it.                      │ 1 ∿ auth-fix •  12m  21%
+    │ @ docs      → main      v1 or v2?             │ 2 ∿ release      3m   8%  ψ
+    │ @ main      → docs      v2, the brief says so │ 3 ? docs             18%
+  :* docs asked v1 or v2; the brief says v2,        │ 4 … api-v2            6%
+     so i answered. ▸ why                           │ 5 ✓ bench
   ┃ ? docs needs you                                │
   ┃ the brief says "keep old clients working"…      │ inbox
                                                     │ 1 ? docs  keep old clien…
                                                     │ 2 ✓ bench  p95 down 12%…
  ┌ the inbox's strip (while something waits) ───────┐
- main · idle · 210k / 1M tokens · 21%                                             ← status row
- › _                                          ⏎ send · @ file · ctrl+s find agent ← composer
+ you → main · opus 5.5 · high · yolo ─────────────────────── 210k · 21%          ← divider
+ › _                                                                              ← composer
+   @ file   $ skills   / commands   ctrl+1 inbox                                  ← key bar
 ```
 
-- **Header:** `bise :*` on the left; live counts on the right, only the
-  non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 2 in the inbox`.
+**Less on screen (BISE-303, designer's spec, the user's pick):** at rest
+the screen shows what changes and what needs you. The glyphs already say
+the state, so the words go: no `idle`, `done`, `you`, `waiting` in the
+panel or on the divider, no model tag in the panel, no agent counts in the
+header beside the panel. Hold ctrl alone (§16) and every word comes back
+in its own place, nothing moves: the header's counts, the panel's state
+words, `working · 1m` and the long context on the divider, the key bar's
+ctrl keys.
+
+- **Header:** `bise :*` on the left; on the right, beside the panel, the
+  folder and the inbox count: `~/acme · # 2 in the inbox` (the agents'
+  counts are the panel's job). No panel (narrow): the short counts,
+  `∿ 3 · ? 1 · ✓ 1 · # 2`. Ctrl held: every non-zero count,
+  `~/acme · ∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 2 in the inbox`.
   **⚠** No cost in $ until the usage work lands.
 - **Feed** on the left, prose ≤ 88 columns; extra width goes to the margin
   and the panel, never to longer lines.
 - **Scrollbar:** only while you are scrolled up from the bottom: faint, one
   column, no arrows. Never at the tail (BISE-90).
 - **Agents panel** on the right (hidden under 70 columns; the header keeps the
-  counts). Title `agents · ⌥ + number` (fits 26 columns on one line). One
+  counts). Title `agents` alone (BISE-303: holding ⌥ writes the numbers'
+  key, `⌥1`, and `· ⌥↑↓ select` after the title). One
   row per agent: its number (faint; 0 main, 1–9 the first nine agents, blank
-  after), status glyph, name, and on the right the age and context fill
-  (`12m · 21%`), or `you` (accent) / `done` / `waits docs` / `starting`.
-  Marks `•` unread and `ψ` worktree after the name (BISE-136: a hub
+  after), status glyph, name, marks (main's `:*` and `✉ 2`, the unread
+  `•`, `· 2 queued`), then three columns right-aligned, one column of
+  margin (BISE-303): ` N G name …… TTT  PPP  ψ `. TTT the turn's time
+  (dim, only while it works), PPP the context % (dim), each 3 columns
+  wide, 2 between; `ψ` (dim) when it has a worktree (BISE-136: a hub
   worktree, `sb spawn --worktree` / `/isolate`, or a private one the
-  agent told the hub about, `gate.sh new`; the shared checkout: no mark). Numbers never change
+  agent told the hub about, `gate.sh new`; the shared checkout: blank).
+  A blank column keeps its place, so the rows line up; a long name may
+  take a blank time column's cells, never the % or ψ. No state word and
+  no model tag at rest (the glyph says the state, the divider the
+  model). Ctrl held: the state word (`working`, `done`, `idle`,
+  `waiting`, `starting`, `failed`, `you` in accent) takes the time and %
+  columns, 8 wide, right-aligned; ψ stays. Numbers never change
   while an agent lives (creation order). With more agents than rows, it
   scrolls and ends with `+ 21 more`. Archived agents: keep what landed in
   85160ab (a dim folded `▸ {n} archived` row at the bottom, click / `A` /
@@ -333,12 +355,12 @@ a symbol row (designer).
 - **History:** the reading column above (91 wide, centered in the feed area = everything left of the panel).
 - **Between feed and panel:** 3 blank columns. No vertical rule: whitespace and alignment do the job.
 - **Scrollbar:** no arrows, no track: only a faint `┃` thumb in the last column of the feed area, and only while you are away from the bottom (the status row says `↓ back to the bottom`).
-- **Agents panel:** 28 columns (wider on wide screens, below), flush right at the right margin, first row level with the history's first row; title `agents · ⌥ + number` dim, then 1 blank row; rows `N glyph name` with the age right-aligned; a name takes all the room its row leaves and is cut with `…` only there (no fixed cap; BISE-109, user request).
+- **Agents panel:** 28 columns (wider on wide screens, below), flush right at the right margin, first row level with the history's first row; title `agents`, then 1 blank row; rows `N glyph name` with the time, % and ψ columns right-aligned (BISE-303); a name takes all the room its row leaves and is cut with `…` only there (no fixed cap; BISE-109, user request).
 - **Between history blocks:** 1 blank row (§10), and 1 above and below level 2 (§9).
 - **Card box:** the reading column's x and width, 1 blank row above; heavy bar `┃` in the column's first cell, text from its 4th; title, body, 1 blank row, then the choices and keys row.
 - **Bottom stack:** 1 blank row under the history, then the status row, queue, strip, composer block (§13), hints row, 1 bottom margin row, all on the reading column's x and width (the hints end at its right edge).
 - **Wide terminals** (BISE-260, user: « sur les grands écrans quand il y a de la place on pourrait rendre la sidebar un poil plus large »): from 165 columns the panel takes 1 more column for every 5 past 160, the feed area the other 4, up to 44 columns at 240 (where the model tags show): 180 → 32, 200 → 36, ≥ 240 → 44. The feed area never shrinks as the screen grows (122 at 160, 138 at 180, 186 at 240, framed).
-- **Narrow terminals:** ≥ 100 columns as above; 90–99: panel 24 wide, gap 2; < 90: no panel (the header summary grows to `∿ 3 working · ⌥ + number`), margins 2, column = min(91, width − 4) (at 80: 76 wide, 73 of text); at 60: margins 1, column 58 (55 of text). The column is centered only when the feed area has at least 95 columns, else it starts at the left margin.
+- **Narrow terminals:** ≥ 100 columns as above; 90–99: panel 24 wide, gap 2; < 90: no panel (the header keeps the short counts, `∿ 3 · # 1`), margins 2, column = min(91, width − 4) (at 80: 76 wide, 73 of text); at 60: margins 1, column 58 (55 of text). The column is centered only when the feed area has at least 95 columns, else it starts at the left margin.
 - **What the demo does that a terminal can't:** its own font (the terminal's is the user's), line height (1.2 vs 1.6), sub-cell gaps (the site's 10–18 px become 0 or 1 whole row: we take 1), 1 px rules (a terminal rule is a full cell), fade and slide motion. bise does paint its theme background (§5, BISE-92), but no rounded panels. The demo is the reference for rhythm and proportions, not for exact pixels.
 
 **The frame** (user request on 805e538, marketing 9f000c8; replaces, in "Spacing, in cells" above, the outer margins, the header row, "no vertical rule" and the bottom stack's status and hints rows; the reading column, the panel widths and the narrow tiers stay). bise draws itself like an app: a thin faint frame on the edge of the terminal, with "bise :*" and the summary in its top border. Inside, 2 blank columns on each side. The agents panel sits behind a faint rule that joins the frame. A full-width divider separates the history from the composer pane. The lines are faint so the text stays in front: the frame is a shape, not a decoration. Under 60 columns or 16 rows the frame goes, the divider stays.
@@ -355,10 +377,10 @@ Frame (when F ≥ 60 and H ≥ 16):
 - scrollbar: a dim ┃ thumb drawn on the panel rule (on the frame's right border if there is no panel), only while you are scrolled away from the bottom.
 Composer pane (bottom up):
 - H−1 frame bottom. H−2 the key bar. The composer: 1 bar row (none under the attachments box), the text, no bar row under it (BISE-210). [the attachments box] [1 blank row] [queued lines, BISE-89]. The divider.
-- divider: a full-width rule `├─ you → main ─────…───── idle · 18k / 1M tokens · 2% ─┤` joining the frame. Label from column 3: "you →" dim, the agent name accent. The state is dim and ends at F−4. This replaces the status row (recording, typing, tokens: same text as today). When the agent you're viewing works, the label shows it right after the name: `you → marketing ∿ working · 42s` (the indicator 1 space after the name in its own color, then `working · 42s` dim, the seconds of the current turn); idle: nothing after the name (BISE-105, user request; the indicator glyph is today's `∿` until the user picks one of the variations in site/book/working.html).
+- divider: a full-width rule `├─ you → main · opus 5.5 · high · yolo ─────…───── 18k · 2% ─┤` joining the frame. Label from column 3: "you →" dim, the agent name accent, then the model, effort, approvals mode (and `ψ place`). The right side is dim and ends at F−4: at rest the context, short (`18k · 2%`, BISE-303: no `idle`, no `working`); ctrl held, the long form after the state when it doesn't work (`idle · 18k / 1M tokens · 2%`); notes (preview, read-only, the hub's version, the hub disconnected) follow. This replaces the status row. When the agent you're viewing works, the gust (today's working animation) follows the mode behind a dim ` · `: `you → marketing · opus 5.5 · high · yolo · ≈∿~·` (BISE-105, BISE-303); ctrl held, ` working · 42s` (dim, the current turn) after the gust; idle: nothing after the mode.
 - composer: bar │ at column 3 on every row of the composer (the blank bar row above the text too; faint while empty, accent with text, an image or recording), text from column 7 (x0 + 4, one column right of the history's text column: the composer is its own raised pane; BISE-108, BISE-228, user requests), wrapped at word boundaries 2 columns before the pane's right edge. Under 60 columns: text at x0 + 3, no right margin. At least 1 row between 2 blank bar rows from 20 rows (BISE-111; BISE-210 dropped the one under it, BISE-219 put it back), growing to min(12, 40% of H), then scrolling. Empty: cursor then a dim placeholder "what's on your mind?" (to an agent: "talk to auth-fix directly").
 - composer markdown (BISE-276, user: « Les listes à puces automatiques comme dans un rich text editor ; les ```ts et autres code blocks avec le syntax highlighting. Je ne veux pas de caractères cachés, je veux voir tout le markdown, mais je veux que ça formate / colorise tout seul. »): the composer colors markdown as you type and hides nothing: every mark stays, so the message sent is the text typed and the cursor and the wrap never shift. Marks dim, never accent (designer: the bar is already pink): `- * + 1. 1)` markers, `[ ]` `[x]`, `#`, `>`, `**` `*` `_` `~~`, backticks, `[`, `](url)`, a fence and its tag. Content: a heading bold, **bold** bold, *italic* italic, ~~strike~~ crossed out, a checked item's text dim, inline `code` as the history's inline code (ok, bold), a link's label underlined. A fenced block whose tag names a language (ts/js, rust, python, go, the C family, ruby, lua, sql, bash/sh, json, toml, yaml, css, html/xml, diff) is colored with the six `syntax_*` roles (the history's fenced blocks too); no tag or an unknown one: plain text; no tint. `NO_COLOR`: the modifiers only. Keys: a newline (shift+⏎, alt+⏎, ctrl+j) on a list item continues the list (the next number, an unchecked box for a task; the items below renumber), on an empty item it steps out a level, then ends the list; tab / shift+tab on a list item (or the items of a selection) indent under the item above / outdent to its parent, numbers restart at 1 in a new sublist; in a code block (its lines or its opening fence) a newline keeps the line's indentation, never a list, and plain ⏎ is a newline too: the closing fence makes ⏎ send again. Each of these is one undo step with its newline. Plain ⏎ on a list item still sends (`mdlive::ENTER_CONTINUES_LISTS`: the Slack way, one switch).
-- key bar, from the composer's text column (column 7; x0 under 60 columns, BISE-228): keys in text color, what they do dim, 3 spaces between pairs; default `⏎ send   @ file   ctrl+s find agent   ⌥0-9 switch   / commands   ? help` (BISE-278: `@` is mostly for files; the palette, easier to read than `⌥0-9`, says `cmd+k find agent` once a cmd key reached bise and shows only once an agent besides main exists, live or archived; `⌥0-9 switch` is the first pair to drop when the row is short, then from the right); per-mode sets as today. On the right, ending at F−4: a dim tip (e.g. "tip · ctrl+o opens everything folded") that changes every 5 minutes, going through the tips in order, so you meet more of them over time (user request, 2026-09-29); it never changes while you type, hidden while you type or when there are fewer than 3 columns between it and the keys.
+- key bar, from the composer's text column (column 7; x0 under 60 columns, BISE-228): keys in text color, what they do dim, 3 spaces between pairs; default `@ file   $ skills   / commands   ctrl+1 inbox` (BISE-303, designer: the three characters that start something; `ctrl+1 inbox` only while the inbox holds something, `/inbox` without ctrl+digits; `⏎ send`, `? help` (? on an empty composer still opens it), `⌥0-9 switch` (the panel's numbers say it) and `ctrl+s find agent` (the held ctrl bar lists it) are gone; pairs drop from the right when the row is short); with images, `ctrl+v paste image` first; while the agent works, `tab queue   ⏎ steer   ctrl+1 inbox   ctrl+c interrupt`; per-mode sets as today. On the right, ending at F−4: a dim tip (e.g. "tip · ctrl+o opens everything folded") that changes every 5 minutes, going through the tips in order, so you meet more of them over time (user request, 2026-09-29); it never changes while you type, hidden while you type or when there are fewer than 3 columns between it and the keys.
 - height: divider + blank + 1 + key bar + frame = 5 rows at rest (BISE-210, user request: less padding at the bottom; was 6 with BISE-111's blank row under the text), the same as today's block + bottom margin. The frame gives back 1 row at the top (border+blank instead of margin+header+blank). It costs 2 columns (3 each side instead of 2).
 Small terminals: H < 24: drop the blank row under the text. H < 20: also the one above. H < 16 or F < 60: no frame. Then a header row on row 0, the divider is a plain ─ rule, margins of 1, the key bar stays.
 The frame and the rules paint no background of their own: the theme ground (§5, BISE-92) stays everywhere; light theme = same tokens.
@@ -403,11 +425,11 @@ The same three levels everywhere, in main and inside an agent.
 **Working = a gust blowing by** (user pick, site/book/working.html variant I; BISE-107).
 - Header and divider: 5 cells. A gust crosses left to right, 110 ms a frame, 9-frame cycle: head `≈` (text), tail `∿` (text) `~` (dim) `·` (faint), then 5 empty frames. Cell k at frame i = ramp[(i − k) mod 9], ramp = `≈ ∿ ~ · _ _ _ _ _` (`_` = space).
 - Panel status (1 cell): the gust breathes in place: `· ~ ∿ ≈ ∿ ~`, 110 ms a frame, same colors. main's row lines up with the others (BISE-119): its status in the same glyph column (the breathing cell while it works, `○` idle), its name in the name column, its `:*` (accent, still) right after the name: ` 0 ≈ main :*   42s`, idle ` 0 ○ main :*`.
-- Divider (BISE-105): `you → marketing <5-cell gust> working · 42s` (1 space around the gust; `working · 42s` dim). Idle: nothing after the name.
+- Divider (BISE-105, BISE-303): `you → marketing · opus 5.5 · high · yolo · <5-cell gust>` (a dim ` · ` before the gust); ctrl held, ` working · 42s` (dim) after it. Idle: nothing after the mode.
 - **Model and effort (BISE-135, user: « c'est très important de montrer le nom du modèle qui est utilisé et le reasoning effort … à côté du nom de l'agent … c'est pour la transparence »):** the divider says the model the agent in view runs and its reasoning effort right after its name, then `ψ place` when it works outside the shared checkout (BISE-136): `you → auth-fix · opus 5.5 · high · ψ fix-login` (model, effort and place dim, ` · ` faint; the shared checkout: nothing after the effort; a model with no effort: the model alone). Short on room, before the state loses anything: (1) the place's name goes, ψ stays; (2) the long form becomes the tag `opus·hi`; (3) the tag goes; then the gust's order above. Each live row of the panel carries its tag in one aligned column before its state (`opus·hi`, `sonnet·lo`, `gpt-4.1`; family, plus its version when two agents run two models of one family; efforts lo, med, hi, max, off; ASCII `opus.hi`), faint, dim when it differs from main's; a panel under 44 columns shows no tag. `/model [<model>] [default]` and `/reasoning [<effort>]` switch the agent in view from its next call (the popup: the catalog's models and aliases, or the efforts its model takes; a note row says which agent; ✓ on the current one; BISE-289: a typed id the list does not have is its last row, `+ use <provider>/<id>` (no provider typed: the current model's), after a note row `no listed model matches.` when nothing else does: any id of a known provider switches, the provider answers at the next call); `default` also writes config.toml (`[roles] main` for main, `[roles] agents` for an agent, BISE-298). BISE-294: the list holds only the models of the providers set up (a key found, or none needed), then `+ another provider…` (the providers not set up, dim), which opens `/provider`; a model of a provider without a key opens `/provider` on its key step and switches once the key works. The hub stores the choice in the agent's state dir (`choice.toml`, BISE_SESSION_CHOICE): it survives reloads and restarts; a model with another context window reloads the REPL at its next idle, same session, so the compaction threshold follows. Header: `<gust> 3 working · ? 1 needs you · ✓ 2 done`.
 - ASCII: ramp `. - ~ =` (head `=`), same motion.
 - Cost: redraw only those cells; ≤ 10 fps; stop when no agent works or the terminal loses focus.
-- **Short on room (the gust):** divider label, full: `you → marketing ≈∿~·  working · 42s` on the left, the state (tokens, %) on the right. Not enough room: drop in this order, one step at a time, until it fits with ≥ 3 columns between left and right: (1) the right-side state; (2) the word `working · ` (keep `42s`); (3) the gust 5 cells → 3 cells (same ramp, cycle 7: `≈ ∿ ~ · _ _ _`); (4) the gust → the 1-cell breathing form (`· ~ ∿ ≈ ∿ ~`); (5) the seconds; (6) last, cut the agent name at 20, then at 12, with `…` (BISE-109; was 12 then 8). The gust never disappears while the agent works: it's the last thing kept after `you → name`. Header: F ≥ 90: `<5-cell gust> 3 working · ? 1 needs you · ✓ 2 done`; 70–89: 3-cell gust + short counts `3 · ? 1 · ✓ 2`; < 70: 1-cell breathing + short counts. Panel: always the 1-cell breathing form. No motion (the terminal loses focus, the redraw budget is hit, or a reduce-motion env is set): a static `∿` in text color everywhere (`BISE_ASCII=1` keeps the motion with `. - ~ =`).
+- **Short on room (the gust, BISE-303):** divider label, full: `you → marketing · opus 5.5 · high · yolo · ≈∿~·` (ctrl held: `  working · 42s` after it) on the left, the context on the right. Not enough room: drop in this order, one step at a time, until it fits with ≥ 3 columns between left and right: (1) ctrl held, the long context becomes the short one, then `working · 42s` goes; (2) the tail shrinks (the place's name, then the long model becomes the tag, then the tag, then ψ); (3) the context goes; (4) the gust 5 cells → 3 cells (same ramp, cycle 7: `≈ ∿ ~ · _ _ _`); (5) the gust → the 1-cell breathing form (`· ~ ∿ ≈ ∿ ~`); (6) cut the agent name at 20, then at 12, with `…` (BISE-109; was 12 then 8); (7) last, the approvals mode. The gust never disappears while the agent works: it's the last thing kept after `you → name`. Header: F ≥ 90: `<5-cell gust> 3 working · ? 1 needs you · ✓ 2 done`; 70–89: 3-cell gust + short counts `3 · ? 1 · ✓ 2`; < 70: 1-cell breathing + short counts. Panel: always the 1-cell breathing form. No motion (the terminal loses focus, the redraw budget is hit, or a reduce-motion env is set): a static `∿` in text color everywhere (`BISE_ASCII=1` keeps the motion with `. - ~ =`).
 
 **Zen while you type** (user request, BISE-121: « If I typed less than 8s ago and I didn't move my cursor, I want UI elements to fade out a bit, and animations to get more subtle »).
 - **In:** a key that changes the composer (a character with any modifier that types, `⌥` accents and dead keys: `⌥`` then `e` = `è`, an accent the terminal or an input method composed; backspace, delete, a new line: shift+⏎, alt+⏎, ctrl+j; a paste), no popup open.
@@ -622,7 +644,7 @@ Three levels:
   together (5 s): one row, `? 3 agents want to run`. Under 24 rows: one
   row, ` 1 ` and the top item and `+ n`. Mouse: a click on a row opens it
   in the view, on the label or `+ n more` the top item. The thread's key
-  bar says `ctrl+1 inbox` right after `⏎ send` (`/inbox` without
+  bar ends with `ctrl+1 inbox` (BISE-303; `/inbox` without
   ctrl+digits); `↑` on an empty composer still recalls your history.
 - **The item view** (`ctrl+1-9`, a click on a strip row or in the
   panel's inbox section, `/inbox`): it takes the history's place; the panel, the
@@ -828,7 +850,7 @@ Exact (BISE-102, BISE-103):
 │   ▣ 3  c'est trop long non?
 ```
 - **Placeholder:** dim, `what's on your mind?` (to an agent: `talk to auth-fix directly`).
-- **Key bar in an agent's view:** `esc back to main` is always the first pair, from x0, on every key set of that view (idle; working: `esc back to main   ⏎ steer   ctrl+c interrupt`). `esc` in the text color like every key, `back to main` dim. Never dropped for lack of room: pairs drop from the right, `⌥0-9 switch` first, then `/ commands`. The right-side tip is hidden in an agent's view. The divider says `you → auth-fix`.
+- **Key bar in an agent's view:** `esc back to main` is always the first pair, from x0, on every key set of that view (idle; working: `esc back to main   ⏎ steer   ctrl+c interrupt`). `esc` in the text color like every key, `back to main` dim. Then the thread's pairs (`esc back to main   @ file   $ skills   / commands`, BISE-303). Never dropped for lack of room: `/ commands` drops first, then the pairs from the right. The right-side tip is hidden in an agent's view. The divider says `you → auth-fix`.
 
 ## 14. Images
 
@@ -1091,7 +1113,7 @@ replays it (**⚠** proposed command).
 | `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once; the voice chip at the cursor meanwhile, you keep typing while it is transcribed (BISE-222) | batch, not live (BISE-130): the voice role's model, `[roles] voice` in config.toml; voice off with no setup that works: the voice picker (BISE-298) |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
-| hold `ctrl` alone (~150 ms, BISE-231) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the inbox rows' numbers in accent (BISE-302; was the panel title `agents · ctrl+k/j select`), the divider's state `ctrl+c interrupt` while the agent works, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
+| hold `ctrl` alone (~150 ms, BISE-231) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the inbox rows' numbers in accent (BISE-302; was the panel title `agents · ctrl+k/j select`), the key bar every ctrl key of the moment (`ctrl+c interrupt` first while the agent works; the divider's `ctrl+c interrupt` hint is gone, BISE-303), and every word the screen leaves out at rest in its own place (BISE-303: the header's counts, the panel's state words, the divider's ` working · 42s` and long context); key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
 | hold `⌥` (option) alone (~150 ms, BISE-277) | the same for the ⌥ keys (user: « Est-ce qu'on pourrait le faire pour la touche option aussi? »): the panel's numbers read `⌥0` `⌥1`… over their ` 0` ` 1` (accent; ASCII: the number alone in accent), the panel title `agents · ⌥↑↓ select` on an empty composer, the key bar `⌥0-9 go to an agent   ⌥↑↓ select an agent` (more than one agent; ⌥↑↓ on an empty composer), `⌥←→ word   ⌥⌫ delete a word` (a draft), `⌥⏎ newline`; in the thread, an agent's view, the card view and the inbox selected. Option typing characters (a layout, `macos-option-as-alt = false`): the hints show only while ⌥ is held with no other key; `⌥c` = `ç` arrives without alt, the hints go at once and it types; option as alt: `⌥c` is a combo, the hints go and the composer's option layer types `ç`. ⌥ with another modifier: none | new (BISE-277) |
 | hold `cmd` alone (~150 ms, BISE-277) | once a cmd key has reached the app in the session (the terminal passes them; cmd alone says nothing, e.g. cmd+tab), the same for the cmd keys: the panel title `agents · cmd+k find`, the key bar `cmd+k find an agent` (more than one agent), `cmd+f find` (a history), `cmd+c copy` (a selection; `cmd+x cut` in the composer), `cmd+a select all   cmd+←→ line start/end   cmd+⌫ delete to line start` (a draft), `cmd+v paste`; the keys Ghostty keeps by default (cmd+z, cmd+↑↓) only in the help. Before any cmd key: nothing | new (BISE-277) |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
@@ -1115,16 +1137,16 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | Where | Text |
 |---|---|
 | header, no agents | `no agents yet` |
-| header counts | `∿ {n} working · … {n} waiting · ? {n} needs you · ✓ {n} done` |
-| panel title | `agents · ⌥ + number` |
+| header counts | beside the panel `{folder} · # {n} in the inbox`; ctrl held or no panel `∿ {n} working · … {n} waiting · ? {n} needs you · ✓ {n} done` (BISE-303) |
+| panel title | `agents` |
 | panel, more rows | `+ {n} more` |
 | panel, archived | `▸ {n} archived` |
 | first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "show me what you can do"` |
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
-| composer hints, main | `⏎ send · @ file · ctrl+s find agent · ⌥0-9 switch · / commands · ? help` (something in the inbox: `⏎ send · ctrl+1 inbox · @ file · …`; without ctrl+digits `⏎ send · /inbox · @ file · …`) |
+| composer hints, main | `@ file · $ skills · / commands` (something in the inbox: `… · ctrl+1 inbox`; without ctrl+digits `… · /inbox`) (BISE-303) |
 | composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |
 | composer placeholder (BISE-98) | `what's on your mind?` (to main) · `talk to {name} directly` (inside an agent) · `{name} is archived: read-only` |
-| divider (BISE-98, BISE-135) | `you → {name} · {model} · {effort}` · on the right the old status row: `idle · 18k / 1M tokens · 2%`, or `↓ back to the bottom · end · {n} new lines` while scrolled up |
+| divider (BISE-98, BISE-135, BISE-303) | `you → {name} · {model} · {effort} · {mode}` (working: ` · <gust>`; ctrl held ` working · 42s`) · on the right the context `18k · 2%` (ctrl held: `idle · 18k / 1M tokens · 2%`), or `↓ back to the bottom · end · {n} new lines` while scrolled up |
 | run of level 3 | `▸ {n} messages between {k} agents` |
 | thinking | `∴ thought for {s}s` |
 | output | `▸ output · {n} lines` (+ ` · {k} failed` when known) |

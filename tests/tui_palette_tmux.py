@@ -12,7 +12,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, panel_row, in_view  # noqa: E402
+from tui_tmux import tui_session, run, panel_row, in_view, MAIN_IDLE  # noqa: E402
 
 
 def spawn(t, n, name, objective):
@@ -25,7 +25,7 @@ def spawn(t, n, name, objective):
 def main():
     with tui_session(130, 40) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         spawn(t, 1, "dark-mode", "dark colors first")
         spawn(t, 2, "old-beta", "the csv export")
         t.typed("/drop old-beta")

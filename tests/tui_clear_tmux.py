@@ -10,7 +10,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 
 def scroll_up_until(t, needle, tries=30):
@@ -26,7 +26,7 @@ def scroll_up_until(t, needle, tries=30):
 def main():
     with tui_session(120, 30) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("first-marker")
         t.keys("Enter")
         t.wait("ack: first-marker")

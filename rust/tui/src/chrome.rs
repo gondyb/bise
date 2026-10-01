@@ -210,10 +210,12 @@ pub(crate) fn draw_frame(
 }
 
 /// What the divider says of the agent you view while it works (book §8,
-/// BISE-105): the gust's motion and the current turn's age (`42s`).
+/// BISE-105, BISE-303): the gust's motion; with ctrl held (`words`),
+/// `working` and the current turn's age (`42s`) after it.
 pub(crate) struct Working {
     pub(crate) motion: gust::Motion,
     pub(crate) age: Option<String>,
+    pub(crate) words: bool,
 }
 
 /// What the divider says after the name (BISE-135, BISE-136): the model
@@ -297,35 +299,32 @@ impl Who {
 }
 
 /// How much of the label the divider shows, while the agent works (book
-/// §9 "Short on room (the gust)"): the steps in the order they are
-/// dropped, the right-side state first.
+/// §9 "Short on room (the gust)", BISE-303): the steps in the order they
+/// are dropped.
 #[derive(Clone, Copy)]
 struct Step {
-    state: bool,
+    /// `working · 42s` after the gust (ctrl held)
     words: bool,
     size: gust::Size,
-    age: bool,
     name_cut: Option<usize>,
 }
 
-const STEPS: [Step; 8] = {
+const STEPS: [Step; 6] = {
     use gust::Size::{Five, One, Three};
-    let full = Step { state: true, words: true, size: Five, age: true, name_cut: None };
+    let full = Step { words: true, size: Five, name_cut: None };
     [
         full,
-        Step { state: false, ..full },
-        Step { state: false, words: false, ..full },
-        Step { state: false, words: false, size: Three, ..full },
-        Step { state: false, words: false, size: One, ..full },
-        Step { state: false, words: false, size: One, age: false, name_cut: None },
-        Step { state: false, words: false, size: One, age: false, name_cut: Some(20) },
-        Step { state: false, words: false, size: One, age: false, name_cut: Some(12) },
+        Step { words: false, ..full },
+        Step { words: false, size: Three, ..full },
+        Step { words: false, size: One, ..full },
+        Step { words: false, size: One, name_cut: Some(20) },
+        Step { words: false, size: One, name_cut: Some(12) },
     ]
 };
 
-/// The divider's label: ` you → name `; while the agent works, the gust
-/// 1 space after the name, then `working · 42s` dim (as much of it as
-/// `step` keeps).
+/// The divider's label: ` you → name` and the tail (model, effort, mode,
+/// ψ); while the agent works, a dim ` · ` and the gust, then, ctrl held,
+/// ` working · 42s` dim (as much of it as `step` keeps).
 fn label(name: &str, tail: &[Span<'static>], working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
     let arrow = if theme::ascii_mode() { "->" } else { "→" };
     let name = match working.and_then(|(_, s)| s.name_cut) {
@@ -339,15 +338,13 @@ fn label(name: &str, tail: &[Span<'static>], working: Option<(&Working, Step)>) 
     ];
     out.extend(tail.iter().cloned());
     if let Some((w, step)) = working {
-        out.push(Span::raw(" "));
+        out.push(Span::styled(" · ", Style::default().fg(dim())));
         out.extend(gust::mark(w.motion, step.size));
-        let words = match (step.words, step.age.then_some(w.age.as_deref()).flatten()) {
-            (true, Some(age)) => format!(" working · {}", age),
-            (true, None) => " working".to_string(),
-            (false, Some(age)) => format!(" {}", age),
-            (false, None) => String::new(),
-        };
-        if !words.is_empty() {
+        if step.words && w.words {
+            let words = match &w.age {
+                Some(age) => format!(" working · {}", age),
+                None => " working".to_string(),
+            };
             out.push(Span::styled(words, Style::default().fg(dim())));
         }
     }
@@ -361,13 +358,13 @@ fn width_of(spans: &[Span]) -> u16 {
 
 /// The columns the divider leaves for its right side on a screen `width`
 /// wide: from 1 rule cell and a space after the label to the state's end.
-/// While the agent works, the label is the whole one (its first step).
-/// With the key bar in the divider, the label keeps the short tail
-/// (`· opus·hi · ψ`).
+/// While the agent works, the label keeps its 5-cell gust, without the
+/// held words. With the key bar in the divider, the label keeps the
+/// short tail (`· opus·hi · ψ`).
 pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, working: Option<&Working>) -> u16 {
     let tails = who.tails();
     let tail = tails.get(2).or(tails.last()).cloned().unwrap_or_default();
-    let label_w = width_of(&label(name, &tail, working.map(|w| (w, STEPS[0]))));
+    let label_w = width_of(&label(name, &tail, working.map(|w| (w, STEPS[1]))));
     let start = cols.margin - 1 + label_w + 2;
     let end = width.saturating_sub(cols.margin);
     end.saturating_sub(start)
@@ -413,11 +410,15 @@ pub(crate) fn draw_divider_label(buf: &mut Buffer, area: Rect, cols: Cols, y: u1
 
 /// The divider on row `y` (book §8): framed, a rule joining the frame
 /// (`├ … ┤`, `┴` under the panel's rule); bare, a plain rule. The label
-/// ` you → name ` from the margin, the `state` (cut to fit) ending 1
-/// column before the right margin's space, 3 columns at least between
-/// them. While the agent works, the label says it (` you → name ≈∿~·
-/// working · 42s `) and keeps its gust: short on room, the state goes
-/// whole first, then the label shrinks step by step ([`STEPS`]). The
+/// ` you → name · model · effort · mode ` from the margin; while the
+/// agent works, ` · ≈∿~·` after it (and ` working · 42s` with ctrl
+/// held). The right side, ending 1 column before the right margin's
+/// space, 3 columns at least from the label: the first of `states`
+/// (richest first, BISE-303: the long context `58k / 262k tokens ·
+/// 22%` with ctrl held, then the short `58k · 22%`) that fits. Short on
+/// room ([`ladder`]): the held words go, the long state becomes the
+/// short one, the tail shrinks ([`Who::tails`]), then the state goes,
+/// then the gust shrinks and the name is cut; the mode goes last. The
 /// state's rect is returned (a click on `↓ back to the bottom` jumps to
 /// the tail), then the label's (zen keeps it, BISE-121).
 #[allow(clippy::too_many_arguments)]
@@ -429,7 +430,7 @@ pub(crate) fn draw_divider(
     name: &str,
     who: &Who,
     working: Option<&Working>,
-    state: Vec<Span<'static>>,
+    states: Vec<Vec<Span<'static>>>,
 ) -> (Rect, Rect) {
     let area = area.intersection(buf.area);
     if !divider_rule(buf, area, cols, y) {
@@ -439,32 +440,37 @@ pub(crate) fn draw_divider(
     let lx = l + cols.margin - 1;
     // the state's end: framed F − 4 (F − 3 its space), bare the last column
     let end = r + 1 - cols.margin;
-    let state_w = width_of(&state);
-    let fits = |label: &[Span], with_state: bool| {
+    let fits = |label: &[Span], state: &[Span]| {
         let w = u32::from(lx) + u32::from(width_of(label));
-        if with_state && state_w > 0 {
+        let state_w = width_of(state);
+        if state_w > 0 {
             w + 2 + u32::from(state_w) <= u32::from(end)
         } else {
             w <= u32::from(end) + 1
         }
     };
-    // the richest tail that leaves the state whole (the label at its
-    // first step), else the last one
+    let states: Vec<Vec<Span<'static>>> = states.into_iter().filter(|s| width_of(s) > 0).collect();
     let tails = who.tails();
-    let first = working.map(|w| (w, STEPS[0]));
-    let tail = tails.iter().find(|t| fits(&label(name, t, first), true)).or(tails.last()).cloned().unwrap_or_default();
-    let (label, state) = match working {
+    let pick = ladder(states.len(), tails.len())
+        .into_iter()
+        .map(|(si, ti, step)| {
+            let tail = tails.get(ti).cloned().unwrap_or_default();
+            let state = si.and_then(|i| states.get(i)).cloned().unwrap_or_default();
+            (label(name, &tail, working.map(|w| (w, STEPS[step]))), state, si.is_none())
+        })
+        .find(|(label, state, _)| fits(label, state));
+    let (label, state) = match pick {
+        Some((label, state, _)) => (label, state),
+        // nothing fits: the smallest label, the state cut to what is left
         None => {
-            let lw = width_of(&label(name, &tail, None));
-            let room = end.saturating_sub(lx + lw + 2);
-            (label(name, &tail, None), fit(state, room as usize))
-        }
-        Some(wk) => {
-            let pick = STEPS
-                .iter()
-                .find(|s| fits(&label(name, &tail, Some((wk, **s))), s.state))
-                .unwrap_or(&STEPS[STEPS.len() - 1]);
-            (label(name, &tail, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
+            let tail = tails.last().cloned().unwrap_or_default();
+            let label = label(name, &tail, working.map(|w| (w, STEPS[STEPS.len() - 1])));
+            let room = end.saturating_sub(lx + width_of(&label) + 2);
+            let state = match (working, states.last()) {
+                (None, Some(s)) => fit(s.clone(), room as usize),
+                _ => Vec::new(),
+            };
+            (label, state)
         }
     };
     put(buf, lx, y, &label, end + 1);
@@ -480,6 +486,28 @@ pub(crate) fn draw_divider(
         put(buf, end, y, &[Span::raw(" ")], end + 1);
     }
     (Rect { x, y, width: w, height: 1 }, label_rect)
+}
+
+/// The divider's forms, richest first (BISE-303): (the state, the tail,
+/// the step) for `states` states and `tails` tails. The long state goes
+/// for the short one, then the held words, then the tail shrinks
+/// with the short state; then the state goes (the smallest tail, the
+/// mode, stays), the gust shrinks, the name is cut; the mode goes last
+/// (tail `tails`: none).
+fn ladder(states: usize, tails: usize) -> Vec<(Option<usize>, usize, usize)> {
+    let mut out = Vec::new();
+    let last_tail = tails.saturating_sub(1);
+    if states > 0 {
+        let short = states - 1;
+        out.extend((0..states).map(|s| (Some(s), 0, 0)));
+        out.extend((0..tails.max(1)).map(|t| (Some(short), t, 1)));
+    } else {
+        out.push((None, 0, 0));
+    }
+    out.extend((0..tails.max(1)).map(|t| (None, t, 1)));
+    out.extend((2..STEPS.len()).map(|step| (None, last_tail, step)));
+    out.push((None, tails, STEPS.len() - 1));
+    out
 }
 
 #[cfg(test)]
@@ -501,10 +529,15 @@ mod tests {
     }
 
     fn divider_row_who(width: u16, name: &str, who: &Who, working: Option<&Working>, state: &str) -> String {
+        divider_row_forms(width, name, who, working, &[state])
+    }
+
+    fn divider_row_forms(width: u16, name: &str, who: &Who, working: Option<&Working>, states: &[&str]) -> String {
         let area = Rect::new(0, 0, width, 1);
         let mut buf = Buffer::empty(area);
         let cols = crate::layout::cols(width, 40);
-        draw_divider(&mut buf, area, cols, 0, name, who, working, vec![Span::raw(state.to_string())]);
+        let states = states.iter().map(|s| vec![Span::raw(s.to_string())]).collect();
+        draw_divider(&mut buf, area, cols, 0, name, who, working, states);
         (0..width).map(|x| buf[(x, 0)].symbol().to_string()).collect()
     }
 
@@ -538,10 +571,10 @@ mod tests {
         // a model with no effort: the model alone
         let plain = Who { model: "gpt-4.1".into(), tag: "gpt-4.1".into(), ..Who::default() };
         assert!(divider_row_who(90, "docs", &plain, None, state).contains("you → docs · gpt-4.1 ─"));
-        // while it works, the tail goes before the gust's steps
-        let w = Working { motion: crate::gust::Motion::Still, age: Some("42s".into()) };
+        // while it works, the gust after the tail (ctrl held: the words)
+        let w = Working { motion: crate::gust::Motion::Still, age: Some("42s".into()), words: true };
         let r = divider_row_who(90, "auth-fix", &who, Some(&w), "31%");
-        assert!(r.contains("auth-fix · opus 5.5 · high · ψ fix-login ") && r.contains("working · 42s"), "{r}");
+        assert!(r.contains("auth-fix · opus 5.5 · high · ψ fix-login · ∿ working · 42s ─"), "{r}");
     }
 
     /// The user's feedback on approvals (item 1): the mode after the
@@ -583,72 +616,105 @@ mod tests {
         divider_row_of(width, "marketing", working, state)
     }
 
-    /// Frame 3 of the gust: 5 cells `·~∿≈ `, 3 cells `·~∿`, 1 cell `≈`.
-    fn working(age: Option<&str>) -> Working {
-        Working { motion: gust::Motion::Frame(3), age: age.map(String::from) }
+    /// Frame 3 of the gust: 5 cells `·~∿≈ `, 3 cells `·~∿`, 1 cell `≈`;
+    /// `words`: ctrl held.
+    fn working(age: Option<&str>, words: bool) -> Working {
+        Working { motion: gust::Motion::Frame(3), age: age.map(String::from), words }
     }
 
+    /// BISE-303: at rest, the gust after a dim ` · ` and nothing else;
+    /// ctrl held, `working · 42s` after it. The right side as given.
     #[test]
     fn the_divider_says_the_viewed_agent_works() {
-        // BISE-105: the gust 1 space after the name, then the words; the
-        // right side unchanged
-        let row = divider_row(100, Some(&working(Some("42s"))), "working · 42s · 18k tokens");
-        assert!(row.starts_with("├─ you → marketing ·~∿≈  working · 42s ─"), "{row}");
-        assert!(row.ends_with("─ working · 42s · 18k tokens ─┤"), "{row}");
+        let row = divider_row(100, Some(&working(Some("42s"), false)), "18k · 2%");
+        assert!(row.starts_with("├─ you → marketing · ·~∿≈  ─"), "{row}");
+        assert!(row.ends_with("─ 18k · 2% ─┤"), "{row}");
+        let row = divider_row(100, Some(&working(Some("42s"), true)), "18k · 2%");
+        assert!(row.starts_with("├─ you → marketing · ·~∿≈  working · 42s ─"), "{row}");
         // no age yet: the word alone
-        let row = divider_row(100, Some(&working(None)), "");
-        assert!(row.starts_with("├─ you → marketing ·~∿≈  working ─"), "{row}");
+        let row = divider_row(100, Some(&working(None, true)), "");
+        assert!(row.starts_with("├─ you → marketing · ·~∿≈  working ─"), "{row}");
         // no motion: one static wave
-        let still = Working { motion: gust::Motion::Still, age: Some("42s".into()) };
-        let row = divider_row(100, Some(&still), "idle");
-        assert!(row.starts_with("├─ you → marketing ∿ working · 42s ─"), "{row}");
+        let still = Working { motion: gust::Motion::Still, age: Some("42s".into()), words: true };
+        let row = divider_row(100, Some(&still), "");
+        assert!(row.starts_with("├─ you → marketing · ∿ working · 42s ─"), "{row}");
+        // the gust's ` · ` is dim
+        let area = Rect::new(0, 0, 100, 1);
+        let mut buf = Buffer::empty(area);
+        draw_divider(&mut buf, area, crate::layout::cols(100, 40), 0, "m", &Who::default(), Some(&still), Vec::new());
+        assert_eq!(buf[(11, 0)].symbol(), "·");
+        assert_eq!(buf[(11, 0)].style().fg, Some(dim()));
     }
 
     #[test]
     fn the_divider_says_nothing_after_the_name_when_idle() {
-        let row = divider_row(100, None, "idle · 18k tokens");
+        let row = divider_row(100, None, "18k · 2%");
         assert!(row.starts_with("├─ you → marketing ───"), "{row}");
-        assert!(row.ends_with("─ idle · 18k tokens ─┤"), "{row}");
+        assert!(row.ends_with("─ 18k · 2% ─┤"), "{row}");
     }
 
+    /// BISE-303: short on room, ctrl held: the words go, the long
+    /// context becomes the short one, the tail shrinks, the context goes,
+    /// then the gust shrinks and the name is cut; the mode goes last.
     #[test]
-    fn short_on_room_the_divider_drops_in_the_book_order() {
-        // book §9 "Short on room (the gust)"; bare rows (F < 60) start at
-        // column 0 and end at the last one
-        let w = working(Some("42s"));
-        let state = "18k tokens";
-        let row = divider_row(50, Some(&w), state);
-        assert!(row.starts_with(" you → marketing ·~∿≈  working · 42s ─") && row.ends_with("─ 18k tokens "), "{row}");
-        // (1) the state
-        let row = divider_row(49, Some(&w), state);
-        assert!(row.starts_with(" you → marketing ·~∿≈  working · 42s ─") && !row.contains("18k"), "{row}");
-        // (2) the word
-        let row = divider_row(36, Some(&w), state);
-        assert_eq!(row, format!(" you → marketing ·~∿≈  42s {}", "─".repeat(9)));
-        // (3) 5 cells → 3
-        assert_eq!(divider_row(26, Some(&w), state), " you → marketing ·~∿ 42s ─");
-        // (4) → the breath
-        assert_eq!(divider_row(24, Some(&w), state), " you → marketing ≈ 42s ─");
-        // (5) the seconds
-        assert_eq!(divider_row(22, Some(&w), state), " you → marketing ≈ ───");
-        // (6) last: the name at 20, then 12 (BISE-109, was 12 then 8)
+    fn short_on_room_the_divider_drops_in_order() {
+        let who = Who { model: "opus 5.5".into(), effort: "high".into(), tag: "opus·hi".into(), mode: "yolo".into(), ..Who::default() };
+        let w = working(Some("42s"), true);
+        let forms = ["18k / 1M tokens · 2%", "18k · 2%"];
+        // the steps, richest first: what each one shows
+        let level = |r: &str| -> usize {
+            let has = |t: &str| r.contains(t);
+            match () {
+                _ if has("working · 42s") && has("tokens") => 0,
+                _ if has("working · 42s") && has("18k · 2%") => 1,
+                _ if has("tokens") => 2,
+                _ if has("opus 5.5") && has("18k · 2%") => 3,
+                _ if has("opus·hi") && has("18k · 2%") => 4,
+                _ if has("18k · 2%") => 5,
+                _ if has("·~∿≈") => 6,
+                _ if has("·~∿") => 7,
+                _ => 8,
+            }
+        };
+        let mut last = 0;
+        let mut seen = Vec::new();
+        for width in (20..140).rev() {
+            let r = divider_row_forms(width, "marketing", &who, Some(&w), &forms);
+            assert_eq!(r.chars().count(), width as usize, "{width}: {r}");
+            let l = level(&r);
+            assert!(l >= last, "{width}: level {l} after {last}: {r}");
+            // the mode stays to the end, the gust always
+            assert!(r.contains("yolo") || width < 30, "{width}: {r}");
+            assert!(r.contains('≈') || r.contains('∿') || width < 21, "{width}: {r}");
+            last = l;
+            if !seen.contains(&l) {
+                seen.push(l);
+            }
+        }
+        assert_eq!(seen, vec![0, 1, 3, 4, 5, 6, 7, 8], "every step shows on the way down");
+        // at rest: the short context only, never `working`
+        let rest = working(Some("42s"), false);
+        for width in (20..140).rev() {
+            let r = divider_row_forms(width, "marketing", &who, Some(&rest), &["18k · 2%"]);
+            assert!(!r.contains("working") && !r.contains("42s"), "{width}: {r}");
+        }
+        // the name is cut last: at 20, then 12 (BISE-109)
         let name = "release-notes-writer-v2";
-        assert!(divider_row_of(33, name, Some(&w), state).starts_with(" you → release-notes-writer-v2 ≈ "));
-        assert!(divider_row_of(32, name, Some(&w), state).starts_with(" you → release-notes-write… ≈ ─"));
-        assert!(divider_row_of(30, name, Some(&w), state).starts_with(" you → release-notes-write… ≈ "));
-        assert_eq!(divider_row_of(29, name, Some(&w), state), format!(" you → release-not… ≈ {}", "─".repeat(7)));
-        assert_eq!(divider_row_of(22, name, Some(&w), state), " you → release-not… ≈ ");
+        let rest = working(Some("42s"), false);
+        assert!(divider_row_of(35, name, Some(&rest), "").starts_with(" you → release-notes-writer-v2 · ≈ "));
+        assert!(divider_row_of(34, name, Some(&rest), "").starts_with(" you → release-notes-write… · ≈ "));
+        assert_eq!(divider_row_of(31, name, Some(&rest), ""), format!(" you → release-not… · ≈ {}", "─".repeat(7)));
     }
 
     #[test]
     fn the_gust_stays_while_the_agent_works_at_any_width() {
-        let w = working(Some("42s"));
+        let w = working(Some("42s"), true);
         for width in 20..130 {
-            let row = divider_row(width, Some(&w), "working · 42s · 18k / 1M tokens · 2%");
-            assert_eq!(row.chars().count(), width as usize, "{width}: {row}");
-            assert!(row.contains("marketing ≈") || row.contains("marketing ·~∿"), "{width}: {row}");
+            let r = divider_row_forms(width, "marketing", &Who::default(), Some(&w), &["18k / 1M tokens · 2%", "18k · 2%"]);
+            assert_eq!(r.chars().count(), width as usize, "{width}: {r}");
+            assert!(r.contains("marketing · ≈") || r.contains("marketing · ·~∿"), "{width}: {r}");
             // the state is whole or gone, never cut
-            assert!(row.contains("2%") || !row.contains("tokens"), "{width}: {row}");
+            assert!(r.contains("2%") || !r.contains("18k"), "{width}: {r}");
         }
     }
 }

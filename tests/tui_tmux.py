@@ -160,8 +160,13 @@ def panel_row(n, name):
 
 def in_view(name):
     """The regex of the divider naming the agent in view (book §8 "The
-    frame": `├─ you → main ─…─ idle ─┤`, BISE-98)."""
+    frame": `├─ you → main ─…─ 42k · 4% ─┤`, BISE-98)."""
     return r"you → %s " % re.escape(name)
+
+
+# main idle: its panel row's glyph (BISE-303: the divider and the panel
+# say no `idle` at rest; the panel shows from 90 columns)
+MAIN_IDLE = r"\b0 ○ main\b"
 
 
 PLACEHOLDER = re.compile(r"^(what's on your mind\?|talk to \S+ directly)$")
@@ -206,8 +211,8 @@ def main():
     with tui_session(150, 42) as t:
         sc = t.wait("bise :*")
         t.wait_re(in_view("main"))
-        assert "⏎ send   @ file" in sc, sc
-        t.wait(" idle")
+        assert "@ file   $ skills   / commands" in sc, sc
+        t.wait_re(MAIN_IDLE)
         t.typed('crée [[bash: sb spawn t1 --objective "écris {{bash: echo hi-t1}}"]]')
         t.keys("Enter")
         sc = t.wait_re(panel_row(1, "t1"))

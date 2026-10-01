@@ -11,7 +11,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, panel_row, in_view  # noqa: E402
+from tui_tmux import tui_session, run, panel_row, in_view, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 PANEL_X = COLS - max(28, min(40, COLS // 4))
@@ -45,7 +45,7 @@ def drop(t, name):
 def main():
     with tui_session(COLS, ROWS) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # one after the other: the archived rows are sorted by the last
         # report (newest first), so t2 must report after t1 (spawned in
         # one message, their report order was up to the load)

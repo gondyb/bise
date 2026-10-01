@@ -15,7 +15,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
 
 FILLER = " ".join(["filler"] * 350)
 
@@ -24,7 +24,7 @@ def send(t, text, ack):
     t.typed(text)
     t.keys("Enter")
     t.wait(ack, 60)
-    t.wait(" idle", 60)
+    t.wait_re(MAIN_IDLE, 60)
 
 
 def where(sc, text):
@@ -38,7 +38,7 @@ def where(sc, text):
 def main():
     with tui_session(120, 40, "NO_COLOR=1") as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         send(t, "the needle one", "ack: the needle one")
         send(t, FILLER, "ack: filler filler")
         send(t, "the needle two", "ack: the needle two")

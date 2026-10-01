@@ -11,7 +11,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, in_view  # noqa: E402
+from tui_tmux import tui_session, run, in_view, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 
@@ -19,7 +19,7 @@ COLS, ROWS = 150, 42
 def main():
     with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=1") as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # two agents message main: questions, a blocked report
         t.typed('/new ia: {{bash: sb send main --expect-reply "ia asks main" && sb report blocked "ia is stuck on a key"}}')
         t.keys("Enter")

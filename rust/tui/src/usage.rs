@@ -60,6 +60,16 @@ impl Usage {
         }
     }
 
+    /// The divider's form at rest (BISE-303): "42k · 21%", or "42k"
+    /// without a known window.
+    pub fn compact(&self) -> String {
+        let used = self.context();
+        match context_window(&self.model) {
+            Some(w) => format!("{} · {}%", fmt_tokens(used), percent(used, w)),
+            None => fmt_tokens(used),
+        }
+    }
+
     /// The compact form for the task list: "21%", or "42k" without a
     /// known window.
     pub fn short(&self) -> String {
@@ -140,6 +150,7 @@ mod tests {
         let u = Usage { model: "foundry/claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
         assert_eq!(u.label(), "210k / 1M tokens · 21%");
         assert_eq!(u.short(), "21%");
+        assert_eq!(u.compact(), "210k · 21%");
         // the window is the model's, not a guess from its name
         let s = Usage { model: "anthropic/claude-haiku-4-5".into(), input: 42_000, ..Default::default() };
         assert_eq!(s.label(), "42k / 200k tokens · 21%");
@@ -154,6 +165,7 @@ mod tests {
         let n = Usage { model: "nowhere/some-model".into(), input: 950, output: 0, ..Default::default() };
         assert_eq!(n.label(), "950 tokens");
         assert_eq!(n.short(), "950");
+        assert_eq!(n.compact(), "950");
     }
 
     #[test]

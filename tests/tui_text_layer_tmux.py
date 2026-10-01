@@ -14,7 +14,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 CARD_URL = "https://perf.example/report"
@@ -83,7 +83,7 @@ def main():
     os.chmod(opener, 0o755)
     with tui_session(COLS, ROWS, "BISE_OPEN=%s BEND_CLIPBOARD_FILE=%s" % (opener, clip)) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # a card with a url, and a tool whose output has one
         t.typed("[[bash: sb card \"$(printf 'the bundle grew, see %s. split it?\\n1. yes\\n2. no')\"]] "
                 "[[bash: echo location: %s]]" % (CARD_URL, BOX_URL))

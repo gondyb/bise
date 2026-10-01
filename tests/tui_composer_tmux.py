@@ -15,7 +15,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, pane_rows, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, pane_rows, wait_until, MAIN_IDLE  # noqa: E402
 
 
 
@@ -61,7 +61,7 @@ def main():
     E.env["BEND_CLIPBOARD_FILE"] = clip
     with tui_session(150, 42, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         # one entry in the history
         t.typed("first message")
         t.keys("Enter")

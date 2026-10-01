@@ -296,8 +296,9 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             for y in a.y..a.y + a.h as u16 {
                 assert!(row(y).width() <= 4 + a.w, "{what}: row {y} {:?}", row(y));
             }
-            // the key bar keeps ⏎ send first
-            assert!(row(rows.keybar).starts_with(&format!("{off}⏎ send")), "{what}: {:?}", row(rows.keybar));
+            // the key bar keeps its keys (BISE-303: `@ file` first, after
+            // the image's)
+            assert!(row(rows.keybar).contains("@ file"), "{what}: {:?}", row(rows.keybar));
         }
     }
 }
@@ -437,7 +438,7 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert_eq!(rest[1], bar);
     assert!(rest[2].starts_with("│  │     what's on your mind?"), "{rest:#?}");
     assert_eq!(rest[3], bar);
-    assert!(rest[4].starts_with("│      ⏎ send"), "{rest:#?}");
+    assert!(rest[4].starts_with("│      @ file"), "{rest:#?}");
     assert!(rest[5].starts_with("╰─"), "{rest:#?}");
     let boxed = pane_rows(120, 40, 1, "hi");
     assert_eq!(boxed.len(), 9, "{boxed:#?}");
@@ -446,15 +447,15 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert!(boxed[4].starts_with("│      ╰─"), "{boxed:#?}");
     assert!(boxed[5].starts_with("│  │    ▣ 1  hi"), "{boxed:#?}");
     assert_eq!(boxed[6], bar);
-    assert!(boxed[7].starts_with("│      ⏎ send"), "{boxed:#?}");
+    assert!(boxed[7].starts_with("│      ctrl+v paste image   @ file"), "{boxed:#?}");
     let small = pane_rows(120, 18, 0, "");
     assert_eq!(small.len(), 4, "{small:#?}");
     assert!(small[1].starts_with("│  │     what's on your mind?"), "{small:#?}");
-    assert!(small[2].starts_with("│      ⏎ send"), "{small:#?}");
+    assert!(small[2].starts_with("│      @ file"), "{small:#?}");
     let small_boxed = pane_rows(120, 18, 1, "hi");
     assert!(small_boxed[1].starts_with("│      ╭─ attached"), "{small_boxed:#?}");
     assert!(small_boxed[4].starts_with("│  │    ▣ 1  hi"), "{small_boxed:#?}");
-    assert!(small_boxed[5].starts_with("│      ⏎ send"), "{small_boxed:#?}");
+    assert!(small_boxed[5].starts_with("│      ctrl+v paste image   @ file"), "{small_boxed:#?}");
     // long text: 12 text rows at most, the pads still there
     let long = pane_rows(120, 40, 0, &"word ".repeat(400));
     assert_eq!(long.len(), 1 + 1 + 12 + 1 + 2, "{long:#?}");
@@ -462,7 +463,7 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert!(long[2].starts_with("│  │   word"), "{long:#?}");
     assert!(long[13].starts_with("│  │   word"), "{long:#?}");
     assert_eq!(long[14], bar);
-    assert!(long[15].starts_with("│      ⏎ send"), "{long:#?}");
+    assert!(long[15].starts_with("│      @ file"), "{long:#?}");
 }
 
 /// `pane_rows` with `queued` messages waiting for the turn's end.

@@ -12,7 +12,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 150, 42
 
@@ -26,7 +26,7 @@ def main():
     os.chmod(opener, 0o755)
     with tui_session(COLS, ROWS, "BISE_OPEN=" + opener) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("read [the guide](https://guide.example/start) then https://bare.example/x.")
         t.keys("Enter")
         t.wait("ack: read the guide then https://bare.example/x.")

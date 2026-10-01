@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, wait_until, pane_rows  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, pane_rows, MAIN_IDLE  # noqa: E402
 
 
 def composer(sc):
@@ -36,11 +36,11 @@ def main():
 
     with tui_session(150, 40, env, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("the first prompt")
         t.keys("Enter")
         t.wait("the first prompt")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("half a thought")
         t.wait("half a thought")
         # written once it stops moving (the debounce), before any quit
@@ -52,7 +52,7 @@ def main():
         assert mode == 0o600, oct(mode)
         # the TUI dies (its terminal is gone), a new one starts: the draft is back
         t.start(150, 40, env)
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         sc = t.wait("half a thought")
         assert "half a thought" in composer(sc), sc
         # sent: gone from the file at once, and from the composer after a restart
@@ -60,9 +60,9 @@ def main():
         wait_until(lambda: "main" not in on_disk().get("drafts", {"main": 1}), 5,
                    lambda: "the sent draft is still on disk: %r" % on_disk())
         assert on_disk()["history"] == ["half a thought", "the first prompt"], on_disk()
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.start(150, 40, env)
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.wait("what's on your mind?")
         # the sent prompts come back with Up, newest first
         t.keys("Up")

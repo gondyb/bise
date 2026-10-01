@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 COLS, ROWS = 120, 36
 HINT = " type ask about it · cmd+c copy "
@@ -18,7 +18,7 @@ HINT = " type ask about it · cmd+c copy "
 def main():
     with tui_session(COLS, ROWS) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("the login breaks on safari")
         t.keys("Enter")
         t.wait("ack: the login breaks on safari")

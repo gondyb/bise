@@ -99,6 +99,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let pane = |r: Rect| Rect { x: area.x + cols.x0, width: pane_end.saturating_sub(cols.x0), ..r };
     let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
     let short = cols.panel.is_none();
+    let words = crate::ctrlhint::words(app);
     // the working count's gust: 5 cells, 3 or 1 as the screen narrows (book §9)
     let gust = crate::gust::mark(app.motion_away, crate::gust::header_size(area.width));
     // the frame (or the bare header row)
@@ -106,11 +107,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if cols.framed {
         let title = sb.title();
         let role = sb.role_spans();
-        chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, |room| sb.summary(room, short, &gust), divider_y);
+        chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, |room| sb.summary(room, short, words, &gust), divider_y);
         crate::textlayer::text(Rect { height: 1, ..area }); // BISE-290: the title row
     } else if chunks[0].height > 0 {
         let r = Rect { height: 1, ..chunks[0] };
-        frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);
+        frame.render_widget(Paragraph::new(sb.header(r.width, short, words, &gust)), r);
         crate::textlayer::text(r); // BISE-290
     }
     // the panel: from the history's first row down to the blank row
@@ -235,7 +236,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let working = sb::viewed_working(app);
     let who = sb::viewed_who(app);
     let state = if rows.keys_in_divider {
-        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, &who, working.as_ref())).spans
+        vec![crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, &who, working.as_ref())).spans]
     } else {
         state
     };
@@ -253,9 +254,6 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
         None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state),
     };
-    if !rows.keys_in_divider {
-        crate::ctrlhint::divider(app, frame.buffer_mut(), state_rect);
-    }
     // BISE-290: the divider's words (who, the notes) select and copy
     crate::textlayer::text(Rect { y: divider_y, height: 1, ..area }.intersection(area));
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
@@ -325,7 +323,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
 /// The divider's text: the name of the agent you talk to, and on the
 /// right what it does (the old status row): back to the bottom while
 /// scrolled up, a fresh voice or flash note, else its state.
-fn divider_text(app: &App) -> (String, Vec<Span<'static>>) {
+fn divider_text(app: &App) -> (String, Vec<Vec<Span<'static>>>) {
     let name = app.sb.focus.clone();
     let d = Style::default().fg(dim());
     let state = if !app.tail_visible {
@@ -336,13 +334,13 @@ fn divider_text(app: &App) -> (String, Vec<Span<'static>>) {
         if app.unseen > 0 {
             spans.push(Span::styled(format!(" · {} new lines", app.unseen), Style::default().fg(text())));
         }
-        spans
+        vec![spans]
     } else if let Some(t) = fresh_note(&app.voice_note) {
-        vec![Span::styled(format!("{} ", theme::glyph("●")), Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]
+        vec![vec![Span::styled(format!("{} ", theme::glyph("●")), Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]]
     } else if let Some(t) = fresh_note(&app.flash) {
-        vec![Span::styled("✓ ", Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]
+        vec![vec![Span::styled("✓ ", Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]]
     } else {
-        sb::status_state(app).map_or_else(Vec::new, |l| l.spans)
+        sb::status_state(app).into_iter().map(|l| l.spans).collect()
     };
     (name, state)
 }

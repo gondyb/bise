@@ -14,7 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, wait_until, MAIN_IDLE  # noqa: E402
 
 FAKE = r"""#!/bin/sh
 echo "$*" >> "$(dirname "$0")/release-args"
@@ -53,7 +53,7 @@ def main():
     E.env["SB_RELEASE_TEST"] = "1"
     with tui_session(160, 42, "BISE_RELEASE_SCRIPT=%s" % fake, E=E) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("/release-b")
         t.wait("tag HEAD, CI builds it")
         t.typed("ise dry-run")

@@ -11,7 +11,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, tmux, wait_until  # noqa: E402
+from tui_tmux import tui_session, run, tmux, wait_until, MAIN_IDLE  # noqa: E402
 from tui_composer_tmux import composer, wait_composer  # noqa: E402
 
 N = 300
@@ -27,7 +27,7 @@ def paste(t, text):
 def main():
     with tui_session(120, 40) as t:
         t.wait("bise :*")
-        t.wait(" idle")
+        t.wait_re(MAIN_IDLE)
         t.typed("sum up ")
         paste(t, TEXT)
         # one chip, not 300 lines; the flash names it
