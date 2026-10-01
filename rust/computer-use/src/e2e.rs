@@ -249,8 +249,14 @@ impl FakeHelper {
                             continue;
                         }
                         let id = msg["id"].clone();
+                        // granting Screen Recording: macOS quits the helper
+                        // before it answers (it reopens on the same socket)
+                        if msg["op"] == "request" && msg["args"]["what"] == "screen_recording" {
+                            let _ = w.shutdown(std::net::Shutdown::Both);
+                            break;
+                        }
                         let r = match msg["op"].as_str().unwrap() {
-                            "permissions" => json!({"accessibility": true, "screen_recording": false}),
+                            "permissions" | "request" => json!({"accessibility": true, "screen_recording": false}),
                             "apps" => json!([{"target": "app:com.apple.TextEdit", "name": "TextEdit", "pid": 42, "windows": [{"title": "Untitled", "focused": true}]}]),
                             "snapshot" => json!({"target": msg["args"]["target"], "title": "Untitled", "text": "# Untitled · TextEdit\n- textbox \"\" [e1]", "refs": 1, "truncated": false}),
                             "screenshot" => json!({"data": b64::encode(&jpeg), "mime": "image/jpeg", "width": 1600, "height": 90}),
@@ -457,6 +463,24 @@ fn apps_through_the_helper() {
     // stop reaches the helper too
     cli::control(&p, "stop", &json!({"agent": "figma-bot"})).unwrap();
     wait_until("helper stop", || helper.control.lock().unwrap().contains(&json!({"stop": "figma-bot"})));
+    h.shutdown();
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn screen_recording_relaunch_is_expected() {
+    let (d, p) = paths();
+    let h = broker::start(opts(&p)).unwrap();
+    let _helper = FakeHelper::start(&p, jpeg(&d));
+    let req = |what: &str| Conn::ctl(&p).unwrap().call("request", &json!({"what": what})).unwrap();
+    // accessibility: the helper answers with its permissions
+    assert_eq!(req("accessibility").unwrap(), json!({"accessibility": true, "screen_recording": false}));
+    // screen recording: macOS quits the helper mid-request; not an error
+    assert_eq!(req("screen_recording").unwrap(), json!({"what": "screen_recording", "relaunching": true}));
+    // the reopened helper (same default socket) is picked up by the next call
+    let mut a = agent(&p, "figma-bot", &d.join("t"));
+    assert_eq!(ok(&mut a, "apps", json!({}))[0]["target"], "app:com.apple.TextEdit");
+    assert_eq!(req("nope").unwrap_err()["code"], "bad_args");
     h.shutdown();
     let _ = std::fs::remove_dir_all(&d);
 }

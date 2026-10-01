@@ -19,6 +19,9 @@ pub const USAGE: &str = "usage:
   bise computer-use repair                 write the browsers' native host manifests and the shim
   bise computer-use live-test [--json]     open a test page in a background tab, click, type, screenshot, close
   bise computer-use status                 the broker's view: browsers, helper, agents
+  bise computer-use request accessibility|screen_recording
+                                           the helper shows the macOS prompt and opens the pane
+                                           (screen_recording: relaunching:true when macOS reopens it)
   bise computer-use stop <agent>|--all     the agent lets go of the browser and apps until resume
   bise computer-use resume <agent>
   bise computer-use release <agent>        end of turn: detach, keep the tabs
@@ -91,6 +94,26 @@ pub fn main(args: &[String]) -> i32 {
                 0
             }
         },
+        "request" => {
+            let Some(what) = a.get(1).filter(|w| matches!(**w, "accessibility" | "screen_recording")) else {
+                eprintln!("{}", USAGE);
+                return 2;
+            };
+            match Conn::ctl(&paths).and_then(|mut c| c.call("request", &json!({"what": what}))) {
+                Ok(Ok(v)) => {
+                    print(&v);
+                    0
+                }
+                Ok(Err(e)) => {
+                    print(&e);
+                    1
+                }
+                Err(e) => {
+                    eprintln!("request: the broker isn't running ({})", e);
+                    1
+                }
+            }
+        }
         cmd @ ("stop" | "resume" | "release" | "drop") => {
             let all = a.get(1) == Some(&"--all");
             let agent = a.get(1).filter(|_| !all).map(|s| s.to_string());

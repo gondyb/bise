@@ -485,6 +485,24 @@ fn drop_agent(sh: &Arc<Shared>, agent: &str) {
     write_state(sh);
 }
 
+/// C5 `request` (the /computer-use rows): the helper shows the macOS
+/// prompt and opens the pane. Granting Screen Recording makes macOS quit
+/// and reopen the helper (cu-apps, b4d31c4), often while this request is
+/// still in flight: that is the expected path, not a failure. The reopened
+/// helper listens on the default socket; the next call reconnects.
+fn request_permission(sh: &Arc<Shared>, what: &str) -> Reply {
+    if !matches!(what, "accessibility" | "screen_recording") {
+        return Err(err("bad_args", "request takes what: accessibility or screen_recording"));
+    }
+    let h = helper(sh)?;
+    match forward(sh, h, None, None, "request", &json!({"what": what}), Duration::from_secs(30) + sh.opts.slack) {
+        Err(e) if what == "screen_recording" && e["code"] == "no_helper" => {
+            Ok(json!({"what": what, "relaunching": true}))
+        }
+        r => r,
+    }
+}
+
 fn ctl_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
     for line in lines {
         let Ok(line) = line else { break };
@@ -526,6 +544,7 @@ fn ctl_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
                 Ok(json!({"released": agent}))
             }
             "status" => Ok(full_status(sh)),
+            "request" => request_permission(sh, str_of(&args, "what").unwrap_or("")),
             _ => Err(err("bad_args", "unknown command")),
         };
         let out = match r {
