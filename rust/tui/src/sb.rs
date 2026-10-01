@@ -1023,8 +1023,8 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 if sb.agent(&name).is_some_and(|a| a.status == "working") {
                     sb.send(json!({"op": "interrupt", "agent": name}));
                 }
+                // main's feed says it once, from the hub (m_3904)
                 crate::computer_use::stop(&name);
-                out.push(Ev::Info(format!("stopped {name}: it lets go of Chrome and its apps until you write to it")));
             }
             Some(name) => out.push(Ev::Warn(format!("/stop: no agent named {name}"))),
             None => out.push(Ev::Warn("/stop <agent>".into())),

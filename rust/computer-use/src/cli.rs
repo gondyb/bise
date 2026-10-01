@@ -406,7 +406,7 @@ pub fn live_test(paths: &Paths, start: Arc<client::Starter>) -> Value {
         step("click", "act", json!({"target": target, "action": "click", "locator": {"role": "button", "name": "Click me"}}), &mut steps)?;
         let read = step("check", "act", json!({"target": target, "action": "read", "locator": {"text": "clicked"}}), &mut steps)?;
         if !read.to_string().contains("clicked bise") {
-            return Err("the click did not land".into());
+            return Err("the click didn't land".into());
         }
         let shot = step("screenshot", "screenshot", json!({"target": target}), &mut steps)?;
         if let Some(p) = shot["path"].as_str() {

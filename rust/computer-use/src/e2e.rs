@@ -776,7 +776,7 @@ fn live_test_against_the_fake() {
     assert_eq!(v["ok"], false);
     wait_until("drop setup", || ext.control().contains(&json!({"drop": "setup"})));
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(p.live_test_file()).unwrap()).unwrap();
-    assert_eq!(saved["error"], "the click did not land");
+    assert_eq!(saved["error"], "the click didn't land");
     for h in brokers.lock().unwrap().drain(..) {
         h.shutdown();
     }

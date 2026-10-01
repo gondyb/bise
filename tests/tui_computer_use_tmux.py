@@ -126,7 +126,7 @@ def main():
             t.keys("Enter")
             sc = t.wait("Chrome isn't open. open it, i'll wait")
             assert "computer use · agents can drive Chrome" in sc, sc
-            assert "? chrome" in sc and "· chrome extension    after chrome" in sc and "· live test           last" in sc, sc
+            assert "? Chrome" in sc and "· Chrome extension    after Chrome" in sc and "· live test           last" in sc, sc
             assert "⏎ open Chrome   ↑↓ step   esc later" in sc, sc
             assert "for apps" not in sc and "accessibility" not in sc, sc
             assert "in yolo, agents act without asking, purchases included. ⇧⇥ for auto." in sc, sc
@@ -137,7 +137,7 @@ def main():
             # Chrome open: the extension's steps
             check([row("browser", "done", "Chrome 154"), row("extension", "waits", "add bise to Chrome", "add_extension"), row("live_test", "not_yet")] + NO_HELPER)
             sc = t.wait("3  i'll see it here, no key needed")
-            assert "✓ chrome              Chrome 154" in sc and "? chrome extension    add bise to Chrome" in sc, sc
+            assert "✓ Chrome              Chrome 154" in sc and "? Chrome extension    add bise to Chrome" in sc, sc
             assert "1  ⏎ opens chrome://extensions · turn on Developer mode, top right" in sc, sc
             assert "⏎ open chrome://extensions" in sc, sc
             shot(t, "extension-steps", sc)
@@ -150,14 +150,18 @@ def main():
             check([row("browser", "done", "Chrome 154"), row("extension", "done", "v0.1.0"), row("live_test", "waits", "last", "run_live_test")] + NO_HELPER)
             sc = t.wait("∿ live test           opening a tab in the background…")
             called("live-test --json")
+            # the extension is in: the step-2 flash is gone, the key bar back
+            sc = t.wait("↑↓ step   esc later")
+            assert "path copied" not in sc, sc
             shot(t, "live-test-running", sc)
             check([row("browser", "done", "Chrome 154"), row("extension", "done", "v0.1.0"), row("live_test", "done", "ready")] + NO_HELPER)
-            sc = t.wait("✓ ready. ask any agent to use Chrome or an app. /computer-use checks it again any time", timeout=15)
+            sc = t.wait("✓ Chrome is ready. ask any agent to use it.", timeout=15)
             assert "✓ live test           opened a tab, clicked a button. all set" in sc, sc
+            assert "checks it again" not in sc, sc
             shot(t, "ready", sc)
-            # the live test failed: try again
+            # the live test failed: try again (contractions)
             check([row("browser", "done", "Chrome 154"), row("extension", "done", "v0.1.0"), row("live_test", "failed", "the click did not land", "run_live_test")] + NO_HELPER)
-            sc = t.wait("✗ live test           the click did not land")
+            sc = t.wait("✗ live test           the click didn't land")
             assert "⏎ try again" in sc, sc
             shot(t, "live-test-failed", sc)
             # the helper installed: the apps rows after the live test
@@ -182,6 +186,7 @@ def main():
             shot(t, "apps-reopening", sc)
             check(web + [row("accessibility", "done"), row("screen_recording", "done")])
             sc = t.wait("✓ screen recording    bise can see app windows")
+            sc = t.wait("✓ ready. ask any agent to use Chrome or an app.")
             shot(t, "apps-done", sc)
             # an agent drives: its line, x stops them all
             state({"main": {"driving": "Chrome", "where": "amazon.fr", "since_ms": 1, "paused": False, "stopped": False}})
@@ -216,6 +221,8 @@ def main():
             state({"main": {"driving": None, "where": None, "paused": False, "stopped": True}})
             sc = t.wait("↖ main stopped driving Chrome · you stopped it", timeout=15)
             assert " · ↖ Chrome" not in sc, sc
+            # one line only (m_3904): no echo of /stop, no "no turn to interrupt"
+            assert "stopped main:" not in sc and "no turn in progress" not in sc, sc
             shot(t, "stopped-feed-line", sc)
     finally:
         shutil.rmtree(d, ignore_errors=True)

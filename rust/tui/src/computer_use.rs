@@ -368,11 +368,19 @@ fn tilde(p: &str) -> String {
     }
 }
 
+/// A failure line with contractions (m_3904): `did not` → `didn't`.
+fn contract(t: &str) -> String {
+    [("did not", "didn't"), ("does not", "doesn't"), ("is not", "isn't"), ("cannot", "can't"), ("could not", "couldn't")]
+        .iter()
+        .fold(t.to_string(), |acc, (a, b)| acc.replace(a, b))
+}
+
 /// The rows from a setup-check and what runs now.
 pub(crate) fn rows(check: &Value, busy: &Busy) -> Vec<Row> {
     let browser = str_at(check, "browser");
     let browser = if browser.is_empty() { "Chrome" } else { browser };
-    let low = browser.to_lowercase();
+    // brand names keep their case in the label column (m_3904)
+    let low = browser.to_string();
     let min = check.get("min_major").and_then(Value::as_u64).unwrap_or(116);
     let mut out: Vec<Row> = Vec::new();
     let Some(list) = check.get("rows").and_then(Value::as_array) else { return out };
@@ -424,7 +432,7 @@ pub(crate) fn rows(check: &Value, busy: &Busy) -> Vec<Row> {
                 let (d, a) = match st {
                     St::Checking => (format!("opening a tab in the background{}", theme::ellipsis()), None),
                     St::Done => ("opened a tab, clicked a button. all set".to_string(), None),
-                    St::Failed => (given, o("try again")),
+                    St::Failed => (contract(&given), o("try again")),
                     St::Waits => ("opens a tab in the background and clicks".to_string(), o("run it")),
                     St::NotYet => ("last".to_string(), None),
                 };
@@ -583,12 +591,15 @@ pub(crate) fn lines(rows: &[Row], sel: usize, a: &Around, w: usize) -> Vec<Line<
         }
     }
     if ready(rows) {
+        // only what's true (m_3904): apps too once their rows are ✓
+        let apps: Vec<&Row> = rows.iter().filter(|r| r.apps).collect();
+        let said = if !apps.is_empty() && apps.iter().all(|r| r.st == St::Done) {
+            " ready. ask any agent to use Chrome or an app.".to_string()
+        } else {
+            format!(" {} is ready. ask any agent to use it.", rows.first().map_or("Chrome", |r| r.label.as_str()))
+        };
         v.push(Line::raw(""));
-        v.push(Line::from(vec![
-            Span::raw(" "),
-            s(theme::done_glyph(), theme::accent()),
-            s(cut(" ready. ask any agent to use Chrome or an app. /computer-use checks it again any time", w.saturating_sub(2)), theme::text()),
-        ]));
+        v.push(Line::from(vec![Span::raw(" "), s(theme::done_glyph(), theme::accent()), s(cut(&said, w.saturating_sub(2)), theme::text())]));
     }
     if let Some(e) = &a.said {
         v.push(Line::raw(""));
@@ -741,6 +752,10 @@ fn refresh(sc: &mut Screen) -> (Value, Vec<Row>) {
     if !sc.auto_ran && now.iter().any(|r| r.id == "live_test" && r.st == St::Waits) {
         sc.auto_ran = true;
         run_live_test(sc);
+    }
+    // the extension is in: the step-2 flash has done its job (m_3904)
+    if now.iter().any(|r| r.id == "extension" && r.st == St::Done) {
+        sc.flash = None;
     }
     sc.last = now.clone();
     (check, now)

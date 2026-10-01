@@ -865,8 +865,8 @@ fn computer_actions_are_rows_of_their_own() {
         Ev::Tool(t),
         sub("computer.snapshot", true, r##"{"refs":12,"target":"tab:7","text":"# Anker cable · amazon.fr"##),
         sub("computer.act", true, r##"{"summary":"clicked \"Add to cart\" · amazon.fr","changed":"- button \"Added\" [e4]","ok":true"##),
-        sub("computer.act", true, r##"{"summary":"typed in the search box · figma","changed":"","ok":true,"title":"Figma"}"##),
-        sub("computer.act", true, r##"{"error":{"summary":"couldn't click \"Add to cart\": a popup covers it","candidates":[],"code":"not_found""##),
+        sub("computer.act", true, r##"{"summary":"typed in the search box · Figma","changed":"","ok":true,"title":"Figma"}"##),
+        sub("computer.act", true, r##"{"error":{"summary":"couldn't click \"Add to cart\": a popup covers it · amazon.fr","candidates":[],"code":"not_found""##),
         sub("computer.act", true, r##"{"error":{"summary":"paused · you took the wheel in Mail","code":"paused","message":"m"}}"##),
     ];
     let rows: Vec<String> = feed_text(&events, 90).iter().map(|r| r.trim_end().to_string()).filter(|r| !r.is_empty()).collect();
@@ -875,8 +875,8 @@ fn computer_actions_are_rows_of_their_own() {
     }
     let has = |w: &str| assert!(rows.iter().any(|r| r == w), "{w:?} in\n{}", rows.join("\n"));
     has(" ↖ clicked \"Add to cart\" · amazon.fr");
-    has(" ↖ typed in the search box · figma");
-    has(" ✗ couldn't click \"Add to cart\": a popup covers it");
+    has(" ↖ typed in the search box · Figma");
+    has(" ✗ couldn't click \"Add to cart\": a popup covers it · amazon.fr");
     has("   paused · you took the wheel in Mail");
     assert!(!rows.iter().any(|r| r.contains("computer.act")), "{}", rows.join("\n"));
 }

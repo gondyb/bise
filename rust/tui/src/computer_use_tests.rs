@@ -40,8 +40,8 @@ fn the_extension_step_shows_the_load_unpacked_steps() {
         t,
         " computer use · agents can drive Chrome
 
- ✓ chrome              Chrome 154
- ? chrome extension    add bise to Chrome
+ ✓ Chrome              Chrome 154
+ ? Chrome extension    add bise to Chrome
                        1  ⏎ opens chrome://extensions · turn on Developer mode,…
                        2  Load unpacked · cmd+shift+g, cmd+v (i copied the fold…
                        3  i'll see it here, no key needed
@@ -63,18 +63,18 @@ fn the_browser_rows_say_what_to_do() {
     };
     assert_eq!(
         one(row("browser", "waits", "Chrome isn't open", Some("open_browser"))),
-        (St::Waits, "Chrome isn't open. open it, i'll wait".into(), Some("open Chrome".into()), "after chrome".into())
+        (St::Waits, "Chrome isn't open. open it, i'll wait".into(), Some("open Chrome".into()), "after Chrome".into())
     );
     assert_eq!(
         one(row("browser", "failed", "Chrome 112", Some("update_browser"))),
-        (St::Failed, "Chrome 112 is too old. bise needs 116".into(), Some("open chrome://settings/help".into()), "after chrome".into())
+        (St::Failed, "Chrome 112 is too old. bise needs 116".into(), Some("open chrome://settings/help".into()), "after Chrome".into())
     );
     assert_eq!(one(row("browser", "failed", "Chrome isn't installed", Some("install_browser"))).2, Some("open its download page".into()));
     // Edge: the rows name it
     let mut c = check(vec![row("browser", "done", "Edge 140", None), row("extension", "failed", "", Some("repair"))]);
     c["browser"] = json!("Edge");
     let r = rows(&c, &Busy::default());
-    assert_eq!((r[0].label.as_str(), r[1].label.as_str()), ("edge", "edge extension"));
+    assert_eq!((r[0].label.as_str(), r[1].label.as_str()), ("Edge", "Edge extension"));
     assert_eq!((r[1].detail.as_str(), r[1].action.as_deref()), ("the extension can't reach bise", Some("repair it")));
 }
 
@@ -88,11 +88,13 @@ fn the_live_test_runs_then_says_ready() {
     assert!(ready(&done));
     let t = text(&lines(&done, 2, &Around { mode: "auto".into(), ..around() }, 100));
     assert!(t.contains(" ✓ live test           opened a tab, clicked a button. all set"), "{t}");
-    assert!(t.contains(" ✓ ready. ask any agent to use Chrome or an app. /computer-use checks it again any time"), "{t}");
+    // Chrome only: only what's true (m_3904)
+    assert!(t.contains(" ✓ Chrome is ready. ask any agent to use it."), "{t}");
     assert!(t.contains(" in auto, buying, sending and logging in ask you first."), "{t}");
     assert!(t.ends_with(" ↑↓ step   esc later"), "{t}");
     let failed = rows(&base(row("live_test", "failed", "the click did not land", Some("run_live_test"))), &Busy::default());
     assert_eq!((failed[2].st, failed[2].action.as_deref()), (St::Failed, Some("try again")));
+    assert_eq!(failed[2].detail, "the click didn't land", "contractions (m_3904)");
     assert!(!ready(&failed));
 }
 
@@ -113,6 +115,12 @@ fn the_apps_rows_come_after_the_live_test() {
     assert!(t.starts_with(" computer use · agents can drive your apps and Chrome"), "{t}");
     assert!(t.contains("   for apps\n ✓ accessibility       bise can click and type in apps\n ? screen recording    optional · for screenshots of apps\n                       turn on bise Computer Use in the list. macOS reopens it, i'll wait"), "{t}");
     assert!(t.ends_with(" ⏎ open System Settings   ↑↓ step   esc later"), "{t}");
+    // an apps row not done yet: the ready line names Chrome only
+    assert!(t.contains(" ✓ Chrome is ready. ask any agent to use it."), "{t}");
+    let mut all = c.clone();
+    all["rows"][4] = row("screen_recording", "done", "", None);
+    let t = text(&lines(&rows(&all, &Busy::default()), 4, &Around { apps: true, ..around() }, 90));
+    assert!(t.contains(" ✓ ready. ask any agent to use Chrome or an app.\n"), "{t}");
     let reopening = rows(&c, &Busy { reopening: Some(Instant::now()), ..Busy::default() });
     assert_eq!((reopening[4].st, reopening[4].detail.as_str()), (St::Checking, "bise Computer Use reopens…"));
 }
@@ -178,5 +186,5 @@ fn an_action_row_reads_its_summary() {
     assert_eq!(sub_row("computer.act", r##"{"summary":"clicked \"Add to c"##), None);
     assert_eq!(sub_row("computer.snapshot", r##"{"refs":3,"target":"tab:1","text":"# x"##), None);
     assert_eq!(sub_row("github.search", r##"{"summary":"x"}"##), None);
-    assert_eq!(sub_row("computer.act", r##"{"summary":"typed \u00e9t\u00e9 · figma","ok":true}"##).map(|x| x.1), Some("typed été · figma".into()));
+    assert_eq!(sub_row("computer.act", r##"{"summary":"typed \u00e9t\u00e9 · Figma","ok":true}"##).map(|x| x.1), Some("typed été · Figma".into()));
 }
