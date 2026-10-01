@@ -34,6 +34,7 @@ pub mod image;
 pub mod mcp;
 pub mod nm;
 pub mod paths;
+pub mod policy;
 pub mod proto;
 pub mod refuse;
 pub mod state;

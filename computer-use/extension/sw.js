@@ -9,7 +9,7 @@
 
 import { walk, render, pick, diff, describeLocator, TEXT_ROLES } from "./lib/ax.js";
 import { parseKeys, chordEvents, keyLabel } from "./lib/keys.js";
-import { summary, failure, withPlace, hostOf, refusal, label } from "./lib/text.js";
+import { summary, failure, withPlace, hostOf, refused, label } from "./lib/text.js";
 import { jpegSize } from "./lib/jpeg.js";
 
 const HOST = "dev.bise.computer_use";
@@ -144,7 +144,9 @@ async function onHost(m) {
     const result = await run(m.agent, m.op, m.args || {});
     post({ id: m.id, ok: true, result });
   } catch (e) {
-    post({ id: m.id, ok: false, error: toError(e) });
+    // stopped meanwhile (the bar's Cancel cut the debugger mid-call): that is what happened
+    const stopped = m.op !== "tabs" && agents.get(m.agent)?.stopped;
+    post({ id: m.id, ok: false, error: toError(stopped ? new CuError("stopped", ...STOPPED) : e) });
   }
 }
 
@@ -217,6 +219,12 @@ async function groupTab(a, tab) {
   await chrome.tabGroups.update(a.groupId, { title: GROUP_PREFIX + a.name, color: "pink", collapsed: false });
 }
 
+/** A refused page (design §5.1): `refused`, a message that says why, a summary that names the page. */
+function refuseUrl(action, url, lead = "") {
+  const r = refused(url);
+  if (r) fail("refused", `${lead}${r.why}; ask the user to do this part`, { summary: failure(action, r.place, "refused", r.short) });
+}
+
 function normalUrl(raw) {
   const url = String(raw ?? "").trim();
   if (!url) fail("bad_args", "a url is needed");
@@ -225,8 +233,7 @@ function normalUrl(raw) {
 
 async function open(agent, args) {
   const url = normalUrl(args.url);
-  const why = refusal(url);
-  if (why) fail("refused", `${why}; ask the user to do this part`, { summary: failure("open", hostOf(url), "refused") });
+  refuseUrl("open", url);
   const a = agentOf(agent);
   if (tabsOf(agent).length >= MAX_TABS) fail("refused", "you already have 5 tabs open; close one (act close) first");
   const windowId = await windowFor(a);
@@ -287,15 +294,20 @@ function serial(t, fn) {
 
 const cdp = (tabId, method, params = {}) => chrome.debugger.sendCommand({ tabId }, method, params);
 
+// The stop message (C1 `stopped`), the same for every path that meets it.
+const STOPPED = ["the user stopped you in the browser; ask before you start again", { summary: "you stopped it" }];
+
 async function attach(tabId, t) {
   if (t.attached) return;
+  // Stopped (the bar's Cancel, the group closed, bise): never attach
+  // again until bise says resume (the user's next message).
+  if (agents.get(t.agent)?.stopped) fail("stopped", ...STOPPED);
   const tab = await chrome.tabs.get(tabId);
-  const why = refusal(tab.url || tab.pendingUrl || "");
-  if (why) fail("refused", `${why}; ask the user to do this part`);
+  for (const u of [tab.pendingUrl, tab.url]) if (u) refuseUrl("drive", u, "this tab shows a page bise can't drive: ");
   try {
     await chrome.debugger.attach({ tabId }, "1.3");
   } catch (e) {
-    if (!/already attached/i.test(e.message)) fail("refused", `chrome won't let bise drive this tab: ${e.message}`);
+    if (!/already attached/i.test(e.message)) fail(...attachRefusal(e.message));
   }
   t.attached = true;
   // Without it the first mouse event in a hidden tab waits 5 s for a frame (spike, design §3).
@@ -326,12 +338,62 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
   }
 });
 
-chrome.debugger.onDetach.addListener((src, reason) => {
+/**
+ * chrome.debugger.attach failed: [code, message, extra] for fail(). The
+ * pages the extension can't attach to (chrome://, the stores, other
+ * extensions' pages, a page holding another extension's frame) say so in
+ * words; a policy that blocks the debugger names the organisation.
+ */
+function attachRefusal(raw) {
+  const msg = String(raw || "");
+  if (/polic|blocked by (the )?administrator|DeveloperTools/i.test(msg)) {
+    return ["refused", `your organisation's browser policy blocks extensions from driving tabs in this profile (${msg}); ask the user to use a profile without that policy`, { summary: "couldn't drive this tab: blocked by your organisation" }];
+  }
+  if (/gallery cannot be scripted|webstore/i.test(msg)) {
+    return ["refused", "this tab shows the browser's extension store, which extensions can't drive; ask the user to do this part", { summary: "couldn't drive this tab: the browser doesn't allow it" }];
+  }
+  if (/chrome-extension:\/\/|different extension/i.test(msg)) {
+    return ["refused", `this page holds another extension's frame, and the browser doesn't let bise drive it (${msg}); ask the user to do this part`, { summary: "couldn't drive this tab: another extension is in it" }];
+  }
+  return ["refused", `the browser doesn't let extensions drive this page (${msg}); ask the user to do this part`, { summary: "couldn't drive this tab: the browser doesn't allow it" }];
+}
+
+/** Chrome let go of the debugger: the bar's Cancel stops the agent (C6 `cancel_bar`). */
+function detached(src, reason) {
   const t = tabs.get(src.tabId);
   if (!t) return;
   t.attached = false;
+  note({ detached: src.tabId, reason });
   if (reason === "canceled_by_user") stopAgent(t.agent, "cancel_bar");
-});
+}
+chrome.debugger.onDetach.addListener(detached);
+
+const LOST = /Detached while handling|Debugger is not attached|target closed|No tab with id|tab was closed|Cannot access|cannot be scripted|Cannot attach/i;
+
+/**
+ * An op on one tab failed with a raw Chrome error: what really happened,
+ * as a C1 error, or null (toError's mapping stands). Chrome lets go of
+ * the debugger when the user presses Cancel (the agent is stopped), when
+ * the tab goes to a page extensions can't drive (a link to the Web
+ * Store), or when the tab closes.
+ */
+async function lostTab(agent, tabId, e) {
+  if (e instanceof CuError) return null;
+  const msg = String(e?.message || e);
+  if (!LOST.test(msg)) return null;
+  if (agents.get(agent)?.stopped) return new CuError("stopped", ...STOPPED);
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return null; // closed: not_found
+  }
+  for (const u of [tab.pendingUrl, tab.url]) {
+    const r = u && refused(u);
+    if (r) return new CuError("refused", `the tab went to ${r.place}: ${r.why}; ask the user to do this part`, { summary: failure("drive", r.place, "refused", r.short) });
+  }
+  return new CuError("timeout", `the browser let go of this tab during the action (${msg}); take a snapshot and try again`, { reason: "the browser let go of the tab" });
+}
 
 async function evaluate(tabId, expression) {
   const r = await cdp(tabId, "Runtime.evaluate", { expression, returnByValue: true });
@@ -393,13 +455,38 @@ async function takeSnapshot(tabId, t, maxNodes = Infinity) {
   return { entries, text: shown.text, refs: shown.refs, truncated: shown.truncated, lines: all.lines, head: all.text.split("\n")[0], url: tab.url, title: tab.title, host, navs };
 }
 
+/** fn on the tab, one at a time; a raw Chrome error says what happened (lostTab). */
+function onTab(agent, tabId, t, fn) {
+  return serial(t, async () => {
+    try {
+      return await fn();
+    } catch (e) {
+      throw (await lostTab(agent, tabId, e)) || e;
+    }
+  });
+}
+
+// What a tab showing a PDF says: Chrome's viewer is another extension's
+// frame, its text is out of reach (an empty snapshot would read as a blank page).
+const PDF_NOTE = "- note: this tab shows a PDF in the browser's viewer; bise can't read inside it. Get the file from its URL with your own tools, or ask the user";
+
+async function isPdf(tabId) {
+  try {
+    return (await evaluate(tabId, "document.contentType")) === "application/pdf";
+  } catch {
+    return false;
+  }
+}
+
 async function snapshotOp(agent, args) {
   const { tabId, t } = await owned(agent, args.target);
-  return serial(t, async () => {
+  return onTab(agent, tabId, t, async () => {
     await attach(tabId, t);
     const max = Number.isFinite(args.max_nodes) && args.max_nodes > 0 ? Math.floor(args.max_nodes) : 400;
     const s = await takeSnapshot(tabId, t, max);
-    return { target: args.target, url: s.url, title: s.title, text: s.text, refs: s.refs, truncated: s.truncated };
+    const text = (await isPdf(tabId)) ? `${s.text}
+${PDF_NOTE}` : s.text;
+    return { target: args.target, url: s.url, title: s.title, text, refs: s.refs, truncated: s.truncated };
   });
 }
 
@@ -677,7 +764,8 @@ async function act(agent, args) {
       await attach(tabId, t);
       const out = await doAct(tabId, t, agent, action, args, (e) => (el = e));
       return out;
-    } catch (e) {
+    } catch (raw) {
+      const e = (await lostTab(agent, tabId, raw)) || raw;
       if (e instanceof CuError && !e.summary) e.summary = failure(action, targetLabel(args, el), e.code, e.reason);
       if (!(e instanceof CuError)) {
         const err = toError(e);
@@ -811,8 +899,7 @@ async function doAct(tabId, t, agent, action, args, seen) {
     }
     case "goto": {
       const url = normalUrl(args.url);
-      const why = refusal(url);
-      if (why) fail("refused", `${why}; ask the user to do this part`, { summary: failure("goto", hostOf(url), "refused") });
+      refuseUrl("goto", url);
       before = await takeSnapshot(tabId, t);
       const r = await cdp(tabId, "Page.navigate", { url });
       if (r.errorText) fail("bad_args", `couldn't load ${url}: ${r.errorText}`, { summary: failure("goto", hostOf(url), "bad_args", r.errorText) });
@@ -860,6 +947,7 @@ async function doAct(tabId, t, agent, action, args, seen) {
         text = await evaluate(tabId, "document.body ? document.body.innerText : ''");
       }
       text = String(text ?? "");
+      if (!hasTarget && !text.trim() && (await isPdf(tabId))) text = PDF_NOTE.slice(2);
       if (text.length > 4000) text = text.slice(0, 4000) + "…";
       const tab = await chrome.tabs.get(tabId);
       return { ok: true, url: tab.url, title: tab.title, changed: text, summary: summary("read", el, args, hostOf(tab.url)) };
@@ -882,7 +970,7 @@ async function doAct(tabId, t, agent, action, args, seen) {
 
 async function screenshotOp(agent, args) {
   const { tabId, t } = await owned(agent, args.target);
-  return serial(t, async () => {
+  return onTab(agent, tabId, t, async () => {
     await attach(tabId, t);
     const maxW = Math.min(Math.max(Number.isFinite(args.max_width) ? args.max_width : 1280, 64), 4096);
     const { cssVisualViewport: vv } = await cdp(tabId, "Page.getLayoutMetrics");
@@ -909,8 +997,10 @@ async function stopAgent(name, reason) {
   const a = agentOf(name);
   const was = a.stopped;
   a.stopped = true;
-  for (const id of tabsOf(name)) await detach(id, tabs.get(id));
+  // bise hears it first: its running call fails as `stopped` at once,
+  // not with whatever the cut debugger made of it
   if (reason && !was) post({ event: "stopped", agent: name, reason });
+  for (const id of tabsOf(name)) await detach(id, tabs.get(id));
 }
 
 function resumeAgent(name) {
@@ -982,7 +1072,17 @@ chrome.tabGroups.onRemoved.addListener((group) => {
 chrome.runtime.onStartup.addListener(() => {});
 chrome.runtime.onInstalled.addListener(() => {});
 
+// MV3 may stop this worker (the open native port keeps it alive, but an
+// update, memory pressure or a crash still stop it), and bise can't wake
+// it: the port is ours to open. An alarm every 30 s (the shortest Chrome
+// allows) starts it again; starting runs connect() below. The broker
+// waits for that hello instead of saying no_browser (WAKE_WAIT).
+chrome.alarms.create("bise-wake", { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(() => {
+  if (!port && !timer) connect();
+});
+
 // For the tests (test/e2e.mjs reads it through CDP on this worker).
-globalThis.bise = { agents, tabs, log, connected: () => !!port };
+globalThis.bise = { agents, tabs, log, connected: () => !!port, detached };
 
 connect();

@@ -90,13 +90,28 @@ const REFUSED_HOSTS = ["chromewebstore.google.com", "microsoftedge.microsoft.com
 
 /** A reason when the URL is refused, else null. */
 export function refusal(url) {
+  return refused(url)?.why ?? null;
+}
+
+/**
+ * A refused URL: { why (the C1 message's start), short (the summary's
+ * reason), place (`chrome://settings`, `chromewebstore.google.com`) },
+ * else null.
+ */
+export function refused(url) {
   let u;
   try { u = new URL(url); } catch { return null; }
-  if (REFUSED_SCHEMES.includes(u.protocol)) return `bise doesn't drive ${u.protocol}// pages`;
-  if (u.protocol === "about:" && u.href !== "about:blank") return "bise doesn't drive about: pages";
+  // `chrome://settings/x` → "chrome://settings"
+  const page = () => `${u.protocol}//${u.host || u.pathname.split("/")[0]}`;
+  if (REFUSED_SCHEMES.includes(u.protocol)) {
+    return { why: `the browser doesn't let extensions drive ${u.protocol}// pages`, short: "the browser doesn't allow it", place: page() };
+  }
+  if (u.protocol === "about:" && u.href !== "about:blank") return { why: "the browser doesn't let extensions drive about: pages", short: "the browser doesn't allow it", place: u.href };
   const host = u.hostname;
   if (host === "chrome.google.com" && !u.pathname.startsWith("/webstore")) return null;
-  if (REFUSED_HOSTS.includes(host) && (host !== "microsoftedge.microsoft.com" || u.pathname.startsWith("/addons"))) return "bise doesn't drive extension stores";
-  if (host === "accounts.google.com" && /\/challenge\/(pwd|password)/.test(u.pathname)) return "the user types Google passwords themselves";
+  if (REFUSED_HOSTS.includes(host) && (host !== "microsoftedge.microsoft.com" || u.pathname.startsWith("/addons"))) {
+    return { why: "the browser doesn't let extensions drive its extension store", short: "the browser doesn't allow it", place: host };
+  }
+  if (host === "accounts.google.com" && /\/challenge\/(pwd|password)/.test(u.pathname)) return { why: "the user types Google passwords themselves", short: "the user signs in", place: host };
   return null;
 }

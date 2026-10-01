@@ -90,6 +90,23 @@ struct BrowserLink {
     browser: Option<Browser>,
     version: String,
     extension_version: String,
+    /// the browser's process (its relay's parent, in the hello): when the
+    /// link ends and it still runs, only the extension's service worker
+    /// stopped (MV3), and it comes back within 30 s
+    pid: Option<i32>,
+}
+
+/// After an extension's service worker stops, calls wait this long for it
+/// to say hello again (its 30 s alarm wakes it) instead of no_browser.
+const WAKE_WAIT: Duration = Duration::from_secs(45);
+
+/// A quitting browser closes its relays first and exits a moment later:
+/// how long a closed link waits to tell a quit from a stopped worker.
+const QUIT_GRACE: Duration = Duration::from_secs(2);
+
+fn alive(pid: i32) -> bool {
+    // SAFETY: kill(pid, 0) only checks that the process exists
+    unsafe { libc::kill(pid, 0) == 0 }
 }
 
 struct HelperLink {
@@ -125,6 +142,12 @@ struct Inner {
     conns: usize,
     quiet_since: Option<Instant>,
     streams: Vec<UnixStream>,
+    /// a browser whose extension's worker stopped: since when, its pid
+    /// (see [`WAKE_WAIT`]); None again at the next hello
+    asleep: Option<(Instant, i32)>,
+    /// the last browser that said hello: once one did, a closed one is
+    /// no_browser ("Chrome is closed"), never not_set_up
+    last_browser: Option<&'static str>,
 }
 
 struct Shared {
@@ -321,7 +344,7 @@ fn browser_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
         let mut inner = lock(&sh.inner);
         inner.next += 1;
         let id = inner.next;
-        inner.browsers.push(BrowserLink { id, w, browser: None, version: String::new(), extension_version: String::new() });
+        inner.browsers.push(BrowserLink { id, w, browser: None, version: String::new(), extension_version: String::new(), pid: None });
         id
     };
     for line in lines {
@@ -335,12 +358,15 @@ fn browser_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
                     l.browser = Some(b);
                     l.version = str_of(h, "version").unwrap_or("").to_string();
                     l.extension_version = str_of(h, "extension_version").unwrap_or("").to_string();
+                    l.pid = h.get("pid").and_then(Value::as_i64).and_then(|p| i32::try_from(p).ok()).filter(|p| *p > 1);
                 }
                 // the most recent browser comes first for `open`
                 if let Some(i) = inner.browsers.iter().position(|l| l.id == id) {
                     let l = inner.browsers.remove(i);
                     inner.browsers.insert(0, l);
                 }
+                inner.asleep = None;
+                inner.last_browser = Some(b.name);
             }
             log(&format!("browser {} connected", b.name));
             write_state(sh);
@@ -348,16 +374,44 @@ fn browser_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
         }
         incoming(sh, id, &msg);
     }
-    let name = {
+    let (name, pid) = {
         let mut inner = lock(&sh.inner);
-        let name = inner.browsers.iter().find(|l| l.id == id).and_then(|l| l.browser).map(|b| b.name).unwrap_or("the browser");
+        let link = inner.browsers.iter().find(|l| l.id == id);
+        let name = link.and_then(|l| l.browser).map(|b| b.name).unwrap_or("the browser");
+        let pid = link.filter(|l| l.browser.is_some()).and_then(|l| l.pid).filter(|p| alive(*p));
+        // until we know: calls wait for its hello (live_links)
+        if let Some(p) = pid {
+            inner.asleep = Some((Instant::now(), p));
+        }
         inner.browsers.retain(|l| l.id != id);
         inner.owners.retain(|_, l| *l != id);
-        name
+        (name, pid)
     };
-    fail_link(sh, id, err("no_browser", format!("{} closed during the action; ask the user to open it again", name)));
-    log(&format!("browser {} gone", name));
     write_state(sh);
+    let asleep = pid.is_some_and(|p| {
+        let t0 = Instant::now();
+        while t0.elapsed() < QUIT_GRACE {
+            if !alive(p) {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        true
+    });
+    if asleep {
+        // only the extension's worker stopped: the browser runs on, the next call waits for it
+        fail_link(sh, id, err("timeout", format!("the bise extension in {} restarted during the action; try again", name)));
+        log(&format!("browser {} asleep (its extension's service worker stopped)", name));
+    } else {
+        {
+            let mut inner = lock(&sh.inner);
+            if inner.asleep.is_some_and(|(_, p)| Some(p) == pid) {
+                inner.asleep = None;
+            }
+        }
+        fail_link(sh, id, err("no_browser", format!("{} closed during the action; ask the user to open it again", name)));
+        log(&format!("browser {} gone", name));
+    }
 }
 
 /// A reply or an event from a browser or the helper.
@@ -798,6 +852,9 @@ fn pick_browser(sh: &Arc<Shared>, agent: &str, wanted: Option<&str>) -> Result<(
 
 fn no_browser(sh: &Arc<Shared>) -> Value {
     let p = &sh.opts.paths;
+    if let Some(name) = lock(&sh.inner).last_browser {
+        return err("no_browser", format!("{} is closed (it was connected); ask the user to open it again", name));
+    }
     let set_up = p.shim().exists() && browsers::ALL.iter().any(|b| browsers::manifest_state(b, p) == "ok");
     if set_up {
         err("no_browser", "no browser with the bise extension is open; ask the user to open Chrome (/computer-use checks it)")
@@ -847,8 +904,13 @@ fn owner(sh: &Arc<Shared>, agent: &str, target: &str) -> Result<(u64, Browser), 
 /// 3 s for them: the relays reconnect a moment after a restart.
 fn live_links(sh: &Arc<Shared>) -> Vec<u64> {
     loop {
-        let links: Vec<u64> = lock(&sh.inner).browsers.iter().filter(|l| l.browser.is_some()).map(|l| l.id).collect();
-        if !links.is_empty() || sh.started.elapsed() > Duration::from_secs(3) || sh.stop.load(Ordering::SeqCst) {
+        let (links, waking) = {
+            let inner = lock(&sh.inner);
+            let links: Vec<u64> = inner.browsers.iter().filter(|l| l.browser.is_some()).map(|l| l.id).collect();
+            // a stopped worker comes back; a browser that quit since does not
+            (links, inner.asleep.is_some_and(|(t, p)| t.elapsed() < WAKE_WAIT && alive(p)))
+        };
+        if !links.is_empty() || (sh.started.elapsed() > Duration::from_secs(3) && !waking) || sh.stop.load(Ordering::SeqCst) {
             return links;
         }
         std::thread::sleep(Duration::from_millis(50));

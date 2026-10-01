@@ -16,7 +16,8 @@
     "tabGroups",
     "debugger",
     "nativeMessaging",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"

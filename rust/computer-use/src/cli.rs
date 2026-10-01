@@ -359,8 +359,16 @@ fn browser_rows(paths: &Paths) -> Value {
     } else {
         row("browser", "done", major.map(|m| format!("{} {}", name, m)).unwrap_or(name.clone()), None)
     };
+    // a work profile: the organisation's policies can block it; say which
+    // instead of waiting for an extension that can never connect
+    let blocked = browsers::ALL
+        .iter()
+        .find(|b| b.name == name)
+        .and_then(|b| crate::policy::blocks(&crate::policy::read(b, &crate::policy::managed_dirs()), &name));
     let ext_row = if browser_row["state"] != "done" {
         row("extension", "not_yet", String::new(), None)
+    } else if let (Some(why), false) = (&blocked, pick["connected"] == true) {
+        row("extension", "failed", why.clone(), None)
     } else if pick["connected"] == true {
         row("extension", "done", format!("v{}", pick["extension_version"].as_str().unwrap_or("?")), None)
     } else if pick["manifest"] != "ok" {

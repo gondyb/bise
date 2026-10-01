@@ -63,6 +63,9 @@ fn dial(paths: &Paths, start: &Starter, hello: Option<&Value>) -> std::io::Resul
 
 /// Relay until the browser closes stdin. `parent_exe`: the browser's executable.
 pub fn run(paths: &Paths, start: Arc<Starter>, input: impl Read + Send + 'static, output: impl Write + Send + 'static, parent_exe: Option<String>) -> i32 {
+    // the browser that started us (none in the in-process tests)
+    // SAFETY: getppid has no preconditions
+    let ppid = parent_exe.as_ref().map(|_| unsafe { libc::getppid() });
     let link = Arc::new(Link { sock: Mutex::new(None), hello: Mutex::new(None) });
     let out = Arc::new(Mutex::new(output));
     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -99,7 +102,11 @@ pub fn run(paths: &Paths, start: Arc<Starter>, input: impl Read + Send + 'static
     let mut input = input;
     while let Ok(Some(msg)) = nm::read(&mut input) {
         let msg = if msg.get("hello").is_some() {
-            let m = refine_hello(msg, parent_exe.as_deref());
+            let mut m = refine_hello(msg, parent_exe.as_deref());
+            // the broker tells a quit browser from a stopped service worker by it
+            if let (Some(pid), Some(h)) = (ppid, m.get_mut("hello")) {
+                h["pid"] = json!(pid);
+            }
             *link.hello.lock().unwrap_or_else(|e| e.into_inner()) = Some(m.clone());
             m
         } else {
