@@ -705,7 +705,7 @@ fn the_ready_to_merge_item() {
     assert_eq!(s.title, "sad-404: #409 is ready to merge");
     assert_eq!(s.summary, "#409 is ready to merge");
     assert_eq!(s.options, ["squash and merge", "open it on GitHub", "not yet"]);
-    assert!(matches!(s.parts.get(1), Some(Part::Reason(r)) if r.starts_with("approved by alice")));
+    assert!(matches!(s.parts.first(), Some(Part::Text(t)) if t.lines().nth(1).is_some_and(|l| l.starts_with("approved by alice"))));
     assert_eq!(kind_look("merge").2, theme::accent());
     open(&mut app);
     // 2: the link opens here (the text's, no box in this test); nothing sent, the item stays

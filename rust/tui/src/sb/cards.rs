@@ -490,22 +490,10 @@ fn choice_shape(c: &Card) -> Shape {
     let mut lines = body.trim_end().lines();
     let head = lines.next().unwrap_or("").trim().to_string();
     let rest: Vec<&str> = lines.collect();
-    let mut parts: Vec<Part> = Vec::new();
-    match c.kind.as_str() {
-        // the title as text, the facts dim, the link as text (pr-design §6.3)
-        "merge" => {
-            let minus = if theme::ascii_mode() { "-" } else { "−" };
-            for (i, l) in rest.iter().enumerate() {
-                let l = l.replace('−', minus);
-                if i + 2 == rest.len() {
-                    parts.push(Part::Reason(l));
-                } else {
-                    parts.push(Part::Text(l));
-                }
-            }
-        }
-        _ => parts.push(Part::Text(rest.join("\n"))),
-    }
+    // one paragraph (a merge: the PR's title, its facts, its link,
+    // pr-design §6.3's mock)
+    let minus = if theme::ascii_mode() { "-" } else { "−" };
+    let mut parts = vec![Part::Text(rest.join("\n").trim().replace('−', minus))];
     if !c.note.is_empty() {
         parts.push(Part::Note(c.note.clone()));
     }
