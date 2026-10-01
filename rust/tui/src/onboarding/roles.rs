@@ -38,7 +38,7 @@ pub(crate) enum Screen {
 pub(crate) enum Back {
     /// `/models`, the changed row flashing
     Roles,
-    /// the feed (ctrl+r, `/voice`, `/voice setup`)
+    /// the feed, or `/voice`'s screen (ctrl+r, its speech-to-text row)
     Close,
 }
 
@@ -48,6 +48,8 @@ pub(crate) enum Open {
     #[default]
     Providers,
     Roles,
+    /// `/models`, the cursor on this role (back from `/voice`)
+    RolesAt(&'static str),
     /// a role's steps, back to the feed
     Pick(&'static str),
 }
@@ -538,6 +540,12 @@ impl Onb {
             (Screen::Roles, Sub::List, KeyCode::Enter) => {
                 let Some(role) = shown().get(self.sel).copied() else { return Out::Stay };
                 self.pn_mut().flash = None;
+                // voice-menu (designer): one editor for the voice model,
+                // /voice's screen on speech to text; esc there comes back
+                if role.id == r::VOICE {
+                    crate::voicemode::settings::request_from_models();
+                    return Out::Done;
+                }
                 let sub = self.open_pick(role.id, Back::Roles);
                 // a role whose provider lost its key: straight to its key step
                 match self.role_broken(role.id) {
@@ -825,7 +833,7 @@ fn role_hint(id: &str) -> &'static str {
         r::AGENTS => "the ones main starts, for the work it hands out.",
         r::SMALL => "titles and summaries. a small fast model is enough.",
         r::CLASSIFY => "in auto, decides which commands run and which ask you.",
-        _ => "you talk, it types in the composer.",
+        _ => "writes down what you say. enter opens /voice.",
     }
 }
 

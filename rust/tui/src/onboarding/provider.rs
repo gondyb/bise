@@ -193,6 +193,13 @@ impl Onb {
                 }
                 return o;
             }
+            super::roles::Open::RolesAt(id) => {
+                if let Some(pn) = &mut o.panel {
+                    pn.screen = super::roles::Screen::Roles;
+                }
+                o.sel = super::roles::shown().iter().position(|x| x.id == id).unwrap_or(0);
+                return o;
+            }
             super::roles::Open::Pick(id) => {
                 o.sub = o.open_pick(id, super::roles::Back::Close);
                 return o;

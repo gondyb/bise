@@ -255,12 +255,12 @@ def main():
         set_key("down-key-2")
         t.keys("C-r")
         # the line wraps in the feed: its head, then the rest
-        sc = t.wait("i couldn't reach Mistral to transcribe. try again, or /voice setup for another", 30)
+        sc = t.wait("i couldn't reach Mistral to transcribe. try again, or /voice for another", 30)
         assert "the service is overloaded" in sc, sc
         # the key gone
         set_key(None)
         t.keys("C-r")
-        t.wait("voice needs a key. /voice setup picks one.", 30)
+        t.wait("voice needs a key. /voice picks one.", 30)
         # a good key: the kept clip lands in the composer
         set_key("good-key-3")
         t.keys("C-r")

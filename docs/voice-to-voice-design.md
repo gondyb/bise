@@ -50,7 +50,8 @@ He used it, on speakers and in French. What changes:
   layout, top to bottom: dictation (on/off), speech to text (provider · model, Transcribe 3
   first), voice (Mistral's voices: name · language · gender, `▸ hear it` on press only),
   language (auto, or one: it feeds the transcription and what is said), listen, read aloud,
-  sounds, who hears you. `/voice setup` opens the same screen.
+  sounds, who hears you. `/voice` is one row of the `/` list, no argument popup; `/voice setup`
+  typed and `/models`' voice row open the same screen on speech to text.
 - **The work beside the kiss.** While main works, talks or you hold the floor, a column right of
   the captions (150 columns: up to 44 cells, up to 9 rows, the newest on the status row) shows
   the minified work since your last message, one row each:

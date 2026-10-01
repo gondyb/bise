@@ -38,8 +38,6 @@ pub(crate) enum Arg {
     Model,
     /// an effort the model of the agent in view takes (BISE-135)
     Effort,
-    /// `/voice`'s own: on or off (runs the bare `/voice`), then setup
-    Voice,
     /// `/computer-use`'s own, by the plugin's state: off → "on" (runs the
     /// bare `/computer-use`); on → setup (the bare one), off, uninstall
     ComputerUse,
@@ -54,11 +52,10 @@ const THEMES: &[(&str, &str)] =
 
 /// The slash commands the popup offers and `/help` lists.
 pub(crate) const COMMANDS: &[Cmd] = &[
-    Cmd {
-        name: "/voice",
-        desc: "voice settings: dictation, the speech-to-text model, the voice, the language (ctrl+r twice: voice mode): /voice [setup]",
-        args: &[Arg::Voice],
-    },
+    // voice-menu (designer): one row, one ⏎, one screen; `/voice setup`
+    // typed still opens it, on speech to text, but the menu offers no
+    // argument
+    Cmd { name: "/voice", desc: "dictation and voice mode: the model, the voice, the language", args: &[] },
     Cmd {
         name: "/restart",
         desc: "reload bise, nothing lost (a <commit>: bise's own sources only, built then switched): /restart [current|<commit>]",
@@ -265,7 +262,6 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
         Arg::Plugin => crate::plugins::choices(std::path::Path::new(&sb::workspace(app).unwrap_or_default()), q),
         Arg::Model => model_choices(app, q),
         Arg::Effort => effort_choices(app, q),
-        Arg::Voice => voice_choices(app.voice.enabled, q),
         Arg::ComputerUse => computer_use_choices(crate::computer_use::is_on(), q),
         Arg::Text | Arg::Note => Vec::new(),
     }
@@ -288,24 +284,6 @@ fn computer_use_choices(on: bool, q: &str) -> Vec<Choice> {
         vec![bare("on", "turn computer use on and set it up")]
     };
     rows.into_iter().filter(|c| matches(q, &[&c.label])).collect()
-}
-
-/// `/voice`'s rows: the settings first (⏎ on it runs the bare `/voice`:
-/// the one voice screen, dictation's on/off in it), then `setup` (the
-/// same screen, on speech to text).
-fn voice_choices(on: bool, q: &str) -> Vec<Choice> {
-    let desc = if on {
-        "dictation, the model, the voice, the language · dictation is on"
-    } else {
-        "dictation, the model, the voice, the language · dictation is off"
-    };
-    [
-        Choice { value: "/voice".into(), label: "settings".into(), desc: desc.into(), mark: None },
-        Choice::word("setup", "the same screen, on the speech-to-text model"),
-    ]
-    .into_iter()
-    .filter(|c| matches(q, &[&c.label]))
-    .collect()
 }
 
 /// The note that heads `/model` and `/reasoning`: which agent they are
@@ -864,17 +842,13 @@ mod arg_tests {
         set_versions_dev(&mut app, true);
         assert_eq!(labels(&items(&mut app, "/restart ")), ["current", "abc1234"]);
         assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
-        // voice mode: /voice's first row runs the bare /voice (the
-        // settings screen, dictation's on/off in it), setup follows
-        let v = items(&mut app, "/voice ");
-        assert_eq!(labels(&v), ["settings", "setup"]);
-        assert_eq!(v[0].run.as_deref(), Some("/voice"));
-        assert!(v[0].desc.contains("dictation is off"), "{}", v[0].desc);
-        assert_eq!(v[1].run.as_deref(), Some("/voice setup"));
-        app.voice.enabled = true;
-        assert!(items(&mut app, "/voice ")[0].desc.contains("dictation is on"));
-        assert_eq!(labels(&items(&mut app, "/voice setu")), ["setup"]);
-        app.voice.enabled = false;
+        // voice-menu (designer): /voice is one row with no argument
+        // popup: ⏎ opens the one voice screen
+        assert!(items(&mut app, "/voice ").is_empty(), "no settings / setup rows");
+        let v = items(&mut app, "/vo");
+        assert_eq!(labels(&v), ["/voice"]);
+        assert_eq!(v[0].desc, "dictation and voice mode: the model, the voice, the language");
+        assert_eq!(v[0].run.as_deref(), Some("/voice"), "one ⏎ runs it");
         // BISE-135: /model and /reasoning, for the agent in view
         app.sb.focus = "auth-fix".into();
         set_model(&mut app, "auth-fix", "foundry/claude-opus-5-5", "high");

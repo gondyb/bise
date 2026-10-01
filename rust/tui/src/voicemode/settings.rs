@@ -8,7 +8,8 @@
 //! the keys, then back here), voice (Mistral's voices, [`voices`]: name ·
 //! language · gender, ▸ hear it), language (auto, or one the voices
 //! speak: the transcription and what is said), listen, speed, read aloud,
-//! sounds, who hears you. `/voice setup` opens it on speech to text. A
+//! sounds, who hears you. `/voice setup` (typed) and `/models`' voice row
+//! open it on speech to text (from `/models`, esc goes back there). A
 //! change is written to config.toml at once (`[voice]`,
 //! [`super::config::save`]) and its row flashes. ▸ hear it says a sample
 //! only when you press ⏎ on the voice row ([`Step::Hear`]); the tests
@@ -71,9 +72,33 @@ pub fn request(open: Open) {
     request_at(open, ROWS[0]);
 }
 
-/// `/voice setup`: the screen, the cursor on speech to text.
+/// `/voice setup` (typed: the menu no longer offers it): the screen, the
+/// cursor on speech to text.
 pub fn request_stt() {
     request_at(Open::Settings, Row::Stt);
+}
+
+/// Opened from `/models`' voice row (voice-menu, designer): esc goes
+/// back to `/models`. Kept while the screen hands over to the voice
+/// picker and comes back; taken when the screen closes for good.
+static FROM_MODELS: Mutex<bool> = Mutex::new(false);
+
+/// `/models` → voice: the screen on speech to text, esc back to `/models`.
+pub fn request_from_models() {
+    *FROM_MODELS.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    request_stt();
+}
+
+fn take_from_models() -> bool {
+    std::mem::take(&mut *FROM_MODELS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// The request statics are the process's: one test at a time on them
+/// (these tests and `/models`' voice row's).
+#[cfg(test)]
+pub(crate) fn test_serial() -> std::sync::MutexGuard<'static, ()> {
+    static ONE: Mutex<()> = Mutex::new(());
+    ONE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn request_at(open: Open, row: Row) {
@@ -902,6 +927,13 @@ fn apply(screen: &mut Screen, step: Step, app: &mut App, hear: &mut dyn FnMut(Sa
             };
             if let Err(e) = saved {
                 crate::feed::push_event(&mut app.events, &mut app.cache, crate::wire::Ev::Warn(format!("voice mode: not saved: {}", e)));
+            }
+            // opened from /models' voice row: back there, on that row
+            if take_from_models() && out == Out::Closed {
+                crate::onboarding::provider_request(crate::onboarding::Ask {
+                    open: crate::onboarding::Open::RolesAt(bise_catalog::roles::VOICE),
+                    ..Default::default()
+                });
             }
             Some(out)
         }

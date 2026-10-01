@@ -8,8 +8,7 @@ use ratatui::Terminal;
 
 /// The request statics are the process's: one test at a time on them.
 fn serial() -> std::sync::MutexGuard<'static, ()> {
-    static ONE: Mutex<()> = Mutex::new(());
-    ONE.lock().unwrap_or_else(|e| e.into_inner())
+    test_serial()
 }
 
 fn key(c: KeyCode) -> KeyEvent {

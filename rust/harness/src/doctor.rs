@@ -463,7 +463,7 @@ fn voice_check(v: &bise_catalog::voice::VoiceSetup, r: &bise_catalog::voice::Stt
         "default" => format!("auto · {}", r.name),
         env => format!("{} ({})", r.name, env),
     };
-    let fix_model = format!("pick one with /voice setup in bise, or `{} config set voice <provider/model>` (`{} models voice` lists them)", bise_catalog::CLI, bise_catalog::CLI);
+    let fix_model = format!("pick one with /voice in bise, or `{} config set voice <provider/model>` (`{} models voice` lists them)", bise_catalog::CLI, bise_catalog::CLI);
     if r.known == bise_catalog::Known::NoProvider {
         return warn("voice", format!("{}: unknown provider '{}'", what, r.provider), fix_model);
     }

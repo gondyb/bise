@@ -478,7 +478,18 @@ fn mistral_serves_main_and_voice() {
     while shown()[o.sel].id != "voice" {
         o.on_key(key(KeyCode::Down), 1, &e);
     }
-    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(screen(&o).contains("voice: writes down what you say. enter opens /voice."), "{}", screen(&o));
+    // voice-menu (designer): ⏎ on voice opens /voice's screen (on speech
+    // to text), the one editor of the voice model; /models closes
+    {
+        let _s = crate::voicemode::settings::test_serial();
+        let _ = crate::voicemode::settings::take_request();
+        assert_eq!(o.on_key(key(KeyCode::Enter), 1, &e), Out::Done);
+        assert_eq!(crate::voicemode::settings::take_request(), Some(crate::voicemode::settings::Open::Settings));
+    }
+    // its speech-to-text row's ⏎: the voice picker (the same as ctrl+r's)
+    let mut o = Onb::provider_panel(&e, Ask { open: Open::Pick("voice"), from_settings: true, ..Ask::default() });
+    o.checker = fake_check;
     let sc = screen(&o);
     // the key main uses: ready, nothing to set up
     assert!(line_of(&sc, "Mistral ").contains("› ") && line_of(&sc, "Mistral ").contains("✓ ready · main, agents, small jobs use it"), "{sc}");
@@ -486,8 +497,14 @@ fn mistral_serves_main_and_voice() {
     o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
     assert!(cfg(&hm).contains("voice = \"mistral/voxtral-transcribe-3\""), "{}", cfg(&hm));
+    // from /voice: the model only, dictation as it was
+    assert_eq!(take_voice_out(), None);
+    // esc on /voice comes back to /models, on the voice row
+    let o = open(&e, Open::RolesAt("voice"));
+    assert_eq!(shown()[o.sel].id, "voice");
     let sc = screen(&o);
     assert!(line_of(&sc, "main  ").contains("Mistral") && line_of(&sc, "voice ").contains("Mistral  voxtral-transcribe-3"), "{sc}");
+    assert!(line_of(&sc, "voice ").contains("› "), "{sc}");
 }
 
 #[test]

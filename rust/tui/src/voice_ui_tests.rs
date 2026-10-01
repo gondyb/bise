@@ -114,7 +114,7 @@ fn a_start_error_is_a_warning_in_the_feed() {
     assert!(matches!(app.events.last(), Some(Ev::Warn(m)) if m == "no audio input device found."));
     // BISE-298: no key is an error with its way out
     assert!(voice_key(&mut app, &KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), || Err(voice::NEEDS_KEY.into())));
-    assert!(matches!(app.events.last(), Some(Ev::Err(m)) if m == "voice needs a key. /voice setup picks one."));
+    assert!(matches!(app.events.last(), Some(Ev::Err(m)) if m == "voice needs a key. /voice picks one."));
 }
 
 #[test]

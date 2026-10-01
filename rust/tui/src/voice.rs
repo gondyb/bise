@@ -98,7 +98,7 @@ fn no_audio_detected_message() -> String {
 
 /// The voice model has no key (BISE-298: replaces "voice transcription
 /// needs an API key: …").
-pub const NEEDS_KEY: &str = "voice needs a key. /voice setup picks one.";
+pub const NEEDS_KEY: &str = "voice needs a key. /voice picks one.";
 
 /// `/voice` with a setup that works (BISE-298): `voice is on: <model>`
 pub const ENABLED_MESSAGE: &str = "voice is on: ";
@@ -330,9 +330,9 @@ pub fn fail_lines(f: &Failure, provider: &str, model: &str, billing_url: &str, k
         FailKind::WrongKey => ("✗", format!("{} says the voice key is wrong. /provider fixes it.", provider)),
         FailKind::NoCredit if billing_url.is_empty() => ("?", format!("your {} account has no credit yet.", provider)),
         FailKind::NoCredit => ("?", format!("your {} account has no credit yet. add some here: {}", provider, billing_url)),
-        FailKind::Model => ("✗", format!("{} can't transcribe with {}. /voice setup picks another model.", provider, model)),
-        FailKind::Down => ("✗", format!("i couldn't reach {} to transcribe. try again, or /voice setup for another provider.", provider)),
-        FailKind::Other => ("✗", format!("{} answered something i can't read. try again, or /voice setup for another provider.", provider)),
+        FailKind::Model => ("✗", format!("{} can't transcribe with {}. /voice picks another model.", provider, model)),
+        FailKind::Down => ("✗", format!("i couldn't reach {} to transcribe. try again, or /voice for another provider.", provider)),
+        FailKind::Other => ("✗", format!("{} answered something i can't read. try again, or /voice for another provider.", provider)),
     };
     let mut dim = Vec::new();
     if !f.said.is_empty() {

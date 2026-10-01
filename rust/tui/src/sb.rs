@@ -999,6 +999,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         return Vec::new();
     }
     // round 2: /voice setup is the same screen, on speech to text
+    // (voice-menu: no longer offered by the menu, still taken typed)
     if v.trim() == "/voice setup" {
         crate::voicemode::settings::request_stt();
         return Vec::new();
