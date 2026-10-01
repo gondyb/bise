@@ -1,28 +1,27 @@
 //! What is said aloud of a message (owner: voice-tts; design §4, plan
 //! §4.5). Pure.
 //!
-//! The first sentence or two (≤ [`MAX_WORDS`] words, ~12 s at 1×) are
-//! said; the rest is shown. Never said: code blocks, tables, headings,
-//! paths, file names, URLs, ids, hashes, flags. Numbers are rounded and in
-//! words (English, or French when you speak it), key combos are said
-//! (`ctrl+r`: "control R"). A list is said as how many, then up to 3 items
-//! in ≤ 3 words. When something is left out, the last sentence is "the
-//! rest is on screen.". Inline code is said only when it is one plain
-//! word, a number or a key combo (a branch name, `ctrl+r`); else skipped.
-//! Every said word keeps its byte range in the message (the thread's
-//! lighting); the words bise adds have none.
+//! The whole message is said, sentence by sentence (plan §8 #4: you
+//! can't always read, so nothing is left for the screen). Skipped
+//! quietly: code blocks, tables, URLs, hashes, ids, flags, versions. A
+//! path or a file name is said as its last word (`src/ui.rs`: "ui"), or
+//! skipped when that is not a plain word. Headings are said. A list is
+//! said whole: how many, then every item; short items in one sentence
+//! ("two things: smaller and faster."). Numbers are rounded and in words,
+//! key combos are said (`ctrl+r`: "control R"); numbers and every word
+//! bise adds are in the message's language ([`language`]), else the
+//! configured one. Inline code is said only when it is one plain word, a
+//! number, a key combo or a path; else skipped. Every said word keeps its
+//! byte range in the message (the thread's lighting); the words bise adds
+//! have none.
 
 use super::{Sentence, Spoken, Word};
 use std::ops::Range;
 
-/// The most words said of a message (~12 s at 1×), the closing line aside.
-pub const MAX_WORDS: usize = 30;
-/// A first sentence longer than this is cut (at a comma when it can).
-const MAX_FIRST: usize = 40;
-/// A list: how many, then this many items...
-const LIST_ITEMS: usize = 3;
-/// ...in this many words each.
-const ITEM_WORDS: usize = 3;
+/// A list whose items all have at most this many words...
+const SHORT_ITEM: usize = 4;
+/// ...and at most this many items is said in one sentence.
+const SHORT_LIST: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lang {
@@ -45,71 +44,97 @@ impl Lang {
     }
 }
 
-/// The first sentence or two (~12 s), never code, paths, ids, hashes,
-/// URLs or tables; numbers rounded and in words; lists as how many and
-/// up to 3 items; "the rest is on screen" when there is more.
+/// The whole message as said, sentence by sentence: code, tables, URLs,
+/// ids and hashes skipped quietly; numbers and added words in the
+/// message's language (else `language`, the configured one). `more` is
+/// always false: nothing is left for the screen.
 pub fn speakable(msg: &str, language: Option<&str>) -> Spoken {
-    let lang = Lang::of(language);
     if msg.trim().is_empty() {
         return Spoken::default();
     }
-    let mut chosen: Vec<Vec<SayWord>> = Vec::new();
-    let mut count = 0;
-    let mut more = false;
-    let mut done = false;
+    let lang = Lang::of(detect(msg).or(language));
+    let mut out: Vec<Vec<SayWord>> = Vec::new();
     for block in blocks(msg) {
         match block {
-            Block::Heading => {}
-            Block::Shown => more = true,
-            _ if done => more = true,
-            Block::Prose(lines) => {
-                for mut s in sentences(words_of(msg, &lines, lang)) {
-                    if done {
-                        more = true;
-                        break;
-                    }
-                    if chosen.is_empty() {
-                        if s.len() > MAX_FIRST {
-                            cut_first(&mut s);
-                            more = true;
-                        }
-                    } else if chosen.len() >= 2 || count + s.len() > MAX_WORDS {
-                        more = true;
-                        done = true;
-                        break;
-                    }
-                    count += s.len();
-                    chosen.push(s);
-                    done = chosen.len() >= 2 || count >= MAX_WORDS;
-                }
+            Block::Shown => {}
+            Block::Prose(lines) => out.extend(sentences(words_of(msg, &lines, lang))),
+            Block::List(items) => say_list(msg, &items, lang, &mut out),
+        }
+    }
+    out.retain(|s| !s.is_empty());
+    if out.is_empty() {
+        // only code or a table: one short line, not silence
+        out.push(added(lang.pick("it's on screen.", "c'est à l'écran.")));
+    }
+    for s in &mut out {
+        close(s);
+    }
+    Spoken { sentences: out.into_iter().map(sentence).collect(), more: false }
+}
+
+/// The language a text is in, when it is clear: "fr" or "en" (by their
+/// small words, accents and elisions; code and URLs aside). None for a
+/// text too short or too mixed to tell.
+pub fn language(text: &str) -> Option<&'static str> {
+    detect(text)
+}
+
+const FR_WORDS: &[&str] = &[
+    "le", "la", "les", "des", "du", "de", "un", "une", "et", "est", "sont", "pas", "ne", "je", "tu", "il", "elle", "nous", "vous", "ils", "ce", "ça",
+    "cette", "ces", "qui", "que", "dans", "pour", "sur", "avec", "mais", "ou", "où", "au", "aux", "à", "très", "aussi", "fait", "été", "mon", "ma",
+    "mes", "ton", "ta", "tes", "son", "sa", "ses", "lance", "oui", "non", "merci", "voilà", "encore", "tout", "tous", "rien", "peux", "veux",
+];
+const EN_WORDS: &[&str] = &[
+    "the", "is", "are", "was", "were", "and", "to", "of", "in", "it", "that", "this", "for", "with", "you", "i", "not", "have", "has", "be", "do",
+    "does", "can", "will", "what", "my", "your", "we", "they", "now", "run", "yes", "no", "please", "thanks", "from", "but", "all", "just",
+];
+
+fn detect(text: &str) -> Option<&'static str> {
+    let (mut fr, mut en) = (0u32, 0u32);
+    let mut in_fence = false;
+    for line in text.lines() {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence || t.starts_with('|') {
+            continue;
+        }
+        for (i, part) in line.split('`').enumerate() {
+            // odd parts are inline code
+            if i % 2 == 1 {
+                continue;
             }
-            Block::List(items) => {
-                let (summary, left_out) = list_summary(msg, &items, lang);
-                let after_colon = chosen.last().and_then(|s| s.last()).is_some_and(|w| w.punct == ":");
-                if chosen.is_empty() || (after_colon && count + summary.len() <= MAX_WORDS + 6) {
-                    if let Some(w) = chosen.last_mut().and_then(|s| s.last_mut()) {
-                        w.punct = ".".into();
-                    }
-                    count += summary.len();
-                    chosen.push(summary);
-                    more |= left_out;
-                } else {
-                    more = true;
+            for raw in part.split_whitespace() {
+                if raw.contains("://") || raw.contains('/') {
+                    continue;
                 }
-                done = true;
+                let w: String = raw.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
+                if w.is_empty() {
+                    continue;
+                }
+                let w = w.replace('’', "'");
+                if ["l'", "d'", "c'", "j'", "n'", "qu'", "s'", "m'", "t'"].iter().any(|p| w.starts_with(p) && w.len() > p.len()) {
+                    fr += 1;
+                } else if w.ends_with("n't") || w.ends_with("'s") || w.ends_with("'re") || w.ends_with("'ll") || w.ends_with("'ve") || w == "i'm" {
+                    en += 1;
+                } else if FR_WORDS.contains(&w.as_str()) {
+                    fr += 1;
+                } else if EN_WORDS.contains(&w.as_str()) {
+                    en += 1;
+                } else if w.contains(['é', 'è', 'ê', 'à', 'ç', 'ù', 'û', 'ô', 'î', 'œ']) {
+                    fr += 1;
+                }
             }
         }
     }
-    if chosen.is_empty() {
-        chosen.push(added(lang.pick("it's on screen.", "c'est à l'écran.")));
-        more = true;
-    } else if more {
-        chosen.push(added(lang.pick("the rest is on screen.", "la suite est à l'écran.")));
+    // a clear lead: more than the other, and more than a third of the hits
+    match fr.cmp(&en) {
+        std::cmp::Ordering::Greater if fr * 2 > en * 3 || en == 0 => Some("fr"),
+        std::cmp::Ordering::Less if en * 2 > fr * 3 || fr == 0 => Some("en"),
+        _ => None,
     }
-    for s in &mut chosen {
-        close(s);
-    }
-    Spoken { sentences: chosen.into_iter().map(sentence).collect(), more }
 }
 
 // ---- the message's blocks ----
@@ -118,12 +143,18 @@ pub fn speakable(msg: &str, language: Option<&str>) -> Spoken {
 enum Block {
     /// a paragraph: its lines' text ranges
     Prose(Vec<Range<usize>>),
-    /// a list: each top-level item's line ranges (nested items dropped)
-    List(Vec<Vec<Range<usize>>>),
+    /// a list: its items in order, nested ones too
+    List(Vec<Item>),
     /// code or a table: shown only
     Shown,
-    /// a heading or a bold line: neither said nor "more"
-    Heading,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Item {
+    /// its lines' text ranges (the marker aside)
+    lines: Vec<Range<usize>>,
+    /// a nested item (not counted)
+    nested: bool,
 }
 
 fn blocks(msg: &str) -> Vec<Block> {
@@ -161,18 +192,23 @@ fn blocks(msg: &str) -> Vec<Block> {
             open = false;
             continue;
         }
-        if is_heading(t) {
-            out.push(Block::Heading);
+        if let Some(off) = heading(t) {
+            // said as its own sentence
+            out.push(Block::Prose(one(tstart + off..start + line.len())));
+            open = false;
+            continue;
+        }
+        if is_bold_line(t) {
+            // `**What you see**`: its own sentence too
+            out.push(Block::Prose(one(tstart..start + line.len())));
             open = false;
             continue;
         }
         if let Some(off) = list_marker(t) {
-            let item = tstart + off..start + line.len();
+            let lines = one(tstart + off..start + line.len());
             match out.last_mut() {
-                // a nested item: shown, not counted
-                Some(Block::List(_)) if indent >= 2 => {}
-                Some(Block::List(items)) => items.push(vec![item]),
-                _ => out.push(Block::List(vec![vec![item]])),
+                Some(Block::List(items)) => items.push(Item { lines, nested: indent >= 2 }),
+                _ => out.push(Block::List(vec![Item { lines, nested: false }])),
             }
             open = true;
             continue;
@@ -188,7 +224,7 @@ fn blocks(msg: &str) -> Vec<Block> {
         match out.last_mut() {
             Some(Block::List(items)) if open && indent >= 2 => {
                 if let Some(it) = items.last_mut() {
-                    it.push(range);
+                    it.lines.push(range);
                 }
             }
             Some(Block::Prose(lines)) if open => lines.push(range),
@@ -204,12 +240,19 @@ fn is_rule(t: &str) -> bool {
     c.len() >= 3 && (c.chars().all(|x| x == '-') || c.chars().all(|x| x == '*') || c.chars().all(|x| x == '_'))
 }
 
-/// `## title`, or a line that is all bold (`**What you see**`).
-fn is_heading(t: &str) -> bool {
+/// One line's range, as a block's lines.
+fn one(r: Range<usize>) -> Vec<Range<usize>> {
+    std::iter::once(r).collect()
+}
+
+/// `## title`: the offset of its text.
+fn heading(t: &str) -> Option<usize> {
     let hashes = t.chars().take_while(|c| *c == '#').count();
-    if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
-        return true;
-    }
+    ((1..=6).contains(&hashes) && t[hashes..].starts_with(' ')).then(|| hashes + 1)
+}
+
+/// A line that is all bold (`**What you see**`), a heading in effect.
+fn is_bold_line(t: &str) -> bool {
     let body = t.trim_end().trim_end_matches(':');
     body.len() > 4 && body.starts_with("**") && body.ends_with("**") && !body[2..body.len() - 2].contains("**")
 }
@@ -441,12 +484,10 @@ fn words_of(msg: &str, lines: &[Range<usize>], lang: Lang) -> Vec<SayWord> {
                 last_num = None;
             }
             Said::Skip => {
-                skipped = true;
-                attach(&mut out, punct, false);
-                if !punct.is_empty() {
-                    attach(&mut out, punct, true);
-                    skipped = false;
-                }
+                // "committed as c5bfd13;": the dangling "as" goes, the
+                // ";" stays on the word before it
+                skipped = punct.is_empty();
+                attach(&mut out, punct, !punct.is_empty());
                 last_num = None;
             }
         }
@@ -483,73 +524,71 @@ fn close(s: &mut [SayWord]) {
     }
 }
 
-/// A first sentence too long to say whole: cut at a comma between 12
-/// and 30 words, else at 30.
-fn cut_first(s: &mut Vec<SayWord>) {
-    let at = (8..MAX_WORDS).rev().find(|i| matches!(s[*i].punct.as_str(), "," | ";" | ":")).map(|i| i + 1).unwrap_or(MAX_WORDS);
-    s.truncate(at);
-    if let Some(w) = s.last_mut() {
-        w.punct = ".".into();
+/// A list, said whole: how many, then every item, nested ones too. Short
+/// plain items go in one sentence ("two things: smaller and faster."),
+/// joined to the sentence that brings them in when it ends with a colon
+/// ("Two choices: smaller and faster."); else each item is its own
+/// sentence(s), after "four things.".
+fn say_list(msg: &str, items: &[Item], lang: Lang, out: &mut Vec<Vec<SayWord>>) {
+    let said: Vec<(bool, Vec<SayWord>)> =
+        items.iter().map(|it| (it.nested, words_of(msg, &it.lines, lang))).filter(|(_, w)| !w.is_empty()).collect();
+    let n = said.iter().filter(|(nested, _)| !nested).count() as u64;
+    if said.is_empty() {
+        return;
+    }
+    let after_colon = out.last().and_then(|s| s.last()).is_some_and(|w| w.punct == ":");
+    let ends = |w: &SayWord| matches!(w.punct.as_str(), "." | "?" | "!");
+    let short = said.len() <= SHORT_LIST
+        && said.iter().all(|(nested, w)| !nested && w.len() <= SHORT_ITEM && !w[..w.len() - 1].iter().any(ends));
+    if short {
+        let mut s = match out.pop() {
+            Some(s) if after_colon => s,
+            other => {
+                out.extend(other);
+                if n >= 2 {
+                    how_many(n, lang, ":")
+                } else {
+                    Vec::new()
+                }
+            }
+        };
+        let k = said.len();
+        for (i, (_, mut words)) in said.into_iter().enumerate() {
+            for w in &mut words {
+                w.punct.clear();
+            }
+            if i > 0 && i + 1 == k {
+                s.push(SayWord { text: lang.pick("and", "et").into(), src: None, punct: String::new() });
+            }
+            if i + 2 < k {
+                if let Some(w) = words.last_mut() {
+                    w.punct = ",".into();
+                }
+            }
+            s.extend(words);
+        }
+        out.push(s);
+        return;
+    }
+    if !after_colon && n >= 2 {
+        out.push(how_many(n, lang, "."));
+    }
+    for (_, words) in said {
+        out.extend(sentences(words));
     }
 }
 
-/// "three things: inbox strip, key bar and opening items." and whether
-/// it leaves anything out.
-fn list_summary(msg: &str, items: &[Vec<Range<usize>>], lang: Lang) -> (Vec<SayWord>, bool) {
-    let n = items.len() as u64;
-    let mut out: Vec<SayWord> = Vec::new();
-    let count = if lang == Lang::Fr && n == 1 { vec!["une".to_string()] } else { cardinal(n, lang) };
-    for w in count {
-        out.push(SayWord { text: w, src: None, punct: String::new() });
-    }
+/// "four things" (added words), then `punct`.
+fn how_many(n: u64, lang: Lang, punct: &str) -> Vec<SayWord> {
+    let mut out: Vec<SayWord> = cardinal(n, lang).into_iter().map(|w| SayWord { text: w, src: None, punct: String::new() }).collect();
     let thing = match (lang, n) {
         (Lang::En, 1) => "thing",
         (Lang::En, _) => "things",
         (Lang::Fr, 1) => "chose",
         (Lang::Fr, _) => "choses",
     };
-    out.push(SayWord { text: thing.into(), src: None, punct: ":".into() });
-    let mut left_out = items.len() > LIST_ITEMS;
-    let mut named: Vec<Vec<SayWord>> = Vec::new();
-    for item in items.iter().take(LIST_ITEMS) {
-        let first = &item[0];
-        let label = bold_label(msg, first.clone());
-        let mut words = words_of(msg, &[label.clone().unwrap_or(first.clone())], lang);
-        if label.is_some() || words.len() > ITEM_WORDS || item.len() > 1 {
-            left_out = true;
-        }
-        words.truncate(ITEM_WORDS);
-        for w in &mut words {
-            w.punct.clear();
-        }
-        if !words.is_empty() {
-            named.push(words);
-        }
-    }
-    let k = named.len();
-    for (i, mut words) in named.into_iter().enumerate() {
-        if i > 0 && i + 1 == k {
-            out.push(SayWord { text: lang.pick("and", "et").into(), src: None, punct: String::new() });
-        }
-        if i + 2 < k {
-            if let Some(w) = words.last_mut() {
-                w.punct = ",".into();
-            }
-        }
-        out.extend(words);
-    }
-    if let Some(w) = out.last_mut() {
-        w.punct = ".".into();
-    }
-    (out, left_out)
-}
-
-/// An item's `**label:**` (or `**label**`) at its start.
-fn bold_label(msg: &str, r: Range<usize>) -> Option<Range<usize>> {
-    let t = &msg[r.clone()];
-    let inner = t.strip_prefix("**")?;
-    let end = inner.find("**")?;
-    (end > 0).then(|| r.start + 2..r.start + 2 + end)
+    out.push(SayWord { text: thing.into(), src: None, punct: punct.into() });
+    out
 }
 
 fn added(text: &str) -> Vec<SayWord> {
@@ -608,7 +647,9 @@ fn classify(c: &str, about: bool, lang: Lang) -> Said {
         if parts.len() == 2 && parts.iter().all(|p| !p.is_empty() && p.len() <= 8 && p.chars().all(char::is_alphabetic)) {
             return Said::Words(vec![parts[0].into(), lang.pick("or", "ou").into(), parts[1].into()], None);
         }
-        return Said::Skip;
+        // a path: its last word
+        let last = c.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+        return file_word(last).or_else(|| plain_word(last)).map(|w| Said::Words(vec![w], None)).unwrap_or(Said::Skip);
     }
     if c.contains('+') && !c.starts_with('+') {
         return keys(c, lang).map(|w| Said::Words(w, None)).unwrap_or(Said::Skip);
@@ -624,10 +665,11 @@ fn classify(c: &str, about: bool, lang: Lang) -> Said {
     if first == '-' || first == '.' || first == '~' || first == '$' {
         return Said::Skip;
     }
-    // a file name, a domain, a version: letters around a dot
+    // a file name, a domain, a version: letters around a dot (a file
+    // name says its stem)
     let cs: Vec<char> = c.chars().collect();
     if cs.windows(3).any(|w| w[1] == '.' && w[0].is_alphanumeric() && w[2].is_alphanumeric()) {
-        return Said::Skip;
+        return file_word(c).map(|w| Said::Words(vec![w], None)).unwrap_or(Said::Skip);
     }
     // ids and hashes: letters and digits mixed
     if c.chars().any(|x| x.is_ascii_digit()) {
@@ -645,6 +687,33 @@ fn classify(c: &str, about: bool, lang: Lang) -> Said {
     } else {
         Said::Words(vec![w], None)
     }
+}
+
+/// The extensions that make `name.ext` a file name (else a domain or a
+/// version: skipped).
+const FILE_EXTS: &[&str] = &[
+    "rs", "md", "toml", "ts", "tsx", "js", "jsx", "mjs", "json", "py", "sh", "yaml", "yml", "txt", "lock", "go", "c", "h", "cpp", "swift", "html",
+    "css", "aiff", "wav", "png", "jpg", "svg", "log", "sql", "bend", "kt", "java", "rb", "zsh", "plist", "mp3", "pdf", "csv",
+];
+
+/// A file name's stem when it is a plain word (`speak.rs`: "speak",
+/// `README.md`: "README"); None for anything else.
+fn file_word(name: &str) -> Option<String> {
+    let (stem, ext) = name.rsplit_once('.')?;
+    if !FILE_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
+        return None;
+    }
+    // "Cargo.lock", "voice.test.ts": the first part
+    plain_word(stem.split('.').next().unwrap_or(""))
+}
+
+/// A word that says itself: letters, inner hyphens (no digits, no `_`).
+fn plain_word(w: &str) -> Option<String> {
+    let ok = w.chars().count() >= 2
+        && w.chars().all(|c| c.is_alphabetic() || c == '-')
+        && !w.starts_with('-')
+        && !w.ends_with('-');
+    ok.then(|| w.to_string())
 }
 
 fn words(s: &str) -> Vec<String> {

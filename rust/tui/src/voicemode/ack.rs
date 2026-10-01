@@ -125,10 +125,22 @@ pub fn clean(text: &str) -> Option<String> {
     Some(words.join(" "))
 }
 
-/// A canned "on it", turn `n` (they take turns, never twice in a row).
+/// A canned "on it" in English, turn `n`: [`canned_in`] with no language.
 pub fn canned(n: u64) -> &'static str {
-    const LINES: [&str; 3] = ["on it.", "let me look.", "okay, one moment."];
-    LINES[(n % LINES.len() as u64) as usize]
+    canned_in(n, None)
+}
+
+/// A canned "on it", turn `n` (they take turns, never twice in a row), in
+/// `lang`: the language you spoke (`speak::language(heard)`), English
+/// when None or not French.
+pub fn canned_in(n: u64, lang: Option<&str>) -> &'static str {
+    const EN: [&str; 3] = ["on it.", "let me look.", "okay, one moment."];
+    const FR: [&str; 3] = ["je m'en occupe.", "je regarde.", "d'accord, un instant."];
+    let lines = match super::speak::Lang::of(lang) {
+        super::speak::Lang::Fr => &FR,
+        super::speak::Lang::En => &EN,
+    };
+    lines[(n % lines.len() as u64) as usize]
 }
 
 #[cfg(test)]
@@ -224,7 +236,19 @@ mod tests {
     fn canned_lines_take_turns() {
         for n in 0..10 {
             assert_ne!(canned(n), canned(n + 1));
+            assert_ne!(canned_in(n, Some("fr")), canned_in(n + 1, Some("fr")));
         }
+    }
+
+    #[test]
+    fn canned_lines_are_in_the_language_you_spoke() {
+        use crate::voicemode::speak::language;
+        assert_eq!(canned_in(0, language("lance les tests et dis-moi")), "je m'en occupe.");
+        assert_eq!(canned_in(1, Some("fr-FR")), "je regarde.");
+        assert_eq!(canned_in(0, language("run the tests please")), "on it.");
+        // not sure: English
+        assert_eq!(canned_in(2, language("ok")), "okay, one moment.");
+        assert_eq!(canned(0), canned_in(0, None));
     }
 
     #[test]
