@@ -49,6 +49,26 @@ struct PrView { number: u64, url: String, state: PrState, review: Review,
 `PrSnapshot`, `PrState`, `Review`, `Checks`: pr-design §9. The hub fills
 `pr` from wave 2 on; until then it is always `None`.
 
+**Frozen (flow-hub, wave 1)**: the source is
+`rust/switchboard/src/place.rs` (types, serde JSON, a test pinning the
+JSON). What changed from the sketch above:
+
+- An agent in the TUI snapshot gets **`place_id`** (not `place`: that key
+  stays the BISE-136 private worktree path, ψ, until pr-tui retires it).
+- Place ids: `shared` for the shared folder, `wt:<dir of its first
+  agent>` for a worktree. Storage: the id lives in each agent's `ws`
+  (`Workspace::place`, journaled by sb-core); `place::places(st, prs)`
+  derives the table, an older journal's worktree is its agent's own
+  place. No new journal event.
+- `places` in the snapshot: worktrees only, in their first agent's order
+  (the shared folder is never a box); `agents` without the archived.
+- `Checks` JSON is tagged: `{"state": "pass"}`, `{"state": "fail",
+  "failing": ["ci/test"]}`; the enums are snake_case
+  (`changes_requested`).
+- pr-hub's seams: `Hub::prs` (PR by place id) feeds `Place::pr` and
+  `PlaceView::pr`; `Hub::lids` (held line by place id; the land queue
+  writes `waits to land · 2nd` there); `PR_STALE_MS` in core.rs.
+
 ## flow-hub (wave 1, ~3 days)
 
 Objective: places in the hub and `sb land`, the base for PR and trunk

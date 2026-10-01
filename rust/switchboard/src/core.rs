@@ -592,6 +592,11 @@ pub struct Hub {
     /// Agents whose call waits on a `confirm` card (approvals-design.md
     /// §10): shown `waiting` on `you`; runtime only, like `activity`.
     on_you: BTreeSet<String>,
+    /// dev-flow §3.1: the PR of each place, by place id (pr-hub, wave 2;
+    /// empty until then) and the held line of a place (the land queue's
+    /// `waits to land · 2nd`, set by the daemon). Runtime only.
+    pub prs: BTreeMap<String, crate::place::PrSnapshot>,
+    pub lids: BTreeMap<String, String>,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -618,6 +623,10 @@ impl Revive {
 
 /// More restarts than this in `REVIVE_WINDOW_MS`: sb-core dies on its
 /// state, not by accident; the hub stops (as before BISE-292).
+/// A PR the forge has not answered about for this long shows as stale
+/// (pr-design §7; pr-hub sets it from its cadence).
+pub const PR_STALE_MS: u64 = 10 * 60 * 1000;
+
 const REVIVE_LIMIT: usize = 3;
 const REVIVE_WINDOW_MS: u64 = 60_000;
 
@@ -731,6 +740,8 @@ impl Hub {
             roles: BTreeMap::new(),
             places: BTreeMap::new(),
             on_you: BTreeSet::new(),
+            prs: BTreeMap::new(),
+            lids: BTreeMap::new(),
             dirty: false,
             link,
             revive: None,
@@ -1006,6 +1017,8 @@ impl Hub {
                     "dropped": a.ws.dropped,
                     // BISE-136: a private worktree (gate.sh new), else null
                     "place": a.place,
+                    // dev-flow §3.1: the id of the place it is in (`places`)
+                    "place_id": a.ws.place_id(&a.dir),
                     "created_ms": a.created_ms,
                     "note": a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default(),
                     "report": a.last_report.as_ref().map(|r| clip(&one_line(&r.summary), 200)),
@@ -1036,7 +1049,9 @@ impl Hub {
                 })
             })
             .collect();
-        json!({"ev": "state", "agents": agents, "cards": cards})
+        let places = crate::place::places(&self.st, &self.prs);
+        let places = crate::place::views(&places, &self.lids, now, PR_STALE_MS);
+        json!({"ev": "state", "agents": agents, "cards": cards, "places": places})
     }
 
     /// A question card whose asker heard from main since, without a

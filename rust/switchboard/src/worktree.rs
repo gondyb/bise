@@ -302,6 +302,8 @@ impl Env for GitEnv {
             branch: Some(branch),
             base_commit: Some(base),
             dropped: false,
+            // a new place, named after its first agent (dev-flow §3.1)
+            place: Some(crate::place::worktree_id(name)),
         })
     }
 
@@ -429,6 +431,8 @@ impl Env for GitEnv {
             branch: Some(branch),
             base_commit: ws.base_commit.clone(),
             dropped: false,
+            // the same place, back (its other agents rejoin it by id)
+            place: Some(ws.place_id(name)),
         })
     }
 }

@@ -34,6 +34,23 @@ pub struct Workspace {
     /// The worktree was removed by a drop (restore can bring it back).
     #[serde(default)]
     pub dropped: bool,
+    /// The place this workspace is (dev-flow §3.1, `crate::place`): a
+    /// worktree's id, `wt:<its first agent's dir>`, the same in every
+    /// agent that shares it. None: the shared folder, or an older
+    /// journal's worktree (its agent's own place, [`Workspace::place_id`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
+}
+
+impl Workspace {
+    /// The id of the place an agent with this workspace (and this dir)
+    /// is in: `shared`, or its worktree's id.
+    pub fn place_id(&self, dir: &str) -> String {
+        match self.mode {
+            Mode::Shared => crate::place::SHARED.to_string(),
+            Mode::Worktree => self.place.clone().unwrap_or_else(|| crate::place::worktree_id(dir)),
+        }
+    }
 }
 
 /// The task brief (RFC 0001 §7.1).
@@ -291,6 +308,7 @@ impl State {
                     branch: None,
                     base_commit: None,
                     dropped: false,
+                    place: None,
                 },
                 lifecycle: Lifecycle::Active,
                 failure: None,

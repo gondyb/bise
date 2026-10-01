@@ -35,6 +35,7 @@ impl Env for FakeEnv {
             branch: Some(format!("sb/{}", name)),
             base_commit: Some("abc".into()),
             dropped: false,
+            place: Some(format!("wt:{}", name)),
         })
     }
     fn worktree_loss(&mut self, _ws: &Workspace) -> Loss {
