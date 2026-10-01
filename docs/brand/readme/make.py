@@ -389,7 +389,7 @@ def f_tools(c):
     return m.svg("an agent calls Sentry, Linear and GitHub tools from code, one row each.")
 
 def f_card(c):
-    m = Mini(c, 10, 230, "ctrl+g opens the inbox")
+    m = Mini(c, 10, 230, "ctrl+1 opens it, or a click")
     m.row(0.6, f'{m.acc(":*")} perf found why signup is slow.')
     yy = m.y + 6; k = m.tl.show(1.4, 5.2, dur=0.2); a = m.tl.show(5.2, dur=0.2)
     m.o.append(f'<g class="{k}"><rect x="{m.fx-14}" y="{yy-17}" width="620" height="72" rx="4" fill="{c["raised"]}"/><rect x="{m.fx-14}" y="{yy-17}" width="3" height="72" fill="{c["acc"]}"/>'

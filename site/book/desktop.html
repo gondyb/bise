@@ -250,7 +250,7 @@ add("main-light", "the same, light", "the light theme is the book's light palett
   win({ cls: "light", center: center(FEED, strip([R_DARK, R_REL]) + comp("main", '<span class="cur"></span>'), ""), right: agents() }));
 
 // ---------- 2. the inbox ----------
-add("inbox-select", "the inbox · ⌘I selects", "the rows show no keys until you ask. ⌘I selects the inbox (the same rule as ctrl+g in the terminal): the selected row shows its keys, 1-9 answer it at once, ⏎ opens it, ↑↓ loop, esc gives you back your message. one item only? ⌘I opens it straight away. a click selects a row; a click on the selected row opens it.",
+add("inbox-select", "the inbox · ⌘I selects", "the rows show no keys until you ask. ⌘I selects the inbox (the terminal opens them with ctrl+1-9 or a click): the selected row shows its keys, 1-9 answer it at once, ⏎ opens it, ↑↓ loop, esc gives you back your message. one item only? ⌘I opens it straight away. a click selects a row; a click on the selected row opens it.",
   win({ center: center(FEED, strip([R_REL, R_DARK], 0) + comp("main", "and give the sad dog a hat", [["↑↓", "choose"], ["1-3", "answer"], ["⏎", "open"], ["esc", "back"]], "dimmed")), right: agents() }));
 
 add("inbox-open", "an item, open", "the item opens as a sheet over the thread; the thread stays visible behind it, dimmed. nothing is picked at first, so a reflex ⏎ does nothing: the first ↓ lands on option 1. ←→ go to the other items. type and ⏎ answers in your words. esc: back to the thread, your draft kept.",
@@ -390,10 +390,10 @@ setInterval(() => { f++; document.querySelectorAll(".brth").forEach((e) => e.tex
   <table class="spec">
     <tr><th>terminal</th><th>desktop</th><th>why</th></tr>
     <tr><td>⏎ · tab · ↑</td><td>⏎ send · ⇧⏎ new line · tab queue · ↑ edit the last</td><td>unchanged</td></tr>
-    <tr><td>ctrl+g</td><td><span class="acc">⌘I</span> the inbox</td><td>⌘G is "find next" on a mac. I for inbox</td></tr>
+    <tr><td>ctrl+1-9</td><td><span class="acc">⌘I</span> the inbox</td><td>⌘G is "find next" on a mac. I for inbox</td></tr>
     <tr><td>ctrl+o</td><td><span class="acc">⌘E</span> open or close everything</td><td>⌘O opens a folder in every mac app</td></tr>
     <tr><td>ctrl+f / cmd+f</td><td><span class="acc">⌘F</span> find · ⌘G older · ⇧⌘G newer</td><td>the mac habit, now without the terminal's config</td></tr>
-    <tr><td>⌥0-9 · ctrl+k/j</td><td><span class="acc">⌘0-9</span> main, agent N · <span class="acc">⌘[ ⌘]</span> previous / next agent</td><td>⌘ + number switches views in mac apps; ⌘[ ⌘] is back / forward</td></tr>
+    <tr><td>⌥0-9 · ⌥↑↓</td><td><span class="acc">⌘0-9</span> main, agent N · <span class="acc">⌘[ ⌘]</span> previous / next agent</td><td>⌘ + number switches views in mac apps; ⌘[ ⌘] is back / forward</td></tr>
     <tr><td>ctrl+c</td><td><span class="acc">⌘.</span> interrupt · ⌘Q quit (asks: agents stop)</td><td>⌘. is the mac "stop"; ⌘W keeps them running</td></tr>
     <tr><td>ctrl+r</td><td><span class="acc">⌘R</span> or the mic in the composer: record, any key stops</td><td>no reload in a desktop app, so ⌘R is free</td></tr>
     <tr><td>ctrl+`</td><td><span class="acc">⌘J</span> terminal panel</td><td>the VS Code panel key; ⌘` already cycles windows on a mac</td></tr>
