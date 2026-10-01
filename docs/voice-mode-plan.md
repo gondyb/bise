@@ -53,7 +53,7 @@ one gate seed for everybody).
   git add -A -- <your owned paths>          # whole files: you own them
   new=$(git commit-tree $(git write-tree) -p $old -m "<long subject: what and why>")
   git update-ref $B $new $old    # CAS: on failure redo from read-tree
-  unset GIT_INDEX_FILE && git checkout -q --detach $new          # after the unset, never before
+  unset GIT_INDEX_FILE && git checkout -q -m --detach $new       # after the unset, never before
   ```
   The checkout brings the others' work into your worktree; your owned files are unchanged by it.
   (Checked out with the private index still set, your worktree's index stays behind: `git
