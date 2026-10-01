@@ -80,6 +80,10 @@ pub(crate) struct App {
     /// where the mouse is, while it moves over the screen (BISE-271:
     /// the time of the turn under it); None once it clicks or leaves
     pub(crate) hover: Option<(u16, u16)>,
+    /// the copy icon the last frame drew on a code block (codeblock.rs)
+    pub(crate) copy_hit: Option<crate::codeblock::Hit>,
+    /// the last code block copied: its icon says `copied` for a moment
+    pub(crate) code_copied: Option<crate::codeblock::Copied>,
     /// where the mouse was last seen, moving, pressing or dragging
     /// (BISE-272: the pointer's shape under it)
     pub(crate) pointer_at: Option<(u16, u16)>,
@@ -251,6 +255,8 @@ impl App {
             last_line_at: None,
             last_ts: None,
             hover: None,
+            copy_hit: None,
+            code_copied: None,
             show_thinking: false,
             interrupt_requested: false,
             pending: false,

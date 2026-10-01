@@ -42,6 +42,8 @@ pub(crate) struct EventRows {
     pub(crate) live: Option<LiveHead>,
     /// the urls of its links, in order (links.rs: a link's tag)
     pub(crate) urls: Vec<String>,
+    /// its markdown code blocks (codeblock.rs: the copy icon)
+    pub(crate) blocks: Vec<crate::codeblock::Block>,
 }
 
 pub(crate) struct LiveHead {
@@ -63,15 +65,17 @@ pub(crate) enum Live {
 }
 
 pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
-    let (mut er, urls) = crate::links::collect(|| event_rows_of(events, i, debug, width, tick));
+    let ((mut er, urls), found) =
+        crate::codeblock::collect(|| crate::links::collect(|| event_rows_of(events, i, debug, width, tick)));
     er.urls = urls;
+    er.blocks = crate::codeblock::locate(&er.rows, found);
     er
 }
 
 fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
     if is_l3(&events[i]) && ev_visible(&events[i], debug) {
         let (rows, live) = l3_rows(events, i, debug, width, tick);
-        return EventRows { width: width as u16, main: main_feed(), rows, live, urls: Vec::new() };
+        return EventRows { width: width as u16, main: main_feed(), rows, live, urls: Vec::new(), blocks: Vec::new() };
     }
     // a compaction runs until its summary arrives
     if matches!(events[i], Ev::Compact) && !events[i + 1..].iter().any(|e| matches!(e, Ev::Compacted { .. })) {
@@ -84,7 +88,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
             main: main_feed(),
             rows,
             live: Some(LiveHead { at, len: 1, what: Live::Compacting }),
-            urls: Vec::new(),
+            urls: Vec::new(), blocks: Vec::new(),
         };
     }
     let running = match &events[i] {
@@ -97,7 +101,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
             main: main_feed(),
             rows: build_rows(events, i, debug, width, tick),
             live: None,
-            urls: Vec::new(),
+            urls: Vec::new(), blocks: Vec::new(),
         };
     };
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
@@ -117,7 +121,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
             main: main_feed(),
             rows,
             live: Some(LiveHead { at, len: 1, what: Live::Row }),
-            urls: Vec::new(),
+            urls: Vec::new(), blocks: Vec::new(),
         };
     }
     if crate::toolbox::opens_as_box(td) {
@@ -128,7 +132,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
             main: main_feed(),
             rows,
             live: Some(LiveHead { at, len: 1, what: Live::Tool { name, args } }),
-            urls: Vec::new(),
+            urls: Vec::new(), blocks: Vec::new(),
         };
     }
     rows.extend(wrap_line(tool_head(td, tick, &name, &args), cw));
@@ -141,7 +145,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
         main: main_feed(),
         rows,
         live: Some(LiveHead { at, len, what: Live::Tool { name, args } }),
-        urls: Vec::new(),
+        urls: Vec::new(), blocks: Vec::new(),
     }
 }
 

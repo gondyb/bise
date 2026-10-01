@@ -258,6 +258,10 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
     if app.voice.enabled {
         p.push(("ctrl+r", "talk"));
     }
+    // a code block on screen: ctrl+y copies it (codeblock.rs)
+    if crate::codeblock::any_on_screen(app) {
+        p.push(("ctrl+y", "copy code"));
+    }
     p.push(("ctrl+v", "paste image"));
     p.push(("ctrl+j", "newline"));
     p.push(("ctrl+`", "terminal"));

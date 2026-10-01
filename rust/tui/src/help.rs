@@ -116,6 +116,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(FEED, "pgup|pgdn|wheel", "scroll the feed"),
     r(FEED, "end", "back to the bottom"),
     r(FEED, "ctrl+l", "clear the display (/clear); scroll up to see the lines again"),
+    r(FEED, "ctrl+y|click copy", "copy a code block: the one under the mouse (its copy on hover), else the newest on screen"),
     r(EDIT, "shift+⏎|alt+⏎|ctrl+j", "new line").top(),
     r(EDIT, "option+←|option+→", "word left / right"),
     r(EDIT, "ctrl+option+←|ctrl+option+→", "subword left / right (camelCase, snake_case, kebab-case, digits)"),

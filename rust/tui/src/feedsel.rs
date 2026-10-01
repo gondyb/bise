@@ -82,7 +82,7 @@ pub(crate) fn slice_cols(s: &str, from: usize, to: usize) -> String {
 /// rail (" │ code", a code block, an agent message, a thinking section)
 /// keeps only its text, and a code continuation row (" │ » rest") drops
 /// its wrap mark too; your own line (" › text") drops its mark.
-fn content_cols(s: &str) -> (usize, usize) {
+fn content_cols(s: &str, line: &Line) -> (usize, usize) {
     let w = s.width();
     let lead = s.len() - s.trim_start_matches(' ').len();
     let rest = &s[lead..];
@@ -98,7 +98,19 @@ fn content_cols(s: &str) -> (usize, usize) {
     if inner.starts_with(crate::theme::G_WRAP) && inner[crate::theme::G_WRAP.len()..].starts_with(' ') {
         c0 += crate::theme::G_WRAP.width() + 1;
     }
-    (c0.min(w), w)
+    // a box's row (`│ code   │`, toolbox.rs): its padding and its
+    // right border too
+    let c1 = if inner.ends_with(" │") { w - 2 - box_pad(line) } else { w };
+    (c0.min(c1), c1)
+}
+
+/// The padding of a box's row: the blank span before its right border
+/// (toolbox.rs inner_row), so a wrapped line's own spaces stay.
+fn box_pad(line: &Line) -> usize {
+    match line.spans.as_slice() {
+        [.., pad, last] if last.content.ends_with('│') && pad.content.chars().all(|c| c == ' ') => pad.content.width(),
+        _ => 0,
+    }
 }
 
 /// The text of the selected rows: `rows` are the rows from the first to
@@ -109,7 +121,7 @@ pub(crate) fn selection_text(rows: &[Line], from: usize, to: usize) -> String {
     let mut out = String::new();
     for (i, l) in rows.iter().enumerate() {
         let s = line_text(l);
-        let (c0, c1) = content_cols(&s);
+        let (c0, c1) = content_cols(&s, l);
         let a = if i == 0 { from.max(c0) } else { c0 };
         let b = if i + 1 == n { to.min(c1) } else { c1 };
         let part = if a < b { slice_cols(&s, a, b) } else { String::new() };

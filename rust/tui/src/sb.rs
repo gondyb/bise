@@ -1434,6 +1434,8 @@ pub(crate) fn card_open_for_tests(app: &App) -> bool {
 }
 #[cfg(test)]
 mod when_tests;
+#[cfg(test)]
+mod codeblock_tests;
 
 #[cfg(test)]
 mod nav_key_tests {

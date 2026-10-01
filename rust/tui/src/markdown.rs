@@ -206,6 +206,13 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
 /// as wide as it needs up to `wide` (the code measure), laid out here so
 /// no later wrap cuts its rows.
 pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'static>> {
+    // a copy of a code block gives its lines as written (tabs kept)
+    let written: Vec<&str> = text.split('\n').collect();
+    // the open block (codeblock.rs): its tag, its colored lines, its code
+    let mut tag = String::new();
+    let mut hl: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut code: Vec<String> = Vec::new();
+    let boxed = wide.min(crate::render::CODE_MAX);
     let text = crate::sanitize::clean(text, crate::sanitize::TAB_CODE);
     let text: &str = &text;
     let mut done: Vec<Line<'static>> = Vec::new();
@@ -229,30 +236,42 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
             }
         }
         if line.starts_with("```") {
-            out.push(Line::from(Span::styled("  ", Style::default().bg(Color::Reset))));
             in_code = !in_code;
-            lang = if in_code { crate::syntax::lang_of(line.trim_start_matches('`').trim()) } else { None };
+            if in_code {
+                // the prose before the block, wrapped; the block is a box
+                // (codeblock.rs) at the code measure
+                done.extend(out.drain(..).flat_map(|l| wrap_line(l, prose)));
+                let info = line.trim_start_matches('`').trim();
+                tag = info.split(|c: char| c.is_whitespace() || c == ',' || c == '{').next().unwrap_or("").to_string();
+                lang = crate::syntax::lang_of(info);
+            } else {
+                done.extend(crate::codeblock::lines(&tag, &hl, code.join("\n"), boxed));
+                hl.clear();
+                code.clear();
+                lang = None;
+            }
             state = crate::syntax::State::Normal;
             continue;
         }
         if in_code {
+            // the line as written; the cleaned one when the clean moved
+            // the lines (an escape sequence across a newline)
+            let w = if written.len() == raws.len() { written[k - 1] } else { raws[k - 1] };
+            code.push(w.strip_suffix('\r').unwrap_or(w).to_string());
             let Some(l) = lang else {
-                out.push(Line::from(Span::styled(
-                    format!("  {}", line),
-                    Style::default().fg(theme::text()).bg(Color::Reset),
-                )));
+                hl.push(vec![Span::styled(line.to_string(), Style::default().fg(theme::text()).bg(Color::Reset))]);
                 continue;
             };
             let (runs, next) = crate::syntax::line(l, state, line);
             state = next;
-            let mut spans = vec![Span::styled("  ", Style::default().bg(Color::Reset))];
+            let mut spans = Vec::new();
             let mut rest = line;
             for (n, t) in runs {
                 let b = rest.char_indices().nth(n).map(|(b, _)| b).unwrap_or(rest.len());
                 spans.push(Span::styled(rest[..b].to_string(), crate::syntax::style(t).bg(Color::Reset)));
                 rest = &rest[b..];
             }
-            out.push(Line::from(spans));
+            hl.push(spans);
             continue;
         }
         if line.is_empty() {
@@ -304,6 +323,10 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
         out.push(Line::from(inline_spans(line, base)));
     }
     done.extend(out.into_iter().flat_map(|l| wrap_line(l, prose)));
+    // a block still open (a reply streaming in, a fence never closed)
+    if in_code {
+        done.extend(crate::codeblock::lines(&tag, &hl, code.join("\n"), boxed));
+    }
     done
 }
 
@@ -780,8 +803,53 @@ mod table_tests {
         assert_eq!(fg(1, "// c"), Some(theme::syntax_comment()));
         // no tag: plain text, as before
         assert_eq!(fg(4, "const y"), Some(theme::text()));
-        let text: String = ls[1].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert_eq!(text, "  const x = 1 // c");
+        // a box at the code measure: the tag in its top border
+        let text = |r: usize| -> String { ls[r].spans.iter().map(|s| s.content.as_ref()).collect() };
+        assert_eq!(text(0), format!("╭─ ts {}╮", "─".repeat(73)));
+        assert_eq!(text(1), format!("│ const x = 1 // c{} │", " ".repeat(60)));
+        assert_eq!(text(2), format!("╰{}╯", "─".repeat(78)));
+        assert_eq!(text(3), format!("╭{}╮", "─".repeat(78)));
+    }
+
+    #[test]
+    fn a_long_code_line_wraps_inside_the_box_with_the_wrap_mark() {
+        let long = "let total = first_value + second_value + third_value + fourth_value;";
+        let ls = md_lines(&format!("```rust\n{long}\n```"), 40, 40);
+        let text: Vec<String> = ls.iter().map(crate::feedsel::line_text).collect();
+        assert_eq!(text.len(), 5, "{text:#?}");
+        assert!(text.iter().all(|t| t.width() == 40), "{text:#?}");
+        assert!(text[2].starts_with("│ » ") && text[3].starts_with("│ » "), "{text:#?}");
+        assert!(crate::feedsel::is_soft(&ls[2]) && crate::feedsel::is_soft(&ls[3]));
+        // the selection copies the code, not the borders nor the padding
+        let sel = crate::feedsel::selection_text(&ls[1..4], 0, usize::MAX);
+        assert_eq!(sel, long);
+    }
+
+    #[test]
+    fn in_ascii_a_wrapped_code_line_hangs_on_two_blanks_with_no_mark() {
+        crate::theme::set_ascii_for_tests(true);
+        let long = "let total = first_value + second_value + third_value + fourth_value;";
+        let ls = md_lines(&format!("```rust\n{long}\n```"), 40, 40);
+        crate::theme::set_ascii_for_tests(false);
+        let text: Vec<String> = ls.iter().map(crate::feedsel::line_text).collect();
+        assert!(text[0].starts_with("+- rust -"), "{text:#?}");
+        assert!(text[2].starts_with("|   ") && !text[2].contains('}') && !text[2].contains('»'), "{text:#?}");
+    }
+
+    #[test]
+    fn a_block_keeps_its_code_as_written_for_the_copy() {
+        let (ls, found) = crate::codeblock::collect(|| md_lines("say\n```make\nall:\n\tcc main.c\n```\nend", 76, 100));
+        let blocks = crate::codeblock::locate(&ls, found);
+        assert_eq!(blocks.len(), 1);
+        let b = &blocks[0];
+        assert_eq!((b.row, b.len, b.x, b.w), (1, 4, 0, 100));
+        assert_eq!(b.code, "all:\n\tcc main.c");
+        // no language known: plain text, its tag still in the border
+        assert!(crate::feedsel::line_text(&ls[1]).starts_with("╭─ make ─"));
+        // a fence never closed (a reply streaming in) is a box too
+        let ls = md_lines("```ts\nconst a", 76, 76);
+        assert_eq!(ls.len(), 3);
+        assert!(crate::feedsel::line_text(&ls[2]).starts_with('╰'));
     }
 
     #[test]
@@ -789,7 +857,8 @@ mod table_tests {
         let t = format!("```\n{T}\n```");
         let rows = texts(&t, 76);
         assert!(rows.iter().any(|r| r.contains("| name | status | p95 |")), "{rows:#?}");
-        assert!(!rows.iter().any(|r| r.contains('─')), "{rows:#?}");
+        // the rows are the code box's (its borders), never a table's
+        assert!(!rows.iter().any(|r| r.contains('┼') || r.contains("─┬")), "{rows:#?}");
     }
 
     #[test]

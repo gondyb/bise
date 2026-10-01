@@ -345,7 +345,9 @@ fn divider_text(app: &App) -> (String, Vec<Vec<Span<'static>>>) {
     } else if let Some(t) = fresh_note(&app.voice_note) {
         vec![vec![Span::styled(format!("{} ", theme::glyph("●")), Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]]
     } else if let Some(t) = fresh_note(&app.flash) {
-        vec![vec![Span::styled("✓ ", Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]]
+        // ASCII: no mark (its `v` reads as a letter, not a check)
+        let mark = if theme::ascii_mode() { "" } else { "✓ " };
+        vec![vec![Span::styled(mark, Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]]
     } else {
         sb::status_state(app).into_iter().map(|l| l.spans).collect()
     };
@@ -502,6 +504,8 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
     if let Some((x, y)) = app.hover {
         hover_time(app, frame.buffer_mut(), text_area, &vis_events, (x, y));
     }
+    // the copy icon of the code block under the mouse (codeblock.rs)
+    crate::codeblock::draw(app, frame.buffer_mut(), text_area, &vis_events, &vis_rows);
 
     // the scrollbar (BISE-90, main's call): only while scrolled up from
     // the bottom, faint, one column, no arrows; never at the tail

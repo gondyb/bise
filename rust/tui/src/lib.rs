@@ -42,6 +42,7 @@ use wire::*;
 mod markdown;
 use markdown::*;
 mod code;
+mod codeblock;
 mod syntax;
 mod mdlive;
 mod sanitize;

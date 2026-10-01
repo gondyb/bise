@@ -365,6 +365,8 @@ fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16)
         // extends), a drag selects, a double click selects
         // the word, a triple click the whole text; the
         // release copies the selection
+        // the copy icon of a code block (codeblock.rs)
+        MouseEventKind::Down(MouseButton::Left) if crate::codeblock::click(app, m.column, m.row) => {}
         MouseEventKind::Down(MouseButton::Left)
             if app.composer.hit(&app.ed.text, m.column, m.row, false).is_some() =>
         {
@@ -612,6 +614,9 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => return true,
         // ctrl+o: open or close everything folded (book §11, §16)
         (KeyCode::Char('o'), KeyModifiers::CONTROL) => toggle_everything(app),
+        // ctrl+y: copy the code block under the mouse, else the newest
+        // on screen (codeblock.rs)
+        (KeyCode::Char('y'), KeyModifiers::CONTROL) => crate::codeblock::copy_key(app),
         // space on the item selected in the feed (composer empty; an
         // agent selected in the panel keeps space for its preview)
         (KeyCode::Char(' '), KeyModifiers::NONE) if app.ed.text.is_empty() && app.feed_sel.is_some() => {

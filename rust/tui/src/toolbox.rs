@@ -39,18 +39,19 @@ pub(crate) struct SubCall<'a> {
 }
 
 // corners, lines and joints: rounded, or plain ASCII (book §11)
-struct Frame {
-    tl: &'static str,
-    tr: &'static str,
-    bl: &'static str,
-    br: &'static str,
-    h: &'static str,
+pub(crate) struct Frame {
+    pub(crate) tl: &'static str,
+    pub(crate) tr: &'static str,
+    pub(crate) bl: &'static str,
+    pub(crate) br: &'static str,
+    pub(crate) h: &'static str,
     v: &'static str,
     lj: &'static str,
     rj: &'static str,
 }
 
-fn frame() -> Frame {
+/// The box's corners and lines (also the markdown code blocks', codeblock.rs).
+pub(crate) fn frame() -> Frame {
     if theme::ascii_mode() {
         Frame { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|", lj: "+", rj: "+" }
     } else {
@@ -145,10 +146,16 @@ fn inner_row(content: Vec<Span<'static>>, inner: usize, bst: Style, soft: bool) 
 /// One styled logical line wrapped inside the box (a hanging `»` on the
 /// continuation rows, like the code blocks).
 fn wrap_one(spans: &[Span<'static>], inner: usize, bst: Style) -> Vec<Line<'static>> {
+    let hang = Span::styled(format!("{} ", glyph(G_WRAP)), Style::default().fg(faint()));
+    wrap_one_with(spans, inner, bst, hang)
+}
+
+/// [`wrap_one`] with `hang` in front of each continuation row (a
+/// markdown code block in ASCII: two blanks, codeblock.rs).
+pub(crate) fn wrap_one_with(spans: &[Span<'static>], inner: usize, bst: Style, hang: Span<'static>) -> Vec<Line<'static>> {
     if spans.iter().all(|s| s.content.is_empty()) {
         return vec![inner_row(Vec::new(), inner, bst, false)];
     }
-    let hang = Span::styled(format!("{} ", glyph(G_WRAP)), Style::default().fg(faint()));
     let rest = inner.saturating_sub(hang.content.width()).max(4);
     wrap_code_line_hanging(spans, inner.max(4), rest)
         .into_iter()
