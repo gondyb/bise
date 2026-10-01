@@ -266,6 +266,20 @@ The helper (`dev.bise.computer-use`) is started by the broker with
   `request` through the broker; `screen_recording` answers
   `{"what","relaunching":true}` when macOS quits the helper mid-request,
   d2b5d61).
+- Settled with cu-setup (m_3892):
+  - the MCP text of an `act` result puts `summary` first (`{"summary":…,`
+    then the rest), errors `{"error":{"summary":…,"code":…}}`: code mode
+    shows the TUI only the first 200 characters of a tool result;
+  - a stop holds until `resume`; the TUI calls `resume <agent>` when the
+    user next sends that agent a message (after any stop: ctrl+c, `↖`,
+    `/stop`, Cancel bar, group closed) and on "⏎ give it back"; `/drop`
+    calls `drop`;
+  - `setup-check` adds `accessibility` and `screen_recording` rows
+    (`state: done|waits|failed|not_yet`, `detail`, `fix:
+    request_accessibility|request_screen_recording|install_helper`); with
+    the helper installed it may start the broker and ask `permissions`,
+    never `request` (the macOS prompt only on the user's ⏎), and a polled
+    check never relaunches the helper.
 
 ## Wave 1 · cu-broker
 
