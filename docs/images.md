@@ -128,15 +128,23 @@ content block only at the last step, the provider request.
     data:"@@BENDIMG:…@@"}}`; a `tool_result` gets a blocks array.
   - A message without marker is byte-identical to before.
 - IO (`runtime/provider.bend`, `img_req`), once per model call, before
-  the body is built: the `.b64` file of each marker is read, only inside
+  the body is built: the `.b64` file of each marker is measured (its
+  size, never its data), only inside
   the image store (`$BEND_IMAGE_DIR` or `~/.bend-harness/images/`, name
   ending in `.b64`, no `/../`). A marker whose file is not there, or
   beyond the 20 most recent images, is turned into plain text
   (`<image-unavailable name=…`, `Im.img_defang`): so a file that merely
   CONTAINS a marker (a doc, a log read with bash) never breaks a request.
-  After the body is printed, `Im.img_splice` puts each image's base64 at
-  its placeholder. A request without marker costs one scan. Measured: an
-  800 KB splice takes ~50 ms in Bend.
+  After the body is printed, `Im.img_splice` puts a **file part** at each
+  placeholder (`Http.file_part(path, size)`: NUL `bend-file:<size>:<path>`
+  NUL). The HTTP client (`vendor/http/http.bend`) counts the file's size in
+  Content-Length and sends its bytes from a C buffer at write time
+  (`Wire.send.file`, `Wire.tls.send.file`): the base64 never enters the
+  Bend heap. Before (2026-10-01): the data was read into Bend Strings
+  (~47 bytes of heap per char) and spliced in, so 20 screenshots of 545 KB
+  made a REPL of 802 MB, and the Bend heap never shrinks (an agent's
+  repl-live sat at 1.8 GB). Now 120 MB, and the turn 0.5 s instead of 1.3 s
+  (`tests/images_mem_e2e.py`). A request without marker costs one scan.
 
 ### Display
 

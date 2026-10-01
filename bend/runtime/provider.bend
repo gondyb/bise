@@ -448,9 +448,13 @@ def got_attempt(g: Got) -> Pvp.Attempt:
 
 # ---- images (docs/images.md): load the markers' base64 from the store ----
 # Each marker of the request names a .b64 file; the ones inside the image
-# store that read non-empty are loaded (once per path), the 20 last kept,
-# the others turned into plain text (Im.img_defang). The body is printed
-# with placeholders and the data spliced in after (Im.img_splice).
+# store that are non-empty are kept (once per path), the 20 last, the
+# others turned into plain text (Im.img_defang). The body is printed with
+# placeholders, and each one gets a FILE PART (Http.file_part: the path and
+# the size), not the data: the HTTP client sends the file's bytes from a C
+# buffer at write time. The base64 never enters the Bend heap: as a String
+# it cost ~47 bytes of heap per char, so 20 screenshots made a request of
+# ~1.5 GB, and the heap never shrinks (repl-live at 1.8 GB on 2026-10-01).
 
 def img_cap() -> Nat:
   20n
@@ -460,27 +464,39 @@ def img_dir() -> IO(String):
     +d : String <- P.env_path("BEND_IMAGE_DIR", "/.bend-harness/images")
     IO.pure(String, String.append(d, "/"))
 
-def img_load.data(empty: Bool, +d: String, +path: String,
+def img_load.sized.n(empty: Bool, +n: U32, +path: String,
     +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
   match empty:
     case True{}:
       (False{}, acc)
     case False{}:
-      (True{}, Con{Im.IL{path, d}, acc})
+      (True{}, Con{Im.IL{path, Http.file_part(path, n)}, acc})
 
-# the data trimmed once (a screenshot's base64 is hundreds of KB, and
-# the trim walks it twice: it was done twice per image per model call)
-def img_load.trimmed(+d: String, +path: String, +acc: List<&2, Im.ILoaded>)
-    -> Bool & List<&2, Im.ILoaded>:
-  img_load.data(String.is_empty(d), d, path, acc)
-
-def img_load.read(m: Maybe<&2, String>, +path: String,
+def img_load.sized(r: Result<&1, &1, U32 & String, U32>, +path: String,
     +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
-  match m:
-    case Some{+d}:
-      img_load.trimmed(String.trim(d), path, acc)
-    case None{}:
+  match r:
+    case Done{+n}:
+      img_load.sized.n(U32.is_eq(n, 0), n, path, acc)
+    case Fail{_}:
       (False{}, acc)
+
+def img_load.size(fs: File & Result<&1, &1, U32 & String, U32>, +path: String,
+    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
+  match fs:
+    case (f, r):
+      do IO<Bool & List<&2, Im.ILoaded>>:
+        c : Unit <- File.close(f)
+        IO.pure(Bool & List<&2, Im.ILoaded>, img_load.sized(r, path, acc))
+
+def img_load.opened(o: Result<&1, &1, U32 & String, File>, +path: String,
+    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
+  match o:
+    case Fail{_}:
+      IO.pure(Bool & List<&2, Im.ILoaded>, (False{}, acc))
+    case Done{f}:
+      do IO<Bool & List<&2, Im.ILoaded>>:
+        fs : File & Result<&1, &1, U32 & String, U32> <- File.size(f)
+        img_load.size(fs, path, acc)
 
 def img_load.one.pick(have: Bool, ok_path: Bool, +path: String,
     +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
@@ -491,8 +507,8 @@ def img_load.one.pick(have: Bool, ok_path: Bool, +path: String,
       match ok_path:
         case True{}:
           do IO<Bool & List<&2, Im.ILoaded>>:
-            m : Maybe<&2, String> <- P.read_file(path)
-            IO.pure(Bool & List<&2, Im.ILoaded>, img_load.read(m, path, acc))
+            o : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
+            img_load.opened(o, path, acc)
         case False{}:
           IO.pure(Bool & List<&2, Im.ILoaded>, (False{}, acc))
 

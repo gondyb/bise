@@ -59,6 +59,7 @@ prints what the server would send for a turn ({"text", "reasoning",
 prints FILE as a Bend string literal (a LAWS fixture).
 Shapes: docs/research/providers.md §8 (the docs each one follows).
 """
+import hashlib
 import http.server
 import json
 import os
@@ -750,6 +751,9 @@ class H(http.server.BaseHTTPRequestHandler):
                                 # every user text of the conversation (a resumed session keeps its history)
                                 "users": [m["text"][:200] for m in last],
                                 "images": [i[:200] for m in conv for i in m["images"]],
+                                # each image whole, as a hash (a body spliced at
+                                # write time must carry every byte)
+                                "image_sha": [hashlib.sha256(i.encode()).hexdigest() for m in conv for i in m["images"]],
                                 "family": family, "path": self.path, "stream": stream, "status": status,
                                 "error": turn["error"], "fixture": turn["fixture"],
                                 # BISE-135: the model and effort the call asked for

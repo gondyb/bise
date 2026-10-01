@@ -1516,10 +1516,84 @@ def req.put(xs: List<&2, Sigma<&2, &2, String, _ => List<&2, String>>>, m: Map<&
       +lk = String.to_lower(k)
       req.put(t, req.put.one(m, lk, vs, req.reserved(lk)))
 
+# ---- body parts read from a file at send time ----
+# A body may hold file parts, file_part(path, size): NUL "bend-file:" size ":"
+# path NUL. Content-Length counts the file's size, not the part's text, and
+# io.send sends the file's bytes from a C buffer (Wire.send.file): they never
+# enter the Bend heap (a model request's images: hundreds of KB of base64
+# each, ~47 bytes of heap per char as a String, and a heap that never
+# shrinks). For text bodies (JSON) that hold no raw NUL of their own; a body
+# without the marker is measured and sent as before.
+def file_mark() -> String:
+  SCon{Chr{0}, "bend-file:"}
+
+def file_part(+path: String, +size: U32) -> String:
+  String.append(file_mark(), String.append(U32.show(size),
+    String.append(":", String.append(path, SCon{Chr{0}, SNil{}}))))
+
+type WPart is Data:
+  WText{s: String}
+  WFile{path: String, size: U32}
+
+# "bend-file:<size>:<path>" (an odd segment of the wire split at NUL)
+def wpart.size(m: Maybe<&2, U32>, +path: String, +seg: String) -> WPart:
+  match m:
+    case Some{+n}:
+      WFile{path, n}
+    case None{}:
+      WText{seg}
+
+def wpart.file(+rest: String, +seg: String) -> WPart:
+  +n = String.concat(List.take(&2, String, String.split(rest, Chr{58}), 1n))
+  wpart.size(parse_u32(n), String.drop(rest, Nat.add(String.length(n), 1n)), seg)
+
+def wpart.odd(+seg: String) -> WPart:
+  Bool.pick(WPart, String.starts_with(seg, "bend-file:"),
+    wpart.file(String.drop(seg, 10n), seg), WText{seg})
+
+def fparts.add(empty: Bool, +x: String, acc: List<&2, WPart>) -> List<&2, WPart>:
+  match empty:
+    case True{}:
+      acc
+    case False{}:
+      Con{WText{x}, acc}
+
+def fparts.go(xs: List<&2, String>, odd: Bool, acc: List<&2, WPart>) -> List<&2, WPart>:
+  match xs:
+    case Nil{}:
+      List.reverse(&2, WPart, acc)
+    case Con{+x, t}:
+      match odd:
+        case True{}:
+          fparts.go(t, False{}, Con{wpart.odd(x), acc})
+        case False{}:
+          fparts.go(t, True{}, fparts.add(String.is_empty(x), x, acc))
+
+def fparts(+s: String) -> List<&2, WPart>:
+  fparts.go(String.split(s, Chr{0}), False{}, Nil{})
+
+def wpart.len(p: WPart) -> Nat:
+  match p:
+    case WText{+t}:
+      String.length(t)
+    case WFile{_, +n}:
+      U32.to_nat(n)
+
+def fparts.len.go(ps: List<&2, WPart>, +acc: Nat) -> Nat:
+  match ps:
+    case Nil{}:
+      acc
+    case Con{p, t}:
+      fparts.len.go(t, Nat.add(acc, wpart.len(p)))
+
+# the bytes a body puts on the wire: its file parts count their file's size
+def fparts.len(+s: String) -> Nat:
+  Bool.pick(Nat, String.contains(s, file_mark()), fparts.len.go(fparts(s), 0n), String.length(s))
+
 # RFC 9110 §8.6: no Content-Length on a bodiless request whose method gives a body no meaning.
 def req.cl(+m: Map<&2, List<&2, String>>, +method: String, +body: String) -> Map<&2, List<&2, String>>:
   +bodied = Bool.or(Bool.not(String.is_empty(body)), Bool.or(String.eq(method, "POST"), Bool.or(String.eq(method, "PUT"), String.eq(method, "PATCH"))))
-  Bool.pick(Map<&2, List<&2, String>>, bodied, set(m, "content-length", U32.show(nat_u32(String.length(body)))), m)
+  Bool.pick(Map<&2, List<&2, String>>, bodied, set(m, "content-length", U32.show(nat_u32(fparts.len(body)))), m)
 
 # Caller headers are lowercased so they cannot duplicate ours; host, connection,
 # content-length and transfer-encoding are always ours (no smuggling through them).
@@ -1595,12 +1669,58 @@ def io.recv.words(tls: Bool, s: Socket, max: U32, ms: U32) -> IO(Socket & Result
     case False{}:
       Wire.recv.words(s, max, ms)
 
-def io.send(tls: Bool, s: Socket, data: String) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+def io.send.text(tls: Bool, s: Socket, data: String) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
   match tls:
     case True{}:
       Wire.tls.send(s, data)
     case False{}:
       Wire.send(s, data)
+
+def io.send.file(tls: Bool, s: Socket, +path: String, +size: U32) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  match tls:
+    case True{}:
+      Wire.tls.send.file(s, path, size)
+    case False{}:
+      Wire.send.file(s, path, size)
+
+def io.send.part(tls: Bool, s: Socket, p: WPart) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  match p:
+    case WText{+t}:
+      io.send.text(tls, s, t)
+    case WFile{+path, +size}:
+      io.send.file(tls, s, path, size)
+
+# the parts in order; the first failed send ends it
+@unsafe
+def io.send.parts(ps: List<&2, WPart>, +tls: Bool, s: Socket) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  match ps:
+    case Nil{}:
+      IO.pure(Socket & Result<&1, &1, U32 & String, Unit>, (s, Done{Unit{}}))
+    case Con{p, rest}:
+      do IO<Socket & Result<&1, &1, U32 & String, Unit>>:
+        m : Socket & Result<&1, &1, U32 & String, Unit> <- io.send.part(tls, s, p)
+        io.send.after(rest, tls, m)
+
+@unsafe
+def io.send.after(rest: List<&2, WPart>, +tls: Bool, m: Socket & Result<&1, &1, U32 & String, Unit>) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  (s, r) = m
+  match r:
+    case Fail{e}:
+      IO.pure(Socket & Result<&1, &1, U32 & String, Unit>, (s, Fail{e}))
+    case Done{u}:
+      io.send.parts(rest, tls, s)
+
+def io.send.pick(+tls: Bool, s: Socket, +data: String, parts: Bool) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  match parts:
+    case True{}:
+      io.send.parts(fparts(data), tls, s)
+    case False{}:
+      io.send.text(tls, s, data)
+
+# A wire with file parts (file_part) goes out in pieces: its text, and each
+# file's bytes from a C buffer. A wire without one: one send, as always.
+def io.send(+tls: Bool, s: Socket, +data: String) -> IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  io.send.pick(tls, s, data, String.contains(data, file_mark()))
 
 def io.close(tls: Bool, s: Socket) -> IO(Unit):
   match tls:

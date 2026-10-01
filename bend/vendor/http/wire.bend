@@ -44,6 +44,19 @@ def tls.send(sock: Socket, data: String) ->
   import "./effs/wire.c"
   import "./effs/wire.js"
 
+# The bytes of the file at path, read at send time into a C buffer: they
+# never enter the Bend heap (a request's images, http.bend file_part). The
+# file must hold exactly size bytes, else EINVAL; a missing one: its errno.
+def send.file(sock: Socket, path: String, size: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/wire.c"
+  import "./effs/wire.js"
+
+def tls.send.file(sock: Socket, path: String, size: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/wire.c"
+  import "./effs/wire.js"
+
 # "" once the peer sends close_notify. A bare EOF is an error.
 def tls.recv(sock: Socket, max: U32, ms: U32) ->
   IO(Socket & Result<&1, &1, U32 & String, String>):

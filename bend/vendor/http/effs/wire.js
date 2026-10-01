@@ -105,6 +105,21 @@ function send_words(socket, n, words, k) {
   return wire_send(socket, wire_words_octets(n, words), k);
 }
 
+// Twin of wire_file in wire.c: the file at path (one char code per octet),
+// exactly size bytes of it, or null (the send fails with EINVAL).
+function wire_file(path, size) {
+  try {
+    const b = new Uint8Array(require("fs").readFileSync(Buffer.from(path, "latin1")));
+    return b.length === Number(size) ? b : null;
+  } catch {
+    return null;
+  }
+}
+
+function send_file(socket, path, size, k) {
+  return wire_send(socket, wire_file(path, size), k);
+}
+
 function wire_send(socket, b, k) {
   const sys = io_sys();
   const fd = socket;
@@ -285,6 +300,10 @@ function tls_send(socket, data, k) {
 
 function tls_send_words(socket, n, words, k) {
   return wire_tls_send(socket, wire_words_octets(n, words), k);
+}
+
+function tls_send_file(socket, path, size, k) {
+  return wire_tls_send(socket, wire_file(path, size), k);
 }
 
 function wire_tls_send(socket, b, k) {

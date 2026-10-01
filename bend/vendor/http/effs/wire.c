@@ -156,7 +156,7 @@ static void __attribute__((constructor)) wire_recv_words_use(void) {
 
 #endif
 
-#if defined(CID(send)) || defined(CID(send.words))
+#if defined(CID(send)) || defined(CID(send.words)) || defined(CID(send.file))
 
 static Term wire_send_more(Env e, IoWork* w) {
   int fd = (int)w->hand;
@@ -205,6 +205,56 @@ Term wire_send_words_run(Env e, Term* f, IoWork* w) {
 
 static void __attribute__((constructor)) wire_send_words_use(void) {
   io_eff(CID(send.words), wire_send_words_run, 0);
+}
+
+#endif
+
+#if defined(CID(send.file)) || defined(CID(tls.send.file))
+
+// The file at path (octets, one Char per byte), exactly size bytes of it, in a
+// malloc'd buffer: a body part read at send time never enters the Bend heap.
+// A path that is not octets or a file of another size: EINVAL; else errno.
+static char* wire_file(Env e, Term path, u64 size, u64* len, int* code) {
+  bool  bad;
+  u64   n;
+  char* p   = wire_octets(e, path, &n, &bad);
+  p         = io_mem(realloc(p, n + 1));
+  p[n]      = 0;
+  char* buf = io_mem(malloc(size > 0 ? size : 1));
+  *code     = bad ? EINVAL : 0;
+  *len      = size;
+  if (*code == 0) {
+    errno    = 0;
+    FILE* fp = fopen(p, "rb");
+    if (fp == NULL) {
+      *code = errno != 0 ? errno : ENOENT;
+    } else {
+      u64 got = (u64)fread(buf, 1, size, fp);
+      if (got != size || fgetc(fp) != EOF) {
+        *code = EINVAL;
+      }
+      fclose(fp);
+    }
+  }
+  free(p);
+  return buf;
+}
+
+#endif
+
+#ifdef CID(send.file)
+
+Term wire_send_file_run(Env e, Term* f, IoWork* w) {
+  int code;
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  w->data = wire_file(e, f[1], (u64)f[2], &w->size, &code);
+  w->made = 0;
+  w->code = code;
+  return wire_send_more(e, w);
+}
+
+static void __attribute__((constructor)) wire_send_file_use(void) {
+  io_eff(CID(send.file), wire_send_file_run, 0);
 }
 
 #endif
@@ -516,7 +566,7 @@ static void __attribute__((constructor)) tls_connect_use(void) {
 
 #endif
 
-#if defined(CID(tls.send)) || defined(CID(tls.send.words))
+#if defined(CID(tls.send)) || defined(CID(tls.send.words)) || defined(CID(tls.send.file))
 
 // SSL_write is retried with the same buffer, as OpenSSL requires.
 static Term wire_tls_send_more(Env e, IoWork* w) {
@@ -577,6 +627,23 @@ Term tls_send_words_run(Env e, Term* f, IoWork* w) {
 
 static void __attribute__((constructor)) tls_send_words_use(void) {
   io_eff(CID(tls.send.words), tls_send_words_run, 0);
+}
+
+#endif
+
+#ifdef CID(tls.send.file)
+
+Term tls_send_file_run(Env e, Term* f, IoWork* w) {
+  int code;
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  w->data = wire_file(e, f[1], (u64)f[2], &w->size, &code);
+  w->made = 0;
+  w->code = code;
+  return wire_tls_send_more(e, w);
+}
+
+static void __attribute__((constructor)) tls_send_file_use(void) {
+  io_eff(CID(tls.send.file), tls_send_file_run, 0);
 }
 
 #endif
