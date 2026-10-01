@@ -411,7 +411,7 @@
   .prob .stage { min-height:420px; }
 
   /* ===== landing-b: paper, ink, colored pencils. the screens stay dark ===== */
-  html[data-theme] { --bg:#f2ede2; --soft:#ebe4d6; --text:#1d1a17; --dim:#5a5349; --faint:#cfc5b4; --kick:#8a8174; --wind:#d6ccb9; --acc:#c8264a; --err:#b3261e; --raised:#e9e1d1; --chip:#e3dac8; --pen:#c8264a; --blue:#3446a8; }
+  html[data-theme] { --bg:#f2ede2; --soft:#ebe4d6; --text:#1d1a17; --dim:#5a5349; --faint:#cfc5b4; --kick:#8a8174; --wind:#d6ccb9; --acc:#c8264a; --err:#b3261e; --raised:#e9e1d1; --chip:#e3dac8; --pen:#c8264a; --blue:#6b645a; }
   body { font-family:Newsreader, Georgia, serif; font-size:20px; line-height:1.6;
     background:#f2ede2 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 .35 0 0 0 0 .3 0 0 0 0 .25 0 0 0 .08 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
   .term, .stage, .fgrid .mini, .mv, .dwin {
@@ -483,7 +483,7 @@
   @keyframes bob { 50% { transform:translateY(-8px) rotate(-2deg); } }
   .cloud.tiny { width:70px; vertical-align:-10px; margin-left:4px; }
   .lcloud { width:170px; display:block; margin:0 auto -30px; animation:bob 6s ease-in-out infinite; }
-  .lcloud .z { stroke:#3446a8; }
+  .lcloud .z { stroke:#6b645a; }
   .marg { position:relative; }
   .pnote { position:absolute; width:190px; height:88px; display:flex; align-items:center; justify-content:center; text-align:center;
     font-family:Caveat, cursive; font-size:25px; line-height:1.05; color:var(--c); opacity:0; transition:opacity .6s .8s, transform .6s .8s; }
@@ -566,19 +566,20 @@
   #why > .inner, #how > .inner, #more > .inner, #faq > .inner { position:relative; z-index:1; }
   pre.bgw { z-index:0; opacity:.75; }
   .seeds { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; font-family:"JetBrains Mono", monospace; font-size:14px; color:var(--kick); }
+  .seeds span.p { color:var(--pen); }
   .seeds span { position:absolute; opacity:0; animation:seed var(--t) linear infinite; animation-delay:var(--dl); }
-  @keyframes seed { 0% { opacity:0; transform:translate(0,0) rotate(0); } 12% { opacity:.45; } 80% { opacity:.35; }
+  @keyframes seed { 0% { opacity:0; transform:translate(0,0) rotate(0); } 12% { opacity:.75; } 80% { opacity:.6; }
     100% { opacity:0; transform:translate(var(--dx), var(--dy)) rotate(200deg); } }
   @media (prefers-reduced-motion: reduce) { .seeds { display:none; } }
 
   /* ===== dark paper ===== */
   html.pd[data-theme] { --bg:#171513; --soft:#1e1b18; --text:#ece6da; --dim:#b8b0a3; --faint:#3d3935; --kick:#8a8276; --wind:#38332e; --acc:#f4a6b0; --err:#ff5a52;
-    --raised:#221e1c; --chip:#262220; --pen:#f4a6b0; --blue:#9aa8ff; --frame:#ece6da80; }
+    --raised:#221e1c; --chip:#262220; --pen:#f4a6b0; --blue:#b8b0a3; --frame:#ece6da80; }
   html.pd body { background:#171513 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .9 0 0 0 .05 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
   .pd .hl { background-image:linear-gradient(100deg, transparent 0, #f4a6b047 4px, #f4a6b047 calc(100% - 6px), transparent 100%); }
-  .pd .cloud path[stroke="#3446a8"], .pd .tally g { stroke:#9aa8ff; } .pd .cloud g[stroke="#2a2550"] { stroke:#ece6da; } .pd .cloud g[stroke="#5b6fc7"] { stroke:#9aa8ff; }
-  .pd #hatchB line { stroke:#8d9cf5; }
-  .pd .pnote.n1 { --c:#ff9a8a !important; } .pd .pnote.n2 { --c:#9aa8ff !important; }
+  .pd .cloud path[stroke="#6b645a"], .pd .tally g { stroke:#b8b0a3; } .pd .cloud g[stroke="#1d1a17"] { stroke:#ece6da; } .pd .cloud g[stroke="#8a8174"] { stroke:#b8b0a3; }
+  .pd #hatchB line { stroke:#8a8276; }
+  .pd .pnote.n1 { --c:#ff9a8a !important; } .pd .pnote.n2 { --c:#b8b0a3 !important; }
   .pd .org .boss, .pd .org .agent { border-color:#4a4540; }
   .pd .install { border-color:var(--text); }
   .pd #desktop .ctas a.main, .pd #desktop .ctas a.main:hover { color:var(--text); background-image:linear-gradient(100deg, transparent 0, #f4a6b055 6px, #f4a6b055 calc(100% - 8px), transparent 100%); }
@@ -624,13 +625,13 @@
   .org { margin:72px 0 88px; }
   @media (max-width: 640px) { .org { margin:44px 0 56px; } }
 </style>
-<script>{ const r = document.documentElement; r.classList.add('v2'); let d = null; try { d = localStorage.getItem('lbd'); } catch {} if (d === '1') r.classList.add('pd'); }</script>
+<script>{ const r = document.documentElement; r.classList.add('v2'); let d = null; try { d = localStorage.getItem('lbd'); } catch {} if ((d ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1') r.classList.add('pd'); }</script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
 <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.2" result="d"/><feTurbulence type="fractalNoise" baseFrequency="1.8" seed="9" result="g"/><feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.1 1.3" result="m"/><feComposite in="d" in2="m" operator="in"/></filter>
 <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="4"/></filter>
-<pattern id="hatchB" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><line x1="0" y1="0" x2="0" y2="5" stroke="#5b6fc7" stroke-width="1.5" opacity=".7"/></pattern>
+<pattern id="hatchB" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><line x1="0" y1="0" x2="0" y2="5" stroke="#8a8174" stroke-width="1.5" opacity=".7"/></pattern>
 <pattern id="hatchP" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><line x1="0" y1="0" x2="0" y2="4" stroke="#e46a86" stroke-width="1.4" opacity=".6"/></pattern>
 <pattern id="hatchY" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-40)"><line x1="0" y1="0" x2="0" y2="5" stroke="#e7b53c" stroke-width="1.4" opacity=".55"/></pattern>
 </defs></svg>
@@ -653,7 +654,7 @@
   <pre class="rail" aria-hidden="true"></pre><div class="seeds hs" aria-hidden="true"></div>
   <div class="hero hx col">
     <div class="htext">
-    <div class="big">bise <span class="kiss">:*</span></div><svg class="doodle cloud hcloud" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#3446a8" stroke-width="2.8"/><g stroke="#2a2550" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#2a2550" stroke-width="1.8"><ellipse cx="95" cy="80" rx="4" ry="4.6"/></g><g stroke="#5b6fc7" stroke-width="2"><g class="gust"><path d="M176 70 C190 64,200 76,216 68"/><path d="M178 82 C194 80,204 90,220 84"/><path d="M172 58 C184 50,196 56,208 50"/></g></g></g></svg>
+    <div class="big">bise <span class="kiss">:*</span></div><svg class="doodle cloud hcloud" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#6b645a" stroke-width="2.8"/><g stroke="#1d1a17" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#1d1a17" stroke-width="1.8"><ellipse cx="95" cy="80" rx="4" ry="4.6"/></g><g stroke="#8a8174" stroke-width="2"><g class="gust"><path d="M176 70 C190 64,200 76,216 68"/><path d="M178 82 C194 80,204 90,220 84"/><path d="M172 58 C184 50,196 56,208 50"/></g></g></g></svg>
     <div class="t1">a multi-agent harness, <span class="hl">made for humans</span>.</div>
     <div class="t2" data-a="t2">meet your team lead.<br><span class="u">you stay in flow<svg class="ul" viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true"><path class="draw" d="M3 10 C60 4,120 13,180 8 S270 5,297 9"/></svg></span>, i run the agents.</div>
     </div>
@@ -685,7 +686,7 @@
     <div class="kicker">why</div>
     <h2 class="punch">you didn't become an engineer<br>to <span class="u">babysit robots<svg class="ul" viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true"><path class="draw" d="M3 10 C60 4,120 13,180 8 S270 5,297 9"/></svg></span>.</h2>
     <p class="soft">you shipped more than ever today. your brain is fried 💀</p>
-    <p class="soft marg"><span class="pnote n1" style="--c:#b8473a"><svg viewBox="0 0 200 92" preserveAspectRatio="none" aria-hidden="true"><g filter="url(#pencil)" fill="none" style="stroke:var(--c)" stroke-width="1.8" stroke-linejoin="round"><path d="M6 8 L192 4 L194 70 L176 88 L8 86 Z"/><path d="M194 70 L178 72 L176 88"/><circle cx="16" cy="18" r="2.4"/></g></svg><span>should i<br>continue?</span></span><span class="pnote n2" style="--c:#3446a8"><svg viewBox="0 0 200 92" preserveAspectRatio="none" aria-hidden="true"><g filter="url(#pencil)" fill="none" style="stroke:var(--c)" stroke-width="1.8" stroke-linejoin="round"><path d="M6 8 L192 4 L194 70 L176 88 L8 86 Z"/><path d="M194 70 L178 72 L176 88"/><circle cx="16" cy="18" r="2.4"/></g></svg><span>yes, continue</span></span><svg class="tally" viewBox="0 0 150 40" aria-hidden="true"><g filter="url(#pencil)" stroke="#3446a8" stroke-width="2.4" stroke-linecap="round" fill="none"><path class="draw" style="--d:0.0s" d="M6 4 L5 36"/><path class="draw" style="--d:0.08s" d="M15 4 L14 36"/><path class="draw" style="--d:0.16s" d="M24 4 L23 36"/><path class="draw" style="--d:0.24s" d="M33 4 L32 36"/><path class="draw" style="--d:.35s" d="M0 30 L40 10"/><path class="draw" style="--d:0.45s" d="M62 5 L61 35"/><path class="draw" style="--d:0.53s" d="M71 5 L70 35"/><path class="draw" style="--d:0.61s" d="M80 5 L79 35"/><path class="draw" style="--d:0.69s" d="M89 5 L88 35"/><path class="draw" style="--d:.8s" d="M56 28 L96 12"/><path class="draw" style="--d:.95s" d="M118 6 L117 34"/></g></svg>you said "yes, continue" eleven times. you pasted the same context into three tabs. you forgot what tab 3 was for.</p>
+    <p class="soft marg"><span class="pnote n1" style="--c:#b8473a"><svg viewBox="0 0 200 92" preserveAspectRatio="none" aria-hidden="true"><g filter="url(#pencil)" fill="none" style="stroke:var(--c)" stroke-width="1.8" stroke-linejoin="round"><path d="M6 8 L192 4 L194 70 L176 88 L8 86 Z"/><path d="M194 70 L178 72 L176 88"/><circle cx="16" cy="18" r="2.4"/></g></svg><span>should i<br>continue?</span></span><span class="pnote n2" style="--c:#6b645a"><svg viewBox="0 0 200 92" preserveAspectRatio="none" aria-hidden="true"><g filter="url(#pencil)" fill="none" style="stroke:var(--c)" stroke-width="1.8" stroke-linejoin="round"><path d="M6 8 L192 4 L194 70 L176 88 L8 86 Z"/><path d="M194 70 L178 72 L176 88"/><circle cx="16" cy="18" r="2.4"/></g></svg><span>yes, continue</span></span><svg class="tally" viewBox="0 0 150 40" aria-hidden="true"><g filter="url(#pencil)" stroke="#6b645a" stroke-width="2.4" stroke-linecap="round" fill="none"><path class="draw" style="--d:0.0s" d="M6 4 L5 36"/><path class="draw" style="--d:0.08s" d="M15 4 L14 36"/><path class="draw" style="--d:0.16s" d="M24 4 L23 36"/><path class="draw" style="--d:0.24s" d="M33 4 L32 36"/><path class="draw" style="--d:.35s" d="M0 30 L40 10"/><path class="draw" style="--d:0.45s" d="M62 5 L61 35"/><path class="draw" style="--d:0.53s" d="M71 5 L70 35"/><path class="draw" style="--d:0.61s" d="M80 5 L79 35"/><path class="draw" style="--d:0.69s" d="M89 5 L88 35"/><path class="draw" style="--d:.8s" d="M56 28 L96 12"/><path class="draw" style="--d:.95s" d="M118 6 L117 34"/></g></svg>you said "yes, continue" eleven times. you pasted the same context into three tabs. you forgot what tab 3 was for.</p>
     <p class="soft">that great idea you had at 2pm? gone.</p>
     <p class="soft"><span class="hl">that's agent fatigue.</span></p>
     <p class="turn">it doesn't have to be like this.</p>
@@ -715,7 +716,7 @@
     <div class="def">
       <b>meet bise</b> <span class="dim">/beez/ · french, n.</span><br>
       1. a quick kiss on the cheek <span class="acc">:*</span><br>
-      2. a brisk north wind <svg class="doodle cloud tiny" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#3446a8" stroke-width="2.8"/><g stroke="#2a2550" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#2a2550" stroke-width="1.8"><ellipse cx="95" cy="80" rx="4" ry="4.6"/></g><g stroke="#5b6fc7" stroke-width="2"><g class="gust"><path d="M176 70 C190 64,200 76,216 68"/><path d="M178 82 C194 80,204 90,220 84"/><path d="M172 58 C184 50,196 56,208 50"/></g></g></g></svg><br>
+      2. a brisk north wind <svg class="doodle cloud tiny" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#6b645a" stroke-width="2.8"/><g stroke="#1d1a17" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#1d1a17" stroke-width="1.8"><ellipse cx="95" cy="80" rx="4" ry="4.6"/></g><g stroke="#8a8174" stroke-width="2"><g class="gust"><path d="M176 70 C190 64,200 76,216 68"/><path d="M178 82 C194 80,204 90,220 84"/><path d="M172 58 C184 50,196 56,208 50"/></g></g></g></svg><br>
       <span class="three">3. <span class="circ">a terminal where multi-agent coding is painless<svg class="ring" viewBox="0 0 120 50" preserveAspectRatio="none" aria-hidden="true"><path class="draw" d="M16 11 C42 1,98 2,113 19 C125 33,94 47,56 46 C20 45,3 35,6 23 C9 12,34 5,70 6"/></svg></span><span class="pen side"><svg class="arr" viewBox="0 0 80 40" aria-hidden="true"><path class="draw" d="M76 30 C56 36,26 32,8 12"/><path class="draw" style="--d:.5s" d="M6 26 L7 11 L21 14"/></svg>this one</span></span>
     </div>
   </div>
@@ -884,7 +885,7 @@
   <pre class="wind" id="wind2" aria-hidden="true"></pre>
   <section class="last">
     <div class="blow">
-      <svg class="doodle cloud lcloud" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#3446a8" stroke-width="2.8"/><g stroke="#2a2550" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#2a2550" stroke-width="1.8"><path d="M150 46 l8 0 l-8 8 l8 0" class="z"/></g><g stroke="#5b6fc7" stroke-width="2"></g></g></svg><div class="big acc">:*</div>
+      <svg class="doodle cloud lcloud" viewBox="0 0 220 120" aria-hidden="true"><g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="#6b645a" stroke-width="2.8"/><g stroke="#1d1a17" stroke-width="2"><path d="M70 66 q6 5 12 0"/><path d="M104 66 q6 5 12 0"/></g><circle cx="66" cy="78" r="6" fill="#ef9aae" opacity=".55"/><circle cx="122" cy="78" r="6" fill="#ef9aae" opacity=".55"/><g stroke="#1d1a17" stroke-width="1.8"><path d="M150 46 l8 0 l-8 8 l8 0" class="z"/></g><g stroke="#8a8174" stroke-width="2"></g></g></svg><div class="big acc">:*</div>
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
       <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
       <div class="switch"><div>switching from <span class="cli" aria-label="Claude Code, Codex, Vibe, OpenCode or another agent"><span>Claude Code</span></span>?</div><div><button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button> · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></div></div>
@@ -1749,9 +1750,10 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   // quiet backgrounds
   document.querySelectorAll('pre.bgw').forEach((p) => wind(p, .66));
   document.querySelectorAll('.seeds').forEach((box) => {
-    for (let i = 0; i < 16; i++) {
-      const s = document.createElement('span'); s.textContent = i % 4 ? '*' : '·';
-      s.style.left = (Math.random() * 92) + '%'; s.style.top = (10 + Math.random() * 80) + '%';
+    const n = box.classList.contains('hs') ? 90 : 46;
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('span'); s.textContent = i % 5 ? '*' : '·'; if (i % 9 === 0) s.className = 'p';
+      s.style.left = (Math.random() * 100 - 8) + '%'; s.style.top = (Math.random() * 96) + '%';
       s.style.setProperty('--t', (16 + Math.random() * 14) + 's'); s.style.setProperty('--dl', (-Math.random() * 30) + 's');
       s.style.setProperty('--dx', (160 + Math.random() * 220) + 'px'); s.style.setProperty('--dy', (-40 - Math.random() * 80) + 'px');
       s.style.fontSize = (11 + Math.random() * 6) + 'px'; box.append(s);
@@ -1759,10 +1761,10 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   });
   // dark paper: the ◐ button, the d key, ?dark
   const r = document.documentElement, q = new URLSearchParams(location.search);
-  const dark = (on) => { r.classList.toggle('pd', on); localStorage.setItem('lbd', on ? '1' : '0'); document.querySelector('meta[name=theme-color]').content = on ? '#171513' : '#f2ede2'; };
-  dark(q.has('dark') || (!q.has('light') && localStorage.getItem('lbd') === '1'));
-  document.getElementById('theme').onclick = () => dark(!r.classList.contains('pd'));
-  addEventListener('keydown', (e) => { if (e.key === 'd' && !e.metaKey && !e.ctrlKey && !e.altKey && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) dark(!r.classList.contains('pd')); });
+  const dark = (on, keep) => { r.classList.toggle('pd', on); if (keep) localStorage.setItem('lbd', on ? '1' : '0'); document.querySelector('meta[name=theme-color]').content = on ? '#171513' : '#f2ede2'; };
+  dark(q.has('dark') || (!q.has('light') && (localStorage.getItem('lbd') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1'));
+  document.getElementById('theme').onclick = () => dark(!r.classList.contains('pd'), true);
+  addEventListener('keydown', (e) => { if (e.key === 'd' && !e.metaKey && !e.ctrlKey && !e.altKey && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) dark(!r.classList.contains('pd'), true); });
 }</script>
 </body>
 </html>
