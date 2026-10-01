@@ -423,9 +423,15 @@ selected row shows its fix line and its ⏎ action. Glyphs: `✓` done
   rewrites the native host manifest and shim).
 - Phase 5 rows: "turn on bise Computer Use in the list"; denied: "macOS
   says no. Privacy & Security → Accessibility, turn on bise Computer
-  Use" (the helper holds the grant, never the terminal). Screen Recording: the
-  "reopen" line only if macOS needs it for the helper (to check: the
-  helper can relaunch itself, the user's terminal is not involved).
+  Use" (the helper holds the grant, never the terminal). Screen Recording
+  (measured by cu-apps, b4d31c4): the grant needs a **relaunch of the
+  helper** (macOS shows "Quit & Reopen" for bise Computer Use, the user
+  clicks it; the terminal is not involved). The reopened helper has no
+  `--socket` and listens on the default `~/.bise/run/computer-use-app.sock`,
+  which the broker uses. So after this grant the row expects the helper
+  to go away and come back: it shows the wait (designer's line), polls
+  `permissions` until the reopened helper answers `screen_recording:
+  true`, then flips to `✓`. Accessibility needs no relaunch.
 - Live test: opens `bise · setup` group in the background with a local
   test page served by the broker, clicks, types, screenshots, closes it;
   "✓ ready. ask any agent to use Chrome or an app. /computer-use checks

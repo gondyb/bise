@@ -239,6 +239,15 @@ The helper (`dev.bise.computer-use`) is started by the broker with
   app).
 - The helper refuses the targets of design §5.2 too (`refused`); the
   broker's list is the first check.
+- **Screen Recording relaunch** (cu-apps, b4d31c4): granting Screen
+  Recording needs a helper relaunch (macOS "Quit & Reopen"); the
+  reopened helper starts **without** `--socket` and listens on the
+  default path. So in the product the broker always uses the default
+  path (`--socket` is for tests only), treats a helper that disappears
+  right after a `request screen_recording` as expected (no error to the
+  agent, no stop event), and reconnects when the new hello arrives.
+  `/computer-use` (cu-setup) shows the wait and polls `permissions`
+  until `screen_recording: true`. Accessibility needs no relaunch.
 
 ### C6. Broker ↔ bise (hub and TUI)
 
