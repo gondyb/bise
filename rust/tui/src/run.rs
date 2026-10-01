@@ -134,6 +134,8 @@ fn push_keyboard_flags() -> bool {
         let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(crate::ctrlhint::FLAGS));
         let reply = crate::theme_detect::query(b"\x1b[?u").unwrap_or_default();
         if crate::ctrlhint::confirmed(&reply) {
+            // the flags carry the event types: voice mode's hold space
+            crate::voicemode::live::RELEASES.store(true, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
         let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
@@ -436,6 +438,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             continue;
         }
         pump_voice(app);
+        crate::voicemode::live::pump(app);
         frame_clock(app, std::time::Instant::now(), last_draw, reduce_motion);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
@@ -472,7 +475,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
         // transcribing (its meter, blink and wave; Vibe's poll)
         let wait = if backlog || app.find.as_ref().is_some_and(|f| f.busy()) {
             Duration::ZERO
-        } else if app.voice.active() {
+        } else if app.voice.active() || app.voice_mode.is_some() {
             Duration::from_millis(50)
         } else {
             Duration::from_millis(80)
@@ -484,6 +487,12 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             // ctrl, option, cmd alone, releases and repeats (ctrlhint.rs): the hold
             // sees them all, the handlers only presses
             app.hold.event(&ev, std::time::Instant::now());
+            // voice mode's space: presses, repeats and releases (hold space)
+            if let Event::Key(k) = &ev {
+                if crate::voicemode::live::space(app, k) {
+                    continue;
+                }
+            }
             let Some(ev) = crate::ctrlhint::for_handlers(ev) else { continue };
             let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
             let before = Before::of(app);

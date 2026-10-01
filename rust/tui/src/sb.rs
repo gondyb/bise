@@ -678,6 +678,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
     // inbox's card while the hub still holds it)
     let asked = answer_id.and_then(|id| sb.card_by_id(id)).map(|c| c.text.trim().to_string());
     let mut queued = None;
+    // voice mode: the live messages and turns of this agent (never a replay)
+    let voice = app.voice_mode.is_some() && app.sb.ready;
+    let mut said = Vec::new();
     with_feed(app, agent, |app| {
         if folded {
             let n0 = app.events.len();
@@ -685,6 +688,14 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
         } else {
             let n0 = app.events.len();
             ingest_at(app, line, pos, ts);
+            if voice {
+                said.extend(
+                    app.events[n0.min(app.events.len())..]
+                        .iter()
+                        .filter(|e| matches!(e, Ev::Assistant(_) | Ev::Turn | Ev::TurnDone | Ev::Idle))
+                        .cloned(),
+                );
+            }
             if let Some(id) = answer_id {
                 ask_of(app, n0, id, asked);
             }
@@ -697,6 +708,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
             app.pending = true;
         }
     });
+    if !said.is_empty() {
+        crate::voicemode::live::on_events(app, agent, &said);
+    }
     if let Some(m) = queued {
         app.sb.send_input_to(agent, m);
     }

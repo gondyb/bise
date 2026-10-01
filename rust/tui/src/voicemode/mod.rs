@@ -28,6 +28,7 @@ pub mod audio; // voice-audio
 pub mod config; // voice-settings
 pub mod kiss; // voice-tui
 pub mod listen; // voice-stt
+pub mod live; // voice-mode (lead): the app's side
 pub mod pane; // voice-tui
 pub mod route; // voice-audio
 pub mod settings; // voice-settings

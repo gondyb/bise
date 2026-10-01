@@ -108,6 +108,10 @@ pub(crate) struct App {
     /// the transcript received so far: it replaces the voice chip at
     /// the end of the clip (BISE-222)
     pub(crate) voice_text: String,
+    /// voice mode (ctrl+r twice, voicemode/): the pane takes the composer
+    pub(crate) voice_mode: Option<crate::voicemode::turn::VoiceMode>,
+    /// the first ctrl+r of a possible double (voicemode::live::double_ctrl_r)
+    pub(crate) ctrl_r_at: Option<std::time::Instant>,
     pub(crate) popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the
     /// popup stays closed until the text changes.
@@ -261,6 +265,8 @@ impl App {
             voice,
             voice_note: None,
             voice_text: String::new(),
+            voice_mode: None,
+            ctrl_r_at: None,
             mouse: MouseState::default(),
             text: Default::default(),
             popup_sel: 0,

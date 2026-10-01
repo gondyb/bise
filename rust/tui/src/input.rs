@@ -582,6 +582,19 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     if k.kind != KeyEventKind::Press {
         return false;
     }
+    // voice mode (voicemode/live.rs): its keys first; ctrl+r twice enters
+    if crate::voicemode::live::key(app, k) {
+        return false;
+    }
+    if crate::voicemode::live::double_ctrl_r(&mut app.ctrl_r_at, k, std::time::Instant::now()) {
+        // the first ctrl+r started dictation: it goes, voice mode comes
+        if app.voice.active() {
+            app.voice.cancel();
+            end_chip(app, None);
+        }
+        crate::voicemode::live::request(app);
+        return false;
+    }
     if voice_key(app, k, voice::resolve_job) {
         return false;
     }
