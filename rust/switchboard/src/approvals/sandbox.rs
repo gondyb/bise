@@ -76,6 +76,11 @@ pub struct Spec {
     /// wrapper deletes its own script there (`bend-sh-<port>-<hash>.sh`),
     /// nothing else in it is writable (the gate file stays the hub's).
     pub run: Option<PathBuf>,
+    /// The folders `~/.bise/dev/build` and `dev/versions` link to when the
+    /// home migration left them in the old place
+    /// (`~/.local/state/switchboard/…`, [`legacy_dev`]): Seatbelt checks
+    /// the real path, so `~/.bise` alone does not open them.
+    pub links: Vec<PathBuf>,
 }
 
 impl Spec {
@@ -91,8 +96,25 @@ impl Spec {
             home: fs.real(&call.home),
             user_tmp: darwin_user_temp().map(|t| fs.real(&t)),
             run: Some(fs.real(run)),
+            links: legacy_dev(&call.bise, &call.home, fs),
         }
     }
+}
+
+/// The dev folders the home migration linked (`rust/home` migrate.rs:
+/// `~/.bise/dev/{build,versions}` → `~/.local/state/switchboard/…`), real
+/// paths. Only these targets: a link an agent makes in `~/.bise` (it may
+/// write there) never opens another folder.
+pub fn legacy_dev(bise: &Path, home: &Path, fs: &dyn Fs) -> Vec<PathBuf> {
+    ["build", "versions"]
+        .iter()
+        .filter_map(|d| {
+            let link = bise.join("dev").join(d);
+            let old = fs.real(&home.join(".local/state/switchboard").join(d));
+            let real = fs.real(&link);
+            (real == old && real != link).then_some(old)
+        })
+        .collect()
 }
 
 /// `getconf DARWIN_USER_TEMP_DIR`, once per hub (macOS only).
@@ -149,10 +171,17 @@ pub fn profile(s: &Spec, net: bool) -> String {
     let mut roots: Vec<PathBuf> = vec![s.cwd.clone()];
     roots.extend(s.git.clone());
     roots.push(s.bise.clone());
+    roots.extend(s.links.iter().cloned());
     roots.extend(CACHES.iter().map(|c| s.home.join(c)));
     for r in &roots {
         o.push_str(&format!("  (subpath {})\n", lit(r)));
     }
+    // cargo's lock and its index of the caches above (`.package-cache`,
+    // `.global-cache`, their sqlite journals), not the rest of ~/.cargo
+    o.push_str(&format!(
+        "  (regex #\"^{}/\\.cargo/\\.(package|global)-cache\")\n",
+        regex_escape(&s.home)
+    ));
     if let Some(t) = &s.user_tmp {
         // only what mktemp names there (`tmp.XXXXXXXXXX`, `<prefix>.XXXXXXXX`)
         o.push_str(&format!("  (regex #\"^{}/[^/]+\\.{}[A-Za-z0-9]*(/|$)\")\n", regex_escape(t), "[A-Za-z0-9]".repeat(8)));
@@ -187,6 +216,9 @@ pub fn profile(s: &Spec, net: bool) -> String {
             regex_escape(r)
         ));
     }
+    // a sandboxed process may not exec a setuid program ("Operation not
+    // permitted"): `ps` is one on macOS, and it only reads
+    o.push_str("(allow process-exec (literal \"/bin/ps\") (with no-sandbox))\n");
     if !net {
         o.push_str("(deny network*)\n");
         o.push_str("(allow network* (local unix-socket) (remote unix-socket))\n");
@@ -240,13 +272,29 @@ pub fn git_common_dir(cwd: &Path) -> Option<PathBuf> {
 /// Whether this hub sandboxes: macOS, `sandbox-exec` there, and not
 /// turned off (`BISE_SANDBOX=0`).
 pub fn available() -> Availability {
-    static EXISTS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let exists = *EXISTS.get_or_init(|| Path::new(SANDBOX_EXEC).exists());
-    availability(
-        cfg!(target_os = "macos"),
-        exists,
-        std::env::var("BISE_SANDBOX").ok().as_deref(),
-    )
+    static EXISTS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    let (exists, applies) = *EXISTS.get_or_init(|| {
+        let exists = Path::new(SANDBOX_EXEC).exists();
+        (exists, exists && cfg!(target_os = "macos") && applies())
+    });
+    match availability(cfg!(target_os = "macos"), exists, std::env::var("BISE_SANDBOX").ok().as_deref()) {
+        Availability::On if !applies => Availability::Nested,
+        a => a,
+    }
+}
+
+/// Whether `sandbox-exec` can apply a profile here: a process already in
+/// a sandbox cannot enter another ("sandbox_apply: Operation not
+/// permitted"), e.g. a test hub started by an agent's sandboxed gate, or
+/// bise run by a sandboxed agent. One run of `true`, ~20 ms.
+pub fn applies() -> bool {
+    std::process::Command::new(SANDBOX_EXEC)
+        .args(["-p", "(version 1)(allow default)", "/usr/bin/true"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -259,6 +307,10 @@ pub enum Availability {
     /// macOS without `sandbox-exec`: the parser path, said once in main's
     /// feed ([`MISSING_NOTICE`]).
     Missing,
+    /// This hub runs inside a sandbox already (another one cannot apply):
+    /// the parser path, said once ([`NESTED_NOTICE`]); the outer sandbox
+    /// still holds.
+    Nested,
 }
 
 impl Availability {
@@ -279,6 +331,11 @@ pub fn availability(macos: bool, exists: bool, env: Option<&str>) -> Availabilit
 /// missing.
 pub const MISSING_NOTICE: &str =
     "no sandbox on this Mac (sandbox-exec is missing), so auto checks each command instead.";
+
+/// Main's feed, once per hub, when `auto` is on and bise itself runs in a
+/// sandbox.
+pub const NESTED_NOTICE: &str =
+    "bise runs inside a sandbox already, so auto checks each command instead.";
 
 /// How an allowed bash call runs under the sandbox: with the network
 /// open when one of its parts names a network program (design §6.3: the

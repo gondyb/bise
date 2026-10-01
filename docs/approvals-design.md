@@ -559,6 +559,10 @@ judge? Read in `~/lab/codex/codex-rs` (69f7140) and tried on this Mac.
 | `tmux -L x new` | **fails**: its socket is `/private/tmp/tmux-501` → set `TMUX_TMPDIR` to the agent's temp dir |
 | `git commit` in a **worktree** | **fails**: the worktree's git dir is `<repo>/.git/worktrees/<wt>` and the objects are in `<repo>/.git`, outside the worktree → the repo's git common dir is a root (hooks and config kept read-only) |
 | cost per call | +12 ms (8 ms → 20 ms for `sh -c true`) |
+| `ps` (setuid on macOS) | **fails**: no setuid exec in a sandbox → `(allow process-exec (literal "/bin/ps") (with no-sandbox))`, it only reads |
+| `~/.bise/dev/build` (a link the home migration left to `~/.local/state/switchboard/build`) | **fails**: Seatbelt checks the real path → those two migration targets are roots (only them: an agent's own link opens nothing) |
+| cargo's `~/.cargo/.package-cache`, `.global-cache` | **fails** → allowed, the rest of `~/.cargo` stays closed |
+| `sandbox-exec` inside a sandbox (a test hub of a sandboxed gate) | **fails** ("sandbox_apply") → the hub sees it once and takes the parser path (`Nested`) |
 
 Other writes outside the roots that real work needs, to allow or to
 escalate: `~/.cargo/registry` and `~/.cargo/git` (a new dependency),

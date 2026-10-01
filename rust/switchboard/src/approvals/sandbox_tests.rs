@@ -13,6 +13,7 @@ fn spec() -> Spec {
         home: "/h".into(),
         user_tmp: Some("/private/var/folders/x/y/T".into()),
         run: Some("/h/.bise/hubs/hx/agents/a/run".into()),
+        links: vec!["/h/.local/state/switchboard/build".into()],
     }
 }
 
@@ -37,6 +38,9 @@ fn the_profile_denies_writes_then_allows_the_roots_in_order() {
         "(subpath \"/h/Library/pnpm\")",
         "(subpath \"/h/.cache\")",
         "(subpath \"/h/Library/Caches\")",
+        "(subpath \"/h/.local/state/switchboard/build\")",
+        "(regex #\"^/h/\\.cargo/\\.(package|global)-cache\")",
+        "(allow process-exec (literal \"/bin/ps\") (with no-sandbox))",
         "(regex #\"^/private/var/folders/x/y/T/[^/]+\\.[A-Za-z0-9]",
         "(literal \"/dev/null\")",
         "(regex #\"^/private/tmp/sh-thd-[0-9]+$\")",
@@ -247,6 +251,26 @@ fn ensure_writes_both_profiles_and_rewrites_them_when_a_root_moves() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// The home migration's links (`~/.bise/dev/build` → the old
+/// `~/.local/state/switchboard/build`) open their target; a link to
+/// anywhere else, or a real folder, adds nothing.
+#[test]
+fn only_the_migrations_dev_links_open_their_target() {
+    let base = scratch("links");
+    let (home, bise) = (base.join("h"), base.join("h/.bise"));
+    let old = home.join(".local/state/switchboard");
+    std::fs::create_dir_all(old.join("build")).unwrap();
+    std::fs::create_dir_all(bise.join("dev")).unwrap();
+    std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+    std::os::unix::fs::symlink(old.join("build"), bise.join("dev/build")).unwrap();
+    std::os::unix::fs::symlink(base.join("elsewhere"), bise.join("dev/versions")).unwrap();
+    assert_eq!(legacy_dev(&bise, &home, &super::super::RealFs), vec![old.join("build")]);
+    std::fs::remove_file(bise.join("dev/build")).unwrap();
+    std::fs::create_dir_all(bise.join("dev/build")).unwrap();
+    assert!(legacy_dev(&bise, &home, &super::super::RealFs).is_empty());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 /// A fresh folder, canonical (Seatbelt matches real paths), short enough
 /// for a unix socket inside (104 bytes: the tmux and python tests).
 fn scratch(name: &str) -> PathBuf {
@@ -276,6 +300,10 @@ mod live {
                 eprintln!("no sandbox-exec: skipped");
                 return None;
             }
+            if !applies() {
+                eprintln!("in a sandbox already (an agent's gate in auto): skipped");
+                return None;
+            }
             let base = scratch(name);
             let home = base.join("home");
             let bise = home.join(".bise");
@@ -299,6 +327,7 @@ mod live {
                 home,
                 user_tmp: darwin_user_temp(),
                 run: Some(run.clone()),
+                links: vec![],
             };
             ensure(&run, &s).unwrap();
             Some(Box_ { base, s, run })
@@ -390,6 +419,33 @@ mod live {
             assert!(!ok(&o), "{}", text(&o));
         }
         assert!(ok(&b.sh("python3 -c 'import tempfile; f=tempfile.NamedTemporaryFile(delete=False); f.write(b\"x\"); print(f.name)'")));
+    }
+
+    /// What a dev gate needs past the roots: `ps` (setuid: a sandboxed
+    /// exec of it fails), cargo's lock files, the migration's dev links;
+    /// the rest of ~/.cargo stays closed.
+    #[test]
+    fn ps_cargos_locks_and_the_dev_links_work() {
+        let Some(mut b) = Box_::new("devwork") else { return };
+        let o = b.sh("ps -o pid= -p $$ && ps -axww -o pid=,command= | wc -l");
+        assert!(ok(&o), "{}", text(&o));
+        let old = b.s.home.join(".local/state/switchboard/build");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(b.s.bise.join("dev")).unwrap();
+        std::os::unix::fs::symlink(&old, b.s.bise.join("dev/build")).unwrap();
+        std::fs::create_dir_all(b.s.home.join(".cargo/bin")).unwrap();
+        let o = b.sh("echo x > \"$HOME_BISE/dev/build/cache\"".replace("$HOME_BISE", &b.s.bise.display().to_string()).as_str());
+        assert!(!ok(&o), "a link's target is closed until the spec names it");
+        b.s.links = legacy_dev(&b.s.bise, &b.s.home, &super::super::super::RealFs);
+        ensure(&b.run, &b.s).unwrap();
+        let cargo = b.s.home.join(".cargo");
+        for f in [b.s.bise.join("dev/build/cache"), cargo.join(".package-cache"), cargo.join(".global-cache-journal")] {
+            let o = b.sh(&format!("echo x > '{}'", f.display()));
+            assert!(ok(&o), "{}: {}", f.display(), text(&o));
+        }
+        for f in [cargo.join("bin/x"), cargo.join("config.toml")] {
+            assert!(!ok(&b.sh(&format!("echo x > '{}'", f.display()))), "{} was written", f.display());
+        }
     }
 
     #[test]

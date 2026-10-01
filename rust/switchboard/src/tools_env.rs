@@ -403,7 +403,10 @@ mod tests {
     /// long"): TMUX_TMPDIR is then left out (tmux stays on /tmp).
     #[test]
     fn tmux_goes_to_tmp_only_when_its_socket_fits() {
-        let d = std::path::PathBuf::from(format!("/tmp/sbtx{}", std::process::id()));
+        // $TMPDIR when short (a sandboxed gate cannot write /tmp), else /tmp
+        let t = std::env::temp_dir();
+        let root = if t.as_os_str().len() > 40 { std::path::PathBuf::from("/tmp") } else { t };
+        let d = root.join(format!("sbtx{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         let short = d.join("a");
         let deep = d.join("x".repeat(90));

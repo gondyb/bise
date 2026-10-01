@@ -43,6 +43,11 @@ def main():
     if sys.platform != "darwin" or not os.path.exists("/usr/bin/sandbox-exec"):
         print("approvals sandbox: skipped (no sandbox-exec)")
         return
+    # in a sandbox already (an agent's gate in auto): no other one applies
+    if subprocess.run(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                      stderr=subprocess.DEVNULL).returncode != 0:
+        print("approvals sandbox: skipped (in a sandbox already)")
+        return
     E = Env()
     # the user's home: outside the roots and outside macOS's temp folder
     home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir="/private/tmp"))

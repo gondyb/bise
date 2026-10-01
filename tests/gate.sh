@@ -43,9 +43,13 @@
 # Sharing the machine (BISE-244, loop-speed.md §0): quick, full and new's
 # seed build run under nice 10 (GATE_NICE) with CARGO_BUILD_JOBS = half the
 # cores (unless set); one full gate at a time on the machine (a lock,
-# /tmp/bise-gate-full-<uid>.lock; the others print and set "waiting for the
+# <gate dir>/full-<uid>.lock; the others print and set "waiting for the
 # gate"); one seed build per deps key (the other tasks wait, then clone it).
-# Each quick/full run has its own TMPDIR /tmp/bise-gate-<pid>/: at its end,
+# The gate dir: ~/.bise/gate ($BISE_HOME/gate), writable in auto's sandbox
+# (approvals-design.md §7) and short (the test hubs' sockets live under it:
+# an agent's $TMPDIR is too deep for a unix socket path); /tmp/bise-gate-
+# where there is no ~/.bise yet.
+# Each quick/full run has its own TMPDIR <gate dir>/<pid>/: at its end,
 # ctrl-c or kill included, it kills what it started (the test hubs, their
 # sb-core and REPLs, the tmux tests' shells), and each run first kills what
 # a dead run left.
@@ -185,7 +189,7 @@ root="$PWD"
 # a linked worktree has a .git file (the shared checkout a directory)
 [ -f "$root/.git" ] && sb_place "$root"
 share_machine
-# ---- BISE-244: what a run starts dies with it. Its TMPDIR, /tmp/bise-gate-<pid>
+# ---- BISE-244: what a run starts dies with it. Its TMPDIR, <gate dir>/<pid>
 # (short: the hubs' sockets live under it), holds the tests' workspaces, so
 # a test hub names it in its command line even orphaned; its sb-core and
 # REPLs share its process group. The tmux server itself is never killed
@@ -230,28 +234,47 @@ if [ -f "$root/.git" ]; then
 fi
 # the leftovers of dead runs (a kill -9, a crash): their processes now; their
 # folder (the logs of a red run) after a day
-for d in /tmp/bise-gate-[0-9]*; do
+# the gate dir (above): runs <gpre><pid>, the lock, a red step's log
+if [ -n "${BISE_HOME:-}" ] || [ -f "$HOME/.bise/migrated.json" ]; then
+  gdir="${BISE_HOME:-$HOME/.bise}/gate" gpre="${BISE_HOME:-$HOME/.bise}/gate/"
+else
+  gdir=/tmp gpre=/tmp/bise-gate-
+fi
+mkdir -p "$gdir"
+# what a run's processes name in their command line: its folder (a /tmp
+# one without /tmp: python may show it as /private/tmp)
+gate_mark() { case "$1" in /tmp/bise-gate-*) echo "/bise-gate-${1##*-}/" ;; *) echo "$1/" ;; esac; }
+# a red or dead run's folder: only run_all's logs stay (sb-run-all.*)
+gate_prune() {
+  find "$1" -mindepth 1 -maxdepth 1 ! -name 'sb-run-all.*' ! -name .owner -exec rm -rf {} + 2>/dev/null
+  for l in "$1"/sb-run-all.*; do
+    [ -d "$l" ] && find "$l" -mindepth 1 -maxdepth 1 ! -name '*.log' -exec rm -rf {} + 2>/dev/null
+  done
+  return 0
+}
+for d in "$gpre"[0-9]* /tmp/bise-gate-[0-9]*; do
   [ -d "$d" ] || continue
-  p="${d##*-}"
+  p="${d##*[-/]}"
   kill -0 "$p" 2>/dev/null && [ "$(proc_start "$p")" = "$(cat "$d/.owner" 2>/dev/null)" ] && continue
-  gate_kill "$(gate_procs "/bise-gate-$p/" "")"
-  [ -n "$(find "$d" -maxdepth 0 -mtime +0 2>/dev/null)" ] && rm -rf "$d"
+  gate_kill "$(gate_procs "$(gate_mark "$d")" "")"
+  if [ -n "$(find "$d" -maxdepth 0 -mtime +0 2>/dev/null)" ]; then rm -rf "$d" 2>/dev/null; else gate_prune "$d"; fi
 done
 [ -n "$wt_bins" ] && gate_kill "$(gate_procs "/bise-gate-none/" "" $wt_bins)"
-run="/tmp/bise-gate-$$"
-rm -rf "$run"; mkdir -p "$run" && proc_start $$ >"$run/.owner"
+run="$gpre$$"
+rm -rf "$run"; mkdir -p "$run" && proc_start $$ >"$run/.owner" || { echo "gate: cannot write $run"; exit 1; }
 export TMPDIR="$run" BISE_GATE_RUN=$$
-LOCK="/tmp/bise-gate-full-$(id -u).lock"
+LOCK="${gpre}full-$(id -u).lock"
 locked="" out=""
 on_exit() {
   local rc=$?
   trap - EXIT INT TERM HUP
   kill $(jobs -p) 2>/dev/null
-  gate_kill "$(gate_procs "/bise-gate-$$/" $$ $wt_bins)"
+  gate_kill "$(gate_procs "$(gate_mark "$run")" $$ $wt_bins)"
   [ -n "$out" ] && rm -rf "$out"
   [ -n "$locked" ] && [ "$(cut -d' ' -f1 "$LOCK/owner" 2>/dev/null)" = $$ ] && rm -rf "$LOCK"
-  # a red run keeps its folder (run_all's logs) for a day
-  [ $rc = 0 ] && rm -rf "$run"
+  # a red run keeps run_all's logs for a day, nothing else (the tests'
+  # workspaces: ~100 MB a run)
+  if [ $rc = 0 ]; then rm -rf "$run"; else gate_prune "$run"; fi
   exit $rc
 }
 trap on_exit EXIT
@@ -327,7 +350,7 @@ mkdir -p "$cache"
 fail() {  # <name> <log>: the failures, the log kept
   echo "FAIL $1"
   grep -E "^test .* FAILED|panicked|^error|^warning|^failures:|^Location|^Error" "$2" | head -30
-  cp "$2" "/tmp/sb-gate-$1.log"; echo "log: /tmp/sb-gate-$1.log"; exit 1
+  cp "$2" "$gdir/sb-gate-$1.log"; echo "log: $gdir/sb-gate-$1.log"; exit 1
 }
 hash_of() {  # <dirs/files...>: one hash of the .bend files' names and contents
   (cd "$root" && find "$@" -name '*.bend' -type f 2>/dev/null | sort | while read -r f; do echo "$f"; cat "$f"; done) | shasum | cut -c1-16

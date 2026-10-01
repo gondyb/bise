@@ -350,7 +350,7 @@ working (their load alone 8-12), so the numbers are noisy.
 What changed (`tests/gate.sh`, `tests/run_all.sh`):
 
 1. **One full gate at a time on the machine**: a `mkdir` lock,
-   `/tmp/bise-gate-full-<uid>.lock/owner` = `<pid> <start time> <agent>
+   `<gate dir>/full-<uid>.lock/owner` = `<pid> <start time> <agent>
    <root>` (macOS has no flock). A second full gate prints `waiting for the
    gate: <agent>'s full gate runs (pid, worktree)` and sets its task's note
    (`sb status working --note "waiting for the gate …"`), polls every 2 s,
@@ -371,8 +371,10 @@ What changed (`tests/gate.sh`, `tests/run_all.sh`):
    it, instead of each building its own cold target (~2 min on all cores
    each).
 4. **What a run starts dies with it**: each quick/full run has its own
-   TMPDIR, `/tmp/bise-gate-<pid>/` (short: the hubs' sockets live under
-   it), so the tests' workspaces are there and a test hub names it in its
+   TMPDIR, `<gate dir>/<pid>/` (short: the hubs' sockets live under
+   it; the gate dir is `~/.bise/gate`, writable in auto's sandbox, or
+   `/tmp/bise-gate-` before the home migration; an agent's `$TMPDIR` is
+   too deep for a unix socket path), so the tests' workspaces are there and a test hub names it in its
    command line, even orphaned. On exit (green, red, ctrl-c, TERM, HUP) the
    run kills its descendants, every process naming its TMPDIR and their
    process groups (a hub's sb-core and REPLs), and in a task worktree the

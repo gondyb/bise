@@ -553,9 +553,10 @@ impl Shell {
         match sandbox::available() {
             sandbox::Availability::On => true,
             sandbox::Availability::Off => false,
-            sandbox::Availability::Missing => {
+            a @ (sandbox::Availability::Missing | sandbox::Availability::Nested) => {
                 if !std::mem::replace(&mut self.gates.sandbox_said, true) {
-                    let _ = self.tx.send(Msg::Notice { kind: "approvals".into(), text: sandbox::MISSING_NOTICE.into() });
+                    let text = if a == sandbox::Availability::Nested { sandbox::NESTED_NOTICE } else { sandbox::MISSING_NOTICE };
+                    let _ = self.tx.send(Msg::Notice { kind: "approvals".into(), text: text.into() });
                 }
                 false
             }
