@@ -31,6 +31,100 @@ fn live_ports(listen: &super::ListenJob) -> Result<Ports, String> {
     })
 }
 
+// ---- BISE_VOICE_FAKE: voice mode with no mic, no sound, no network ----
+//
+// BISE_VOICE_FAKE=<a 16 kHz mono WAV> plays that file as the mic, paced
+// (then silence); the listener hears BISE_VOICE_FAKE_HEARD (default
+// below) at each flush; the voice is silence as long as the sentence
+// would take, on a speaker with a real clock and no device. For the
+// tmux e2e and the designer's captures.
+
+const FAKE_HEARD: &str = "what is the state of the build";
+
+struct FakeListener(String);
+
+impl super::Listener for FakeListener {
+    fn start(
+        &self,
+        _job: super::ListenJob,
+        audio: std::sync::mpsc::Receiver<super::ListenMsg>,
+        events: std::sync::mpsc::Sender<super::Heard>,
+        _cancel: std::sync::Arc<AtomicBool>,
+    ) {
+        let heard = self.0.clone();
+        std::thread::spawn(move || {
+            while let Ok(m) = audio.recv() {
+                if m == super::ListenMsg::Flush {
+                    let _ = events.send(super::Heard::Text(format!(" {}", heard)));
+                    let _ = events.send(super::Heard::Flushed);
+                }
+            }
+        });
+    }
+}
+
+struct FakeSynth;
+
+impl super::Synthesizer for FakeSynth {
+    fn start(
+        &self,
+        job: super::SayJob,
+        text: String,
+        events: std::sync::mpsc::Sender<super::Synth>,
+        cancel: std::sync::Arc<AtomicBool>,
+    ) {
+        std::thread::spawn(move || {
+            let n = (super::timing::estimate(&text, job.speed).as_secs_f64() * super::TTS_RATE as f64) as usize;
+            // a soft tone, so the mouth moves; nobody hears it
+            let pcm: Vec<f32> = (0..n).map(|i| 0.2 * ((i as f32) * 0.05).sin()).collect();
+            for chunk in pcm.chunks(super::TTS_RATE as usize / 10) {
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
+                let _ = events.send(super::Synth::Audio(chunk.to_vec()));
+            }
+            let _ = events.send(super::Synth::Done);
+        });
+    }
+}
+
+fn fake_ports(wav: &str) -> Result<(Ports, Jobs), String> {
+    let mic = super::audio::ScriptedMic::from_wav_file(std::path::Path::new(wav))?;
+    let heard = std::env::var("BISE_VOICE_FAKE_HEARD").ok().filter(|h| !h.trim().is_empty());
+    let ports = Ports {
+        mic: Box::new(mic),
+        vad: Box::new(super::vad::Vad::new()),
+        speaker: super::audio::silent_speaker(),
+        listener: Box::new(FakeListener(heard.unwrap_or_else(|| FAKE_HEARD.into()))),
+        synth: Box::new(FakeSynth),
+        acker: Box::new(super::ack::SmallAck),
+        route: super::Route::Headphones,
+    };
+    let fake = |name: &str| super::Endpoint {
+        name: name.into(),
+        provider_name: "fake".into(),
+        base_url: String::new(),
+        model: name.into(),
+        key: String::new(),
+    };
+    let listen = config::listen_job().unwrap_or_else(|_| super::ListenJob {
+        realtime: None,
+        batch: crate::voice::VoiceJob {
+            name: "fake".into(),
+            provider_name: "fake".into(),
+            billing_url: String::new(),
+            api: "openai".into(),
+            base_url: String::new(),
+            model: "fake".into(),
+            key: String::new(),
+            language: None,
+            vocabulary: Vec::new(),
+        },
+    });
+    let say = super::SayJob { api: fake("fake-tts"), voice: "fake".into(), speed: 1.0 };
+    Ok((ports, Jobs { listen, say: Ok(say), ack: None }))
+}
+
 fn live_jobs(cfg: &VoiceModeConfig) -> Result<Jobs, String> {
     Ok(Jobs { listen: config::listen_job()?, say: config::say_job(cfg), ack: config::ack_job().ok() })
 }
@@ -48,8 +142,12 @@ pub(crate) fn enter(app: &mut App) {
     }
     let cfg = config::load();
     let now = Instant::now();
-    let started = live_jobs(&cfg).and_then(|jobs| {
-        let ports = live_ports(&jobs.listen)?;
+    let fake = std::env::var("BISE_VOICE_FAKE").ok().filter(|v| !v.is_empty());
+    let ready = match fake {
+        Some(wav) => fake_ports(&wav),
+        None => live_jobs(&cfg).and_then(|jobs| Ok((live_ports(&jobs.listen)?, jobs))),
+    };
+    let started = ready.and_then(|(ports, jobs)| {
         VoiceMode::start(&app.sb.focus, ports, jobs, cfg, RELEASES.load(Ordering::Relaxed), now)
     });
     match started {
