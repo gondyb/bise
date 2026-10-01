@@ -55,8 +55,10 @@ cont = lambda t: "     " + t
 row = lambda n, g, name, t="", pct="", lead="  ", mark="": f"{lead}{{f:{n}}} {g} {name}" + (f"{{|88}}{{d:{t}}}" if t else "") + (f"{{|93}}{{d:{pct}}}" if pct else "") + (f"{{|97}}{mark}" if mark else "")
 held = lambda n, g, name, word, lead="  ", acc=False, mark="": f"{lead}{{f:{n}}} {g} {name}{{|88}}" + (f"{{a:{word}}}" if acc else f"{{d:{word:>8}}}") + (f"{{|97}}{mark}" if mark else "")
 under = lambda t: "      " + t  # held: the line under a solo-worktree row, at the name's column
-top = lambda branch, pr="": "{r:╭─} {d:ψ " + branch + "} {>99─}" + (f" {pr} {{r:─}}" if pr else "{r:──}")
-lid = lambda t: "{r:│}  " + t
+# a shared worktree is a section (BISE-309): a title like 'agents', its rows under it, no box lines.
+# at rest the mark sits in the mark column; ctrl held, the PR number joins it, left-packed, and a lid line follows.
+top = lambda branch, pr="": "  {d:ψ " + branch + "}" + ((" " + pr) if "#" in pr else (f"{{|97}}{pr}" if pr else ""))
+lid = lambda t: "  " + t
 
 G = "{g1}"
 DIV = "{d:you →} {a:main} {f:·} {d:opus 5.5} {f:·} {d:high} {f:·} {d:yolo}"
@@ -81,8 +83,8 @@ PAN = ["", "  {d:agents}",
        row(5, "{d:○}", "release", pct=" 8%"),
        "",
        top("sb/dark-mode", "{d:↑}"),
-       row(2, G, "dark-mode", " 3m", "12%", lead="{r:│} "),
-       row(4, G, "i18n {a:•}", "42s", "31%", lead="{r:╰} "),
+       row(2, G, "dark-mode", " 3m", "12%"),
+       row(4, G, "i18n {a:•}", "42s", "31%"),
        "",
        "  {d:inbox}",
        "  {f:1} {a:?} cookies  {d:banner: smal…}"]
@@ -94,8 +96,8 @@ PAN_HELD = ["", "  {d:agents}",
             "",
             top("sb/dark-mode", "{d:↑ #412}"),
             lid("{d:changes asked · checks pass}"),
-            held(2, G, "dark-mode", "working", lead="{r:│} "),
-            held(4, G, "i18n {a:•}", "working", lead="{r:╰} "),
+            held(2, G, "dark-mode", "working"),
+            held(4, G, "i18n {a:•}", "working"),
             "",
             "  {d:inbox}",
             "  {a:1} {a:?} cookies  {d:banner: smal…}"]
@@ -259,14 +261,14 @@ PICK, "full screen, in place of the thread. /provider holds the keys; /model is 
 P_PR = ["", "  {d:agents}", row(0, G, "main {a::*} {d:@ 2}", " 1m", "22%"), row(5, "{d:○}", "release", pct=" 8%"),
         row(2, G, "login-fix", " 5m", " 9%", mark="{e:↑}"), row(3, "{a:?}", "cookies", pct="18%", mark="{a:↑}"),
         row(6, G, "emoji-csv", " 2m", "14%", mark="{d:ψ}"), "",
-        top("sb/dark-mode", "{d:↑}"), row(1, G, "dark-mode", " 3m", "12%", lead="{r:│} "), row(4, G, "i18n {a:•}", "42s", "31%", lead="{r:╰} "), "",
+        top("sb/dark-mode", "{d:↑}"), row(1, G, "dark-mode", " 3m", "12%"), row(4, G, "i18n {a:•}", "42s", "31%"), "",
         "  {d:inbox}", "  {f:1} {a:?} cookies  {d:#409 is approv…}"]
 P_PR_HELD = ["", "  {d:agents}", held(0, G, "main {a::*} {d:@ 2}", "working"), held(5, "{d:○}", "release", "idle"),
              held(2, G, "login-fix", "working", mark="{e:↑}"), under("{d:#415 ·} {e:checks fail}{d:: e2e…}"),
              held(3, "{a:?}", "cookies", "asks you", acc=True, mark="{a:↑}"), under("{d:#409 · approved · checks…}"),
              held(6, G, "emoji-csv", "working", mark="{d:ψ}"), under("{d:no PR yet · 2 commits}"), "",
              top("sb/dark-mode", "{d:↑ #412}"), lid("{d:changes asked · checks pass}"),
-             held(1, G, "dark-mode", "working", lead="{r:│} "), held(4, G, "i18n {a:•}", "working", lead="{r:╰} "), "",
+             held(1, G, "dark-mode", "working"), held(4, G, "i18n {a:•}", "working"), "",
              "  {d:inbox}", "  {a:1} {a:?} cookies  {d:#409 is approv…}"]
 F_PR = ["", me("dark-mode opened #412: dark mode with tokens.css."), "  {f:▸ 2 messages from GitHub}", "",
         me("alice asked for changes on #412: the toggle's"), cont("contrast, a test, a name. dark-mode is on them."), "",
@@ -280,7 +282,7 @@ IT_M = ibox("inbox · 1 waiting for you", "ctrl+1 open",
              "%   {a:1} {d:merge it}   {a:2} {d:not yet}", "%"])
 P_MERGED = [l for l in P_PR if "cookies" not in l and "inbox" not in l][:-1]
 screen("prs", "worktrees and pull requests",
-"agents share your folder; one that needs isolation gets a worktree. alone in it, the agent is a row with one mark in the last column: ψ no PR yet, ↑ its PR. when several agents share a worktree, they get a small box: git lives in its border (ψ, the branch, the PR's ↑), agents live in rows. main says what GitHub said, once, in words.",
+"agents share your folder; one that needs isolation gets a worktree. alone in it, the agent is a row with one mark in the last column: ψ no PR yet, ↑ its PR. when several agents share a worktree, it becomes a section like 'agents' and 'inbox': a title with ψ, the branch and the PR's ↑, their rows under it, no box lines. main says what GitHub said, once, in words.",
 [("rest", frame(F_PR + IB_PR, P_PR, DIV_W, CTX, comp("ship the banner fix once it's merged")), 100),
  ("ctrl held", frame(F_PR + IB_PR, P_PR_HELD, DIV_HELD, CTX_HELD, comp("ship the banner fix once it's merged", KEYS_HELD),
                      head="{d:~/acme · lands via PRs ·} {g3} {d:5 working · ↑ 3 PRs · # 1 in the inbox}", split=False), 100),

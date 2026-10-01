@@ -618,10 +618,21 @@ r"""
 ::tab a shared worktree
 {f:0} {g1} main {a::*} {d:@ 2}{|21}{d: 1m}{|26}{d:22%}{>}
 {>}
-{r:╭─} {d:ψ sb/dark-mode} {>─} {d:↑} {r:─}
-{r:│}{f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{>}
-{r:╰}{f:4} {g1} i18n {a:•}{|21}{d:42s}{|26}{d:31%}{>}
-::cap the mark: ψ a worktree, no PR yet · ↑ its PR: dim open, faint draft, red checks fail, accent only when an inbox item asks you · … waits to land. two or more agents in one worktree: a box, the mark in its border.
+{d:ψ sb/dark-mode}{|31}{d:↑}{>}
+{f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{>}
+{f:4} {g1} i18n {a:•}{|21}{d:42s}{|26}{d:31%}{>}
+::tab shared, ctrl held
+{f:0} {g1} main {a::*} {d:@ 2}{|21}{d: working}{>}
+{>}
+{d:ψ sb/dark-mode ↑ #412}{>}
+{d:changes asked · checks pass}{>}
+{f:2} {g1} dark-mode{|21}{d: working}{>}
+{f:4} {g1} i18n {a:•}{|21}{d: working}{>}
+::tab a feature on trial
+{d:Δ} computer-use{>}
+{f:8} {g1} cu-a{|21}{d: 1m}{|26}{d:12%}{>}
+{f:9} {d:○} cu-b{|26}{d: 6%}{>}
+::cap the mark: ψ a worktree, no PR yet · ↑ its PR: dim open, faint draft, red checks fail, accent only when an inbox item asks you · … waits to land. two or more agents in one worktree: a section, its title says the branch and holds the mark.
 ::end
 
 ## anatomy
@@ -638,7 +649,8 @@ r"""
 - **no state words at rest**: the glyph says them. holding ctrl writes them in the time and % columns.
 - **every column stays in place** even when blank, so the rows line up.
 - a name takes the room its row leaves and is cut with `…` only there. the mark is never dropped.
-- **a box only when agents share a worktree**: `╭─ ψ branch ── ↑ ─`, the agents behind a `│` rail, the last on `╰`. alone, the agent is a plain row with its mark. order: your folder's rows, the solo-worktree rows, then the boxes, then the inbox.
+- **a shared worktree is a section**, like `agents` and `inbox`: a title `ψ branch` in the titles' color, its mark in the mark column, its agents' rows under it, no box lines. alone, the agent is a plain row with its mark, at its number in `agents`. order: `agents` (every agent not in a shared worktree, by number), the PR rows without a number, one section per shared worktree (lowest number first), then the inbox. one blank row before each title; a section never splits across the scroll.
+- ctrl held, the title packs the PR in: `ψ sb/dark-mode ↑ #412`, and a dim lid line under it says the rest (`changes asked · checks pass`, only `checks fail` in red). a feature branch on trial reads `Δ computer-use`, only the Δ dim; a feature never shows ↑.
 - ctrl held, a solo row gets one dim line under it at the name's column: the PR in words (`#415 · checks fail: e2e/login`), the branch last when it isn't the agent's name.
 """, src="book §8 agents panel", k="sidebar agents rows worktree context")
 
