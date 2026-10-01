@@ -608,18 +608,17 @@ class Tui(Mini):
         return body, "".join(s.tl.css) + css
 
 def t_talk(c):
-    """talk whenever. you never wait: you type the next idea while main answers the last one."""
+    """main is always available: the agents do the heavy work, so main answers right away while they run."""
     m = Tui(c, 10); m.typed = []
-    one, two, three = "signup is slow on mobile", "and the csv export crashes on emoji 😭", "oh, the cookie banner hides the buy button"
-    m.header([(2.1, 4.0, f'{m.gust()} 1 working'), (4.0, 6.3, f'{m.gust()} 2 working'), (6.3, None, f'{m.gust()} 3 working')])
-    m.type(0.3, 1.3, one); m.you(1.4, one, gap=0)
-    m.type(1.7, 3.2, two); m.main(2.1, "on it. perf started.")
-    m.you(3.4, two, gap=8)
-    m.type(3.7, 5.5, three); m.main(4.0, "emoji-csv started. it's always unicode.")
-    m.you(5.7, three, gap=8)
-    m.main(6.3, "cookies started. 3 agents working, you're free.")
-    m.composer([(0.3, 1.4), (1.7, 3.4), (3.7, 5.7)])
-    return m.svg("you send three ideas in a row. main starts an agent for each while you type the next one: you never wait.")
+    one, two = "what's perf doing right now?", "and the csv export crashes on emoji 😭"
+    m.header([(0, 5.3, f'{m.gust()} 3 working'), (5.3, None, f'{m.gust()} 4 working')])
+    m.row(0.1, f'{m.gust()} {m.dim("perf, dark-mode and cookies are working")}', size=13)
+    m.type(0.6, 1.8, one); m.you(1.9, one, gap=8)
+    m.main(2.4, "timing signup on a phone. 4.1 s so far, it's on the images.")
+    m.type(3.0, 4.6, two); m.you(4.8, two, gap=8)
+    m.main(5.3, "emoji-csv started. 4 working, i'm still here.")
+    m.composer([(0.6, 1.9), (3.0, 4.8)])
+    return m.svg("three agents are working. you ask main what perf is doing and it answers right away; you add a job, it starts one more agent and is still there.")
 
 def t_zen(c):
     """zen mode while you type: the chrome steps back, the feed keeps coming, the send brings it all back."""

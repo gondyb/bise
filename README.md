@@ -88,11 +88,11 @@ agents share your checkout by default. when one needs an isolated copy (a clean 
 
 ### focus
 
-#### non-blocking input
+#### main is always available
 
-the composer is never locked. send the next request while the agents work.
+main hands the heavy work to agents, so it's never busy. ask it anything while five agents run: it listens and answers right away, and nothing you send interrupts a job.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/talk-dark.svg"><img src="docs/brand/readme/feat/talk-light.svg" width="680" alt="you send three ideas in a row. main starts an agent for each while you type the next one: you never wait."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/talk-dark.svg"><img src="docs/brand/readme/feat/talk-light.svg" width="680" alt="three agents are working. you ask main what perf is doing and it answers right away; you add a job, it starts one more agent and is still there."></picture>
 
 #### zen mode
 

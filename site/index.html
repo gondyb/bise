@@ -759,7 +759,7 @@
       <div class="feat blow"><div class="mini" data-play="resume"></div><h3>hand it something huge</h3><p>give main a big goal. it splits it into jobs, runs the agents, restarts the ones that stop half-way, and keeps going until it's done.</p></div>
       <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees? don't think about it</h3><p>agents share your folder. when one needs its own copy, it makes a worktree, works there and cleans it up after. no branch to name, no folder to delete, nothing to keep in your head.</p></div>
       <div class="grp">your head stays yours</div>
-      <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="talk"></div><h3>main is always there</h3><p>main gives the heavy work to the agents, so it's never busy. ask it anything, add one more thing, change your mind: it answers right away, and no job stops.</p></div>
       <div class="feat blow"><div class="mini" data-play="quiet"></div><h3>zen mode while you type</h3><p>start typing and everything else fades: the agents, the counts, the chatter. just you and your words. send it and it all comes back. what the agents said to each other stays folded, ctrl+o opens it.</p></div>
       <div class="grp">no more "yes, continue"</div>
       <div class="feat blow"><div class="mini" data-play="card"></div><h3>you're not the router</h3><p>main answers the agents for you: the obvious questions, the way you would, and it tells you why. only the real decisions reach you.</p></div>
@@ -1416,13 +1416,11 @@ seed();  // the still frame, until the whole demo is on screen
 // ---- feature demos: tiny scripted terminals, played only while on screen ----
 const plays = {
   async talk(m) {
-    await m.send("signup is slow on mobile");
-    await m.main("on it. perf started."); await m.wait(500);
+    m.line(`<span class="pulse acc">∿</span> <span class="dim">perf, dark-mode and cookies are working</span>`); await m.wait(900);
+    await m.send("what's perf doing right now?");
+    await m.main("timing signup on a phone. 4.1 s so far, it's on the images."); await m.wait(500);
     await m.send("and the csv export crashes on emoji 😭");
-    await m.main("emoji-csv started. it's always unicode."); await m.wait(400);
-    await m.send("oh, the cookie banner hides the buy button");
-    await m.main("cookies started. 3 agents working, you're free."); await m.wait(600);
-    m.line(`<span class="pulse acc">∿</span> <span class="dim">3 working</span>`); await m.wait(3000);
+    await m.main("emoji-csv started. 4 working, i'm still here."); await m.wait(3200);
   },
   async steer(m) {
     m.line(`<span class="dim"><span class="pulse acc">∿</span> cookies · deleting the banner…</span>`); await m.wait(1400);
