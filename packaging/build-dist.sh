@@ -145,6 +145,28 @@ if [ "$os" = darwin ]; then
   done
 fi
 
+# 5b. computer use's helper (macOS, docs/computer-use-design.md §5.2):
+#     app/bise Computer Use.app from the commit's computer-use/macos-app.
+#     Its bundle.sh signs it (BISE_SIGN_ID: Developer ID, hardened runtime,
+#     timestamp; else ad-hoc) and, with BISE_NOTARY_PROFILE (a notarytool
+#     keychain profile), notarizes and staples it. Cached by the folder's
+#     tree hash and the signing identity.
+helper=""
+if [ "$os" = darwin ] && git cat-file -e "$commit:computer-use/macos-app/Package.swift" 2>/dev/null; then
+  hkey="$(git rev-parse "$commit:computer-use/macos-app")-$(printf %s "${BISE_SIGN_ID:-adhoc}${BISE_NOTARY_PROFILE:+-notarized}" | shasum | cut -c1-8)"
+  hcache="$BUILD/cache/cu-helper-$hkey"
+  if [ ! -d "$hcache/bise Computer Use.app" ]; then
+    say "building the computer-use helper ($hkey)..."
+    hsrc="$(mktemp -d /tmp/bise-cu-helper.XXXXXX)"
+    git archive "$commit" computer-use/macos-app | tar -x -C "$hsrc"
+    rm -rf "$hcache.tmp" && mkdir -p "$hcache.tmp"
+    "$hsrc/computer-use/macos-app/scripts/bundle.sh" --out "$hcache.tmp" >/dev/null \\n      || { rm -rf "$hsrc" "$hcache.tmp"; say "the computer-use helper did not build"; exit 1; }
+    rm -rf "$hsrc" "$hcache" && mv "$hcache.tmp" "$hcache"
+  fi
+  helper="$app/bise Computer Use.app"
+  ditto "$hcache/bise Computer Use.app" "$helper"
+fi
+
 # 6. verify: a missing piece must fail here, not on the user's machine
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
@@ -159,6 +181,11 @@ done
 "$REPO/scripts/bins.sh" minos "$app/bise" "$app/repl-live" "$app/repl-scripted" \
   "$app/sb-core" "$app/$jsrt_at" >&2 \
   || { say "a binary needs a newer macOS than $("$REPO/scripts/bins.sh" macos-target): rm -rf $vdir and run again"; exit 1; }
+# ... and the helper is whole: signature, macOS target
+if [ -n "$helper" ]; then
+  codesign --verify --strict "$helper" || { say "INCOMPLETE: $helper: bad signature"; exit 1; }
+  "$REPO/scripts/bins.sh" minos "$helper/Contents/MacOS/bise-computer-use" >&2 \\n    || { say "the computer-use helper needs a newer macOS than the target"; exit 1; }
+fi
 
 # 7. pack
 mkdir -p "$out"
