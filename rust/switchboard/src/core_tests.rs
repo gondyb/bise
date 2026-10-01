@@ -2192,6 +2192,7 @@ fn a_private_worktree_is_a_place() {
         review: Review::Approved,
         checks: Checks::Pass,
         updated_at: "t".into(),
+        facts: Default::default(),
     };
     let local = vec![Local { place: "pt:/p/docs-wt".into(), branch: "feat/x".into(), tip: Some("h".into()), commits: Some(0), dirty: Some(false) }];
     let fx = t.go(Input::Prs(Report { at_ms: 2_000, prs: Some(Ok(vec![merged])), local, activity: Vec::new() }));
