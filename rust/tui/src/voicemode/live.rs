@@ -371,6 +371,55 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// The app's own path: two ctrl+r through on_key open voice mode (the
+    /// fake ports: a recorded sentence, no sound, no network), esc leaves.
+    #[test]
+    fn ctrl_r_twice_through_the_keys_opens_voice_mode_and_esc_leaves() {
+        let wav = concat!(env!("CARGO_MANIFEST_DIR"), "/src/voicemode/testdata/sentence.wav");
+        std::env::set_var("BISE_VOICE_FAKE", wav);
+        let mut app = crate::sb::bench::test_app_drained();
+        let r = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        crate::input::on_key(&mut app, &r);
+        crate::input::on_key(&mut app, &r);
+        let shown: Vec<String> = app
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                Ev::Info(t) | Ev::Warn(t) | Ev::Err(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(app.voice_mode.is_some(), "{shown:?}");
+        assert!(shown.iter().any(|t| t.starts_with("· voice mode · ")), "{shown:?}");
+        crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.voice_mode.is_none());
+    }
+
+    /// One ctrl+r (dictation off), then frames and a key: nothing hangs.
+    #[test]
+    fn one_ctrl_r_then_frames_and_keys_go_on() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut app = crate::sb::bench::test_app_drained();
+            let r = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+            crate::input::on_key(&mut app, &r);
+            let _ = tx.send("key");
+            let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+            for _ in 0..3 {
+                pump(&mut app);
+                t.draw(|f| crate::run::draw_frame(&mut app, f)).unwrap();
+                let _ = tx.send("frame");
+            }
+            crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+            let _ = tx.send("done");
+        });
+        let mut got = Vec::new();
+        while let Ok(m) = rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            got.push(m);
+        }
+        assert_eq!(got.last(), Some(&"done"), "{got:?}");
+    }
+
     #[test]
     fn ctrl_r_twice_within_400_ms_is_voice_mode_and_a_third_starts_over() {
         let r = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);

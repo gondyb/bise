@@ -493,8 +493,10 @@ impl Voice {
 
     /// The real microphone and the configured voice model.
     pub fn live(enabled: bool) -> Self {
-        // the tmux tests' microphone (BISE-298): a tone, no device
-        if std::env::var("SB_VOICE_FAKE_MIC").is_ok_and(|v| !v.is_empty()) {
+        // the tmux tests' microphone (BISE-298): a tone, no device; voice
+        // mode's fake (BISE_VOICE_FAKE) never opens the real mic either
+        let fake = |k: &str| std::env::var(k).is_ok_and(|v| !v.is_empty());
+        if fake("SB_VOICE_FAKE_MIC") || fake("BISE_VOICE_FAKE") {
             return Voice::new(enabled, Box::new(ToneRecorder), Box::new(BatchTranscriber));
         }
         Voice::new(enabled, Box::new(MicRecorder), Box::new(BatchTranscriber))
