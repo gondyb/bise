@@ -164,10 +164,11 @@ export const TASKS = [
   {
     id: "example.com",
     kind: "public",
-    prompt: "What is the heading of https://example.com, and where does its link go?",
+    // example.com has no heading since 2026: its title, then its one link
+    prompt: "What is the title of https://example.com, and where does its link go?",
     program: `async function main() {
   const tab = await computer.browser.open("https://example.com/");
-  const h = await tab.getByRole("heading").first().textContent();
+  const h = tab.title;
   const r = await tab.getByRole("link").first().click();
   const url = tab.url;
   await tab.close();

@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- state
 
-/** agent name → { name, groupId, stopped, closing } */
+/** agent name → { name, groupId, stopped, closing, closingGroup } */
 const agents = new Map();
 /** tab id → { agent, attached, paused, userTouched, refs: backendId→n, byRef: n→backendId, nextRef, navs, acting, actingUntil, queue, overlayNavs } */
 const tabs = new Map();
@@ -43,7 +43,7 @@ const note = (x) => {
 
 function agentOf(name) {
   let a = agents.get(name);
-  if (!a) agents.set(name, (a = { name, groupId: null, stopped: false, closing: false }));
+  if (!a) agents.set(name, (a = { name, groupId: null, stopped: false, closing: false, closingGroup: null }));
   return a;
 }
 
@@ -809,11 +809,13 @@ async function doAct(tabId, t, agent, action, args, seen) {
     case "close": {
       const tab = await chrome.tabs.get(tabId);
       const a = agentOf(agent);
-      if (tabsOf(agent).length === 1) a.closing = true;
+      // Its last tab: Chrome removes the group next. Remember which group
+      // (not a timed flag: a close right after another agent-closed group
+      // raced the timer and read as the user closing the group).
+      if (tabsOf(agent).length === 1) a.closingGroup = a.groupId;
       await detach(tabId, t);
       tabs.delete(tabId);
       await chrome.tabs.remove(tabId);
-      setTimeout(() => (a.closing = false), 1000);
       return { ok: true, url: tab.url, title: tab.title, changed: "", summary: summary("close", null, args, hostOf(tab.url)) };
     }
     case "wait": {
@@ -958,7 +960,8 @@ chrome.tabGroups.onRemoved.addListener((group) => {
   for (const a of agents.values()) {
     if (a.groupId !== group.id) continue;
     a.groupId = null;
-    if (!a.closing) stopAgent(a.name, "group_closed");
+    if (a.closingGroup === group.id) a.closingGroup = null;
+    else if (!a.closing) stopAgent(a.name, "group_closed");
   }
 });
 

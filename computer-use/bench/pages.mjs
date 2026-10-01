@@ -70,8 +70,10 @@ document.querySelectorAll("button").forEach((b) => b.onclick = () => {
 <tr><td>Keyboard</td><td>89 €</td></tr><tr><td>Mouse</td><td>35 €</td></tr><tr><td>Monitor 27"</td><td>329 €</td></tr><tr><td>Webcam</td><td>59 €</td></tr>
 </tbody></table>`),
 
+  // rows tall enough that the first 20 overflow any window: a feed that
+  // fits on screen never scrolls, so it never loads more
   "lazy.html": page("Feed", `
-<h1>Feed</h1><ol id="feed"></ol><p id="end"></p>`, `
+<style>#feed li{height:60px}</style><h1>Feed</h1><ol id="feed"></ol><p id="end"></p>`, `
 let n = 0;
 const more = () => { for (let i = 0; i < 20; i++) { n++; const li = document.createElement("li"); li.textContent = "Post " + n; document.getElementById("feed").appendChild(li); }
   if (n >= 60) { document.getElementById("end").textContent = "End of feed: 60 posts"; window.onscroll = null; } };
