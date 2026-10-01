@@ -120,8 +120,9 @@ and apps):
 - `snapshot.refs` = the number of `[eN]` refs in `text`.
 - A 6th tab for one agent: `refused`, "you already have 5 tabs open;
   close one (act close) first".
-- `scroll`: `direction` `up|down|left|right`; `amount` in CSS px (web)
-  or points (apps), default 80 % of the visible height.
+- `scroll`: `direction` `up|down|left|right`, default `down`; `amount`
+  in CSS px (web) or points (apps), default 80 % of the visible height
+  of the scrolled element or window.
 - `wait`: with a ref/locator, until visible; `text` alone, until the
   page/window contains it; nothing, sleeps `amount` ms (≤ `timeout_ms`).
 - `check`: `value: false` unchecks.
@@ -129,7 +130,9 @@ and apps):
   several chords space-separated (`"Tab Tab Enter"`); with a
   ref/locator, it focuses that element first.
 - `read` without ref/locator: the page's (window's) text, cut at 4000
-  characters.
+  characters; on apps, the static texts and values, one per line.
+- Apps: `goto` → `bad_args` "goto works on tabs only"; `hover` posts a
+  mouse-moved event to the app's pid (the real cursor stays).
 
 ### C2. The snapshot text
 
