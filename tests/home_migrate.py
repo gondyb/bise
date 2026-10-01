@@ -34,7 +34,9 @@ def check(ok, what):
 
 def main():
     # /tmp: a socket path must stay under 104 bytes (macOS)
-    tmp = tempfile.mkdtemp(prefix="sbm-", dir=short_tmp())
+    # a 1-letter prefix: the legacy hub socket sits 60 bytes deep
+    # (home/.local/state/switchboard/<ws>-<hash>/hub.sock), 103 at most
+    tmp = tempfile.mkdtemp(prefix="m", dir=short_tmp())
     home = os.path.join(tmp, "home")
     os.makedirs(os.path.join(home, ".bend-harness"))
     with open(os.path.join(home, ".bend-harness", "config.toml"), "w") as f:

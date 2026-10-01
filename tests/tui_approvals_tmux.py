@@ -20,6 +20,7 @@ python3 -u tests/tui_approvals_tmux.py
 import os
 import sys
 import shutil
+import subprocess
 import tempfile
 import time
 
@@ -181,6 +182,10 @@ def session(E, env, home, bise, shot):
         # the sandbox (brief 1e): a write outside the repo is stopped, then
         # a card to run it again outside the sandbox
         if sys.platform != "darwin" or not os.path.exists("/usr/bin/sandbox-exec"):
+            return
+        # in a sandbox already (an agent's gate in auto): no other one applies
+        if subprocess.run(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                          stderr=subprocess.DEVNULL).returncode != 0:
             return
         t.typed("/new t3: {{bash: echo hi > ~/Desktop/x.txt}}")
         t.keys("Enter")
