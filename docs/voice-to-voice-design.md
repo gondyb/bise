@@ -1,6 +1,6 @@
 # voice to voice: design proposal
 
-Status: proposal for review, nothing built. Round 1 reviewed by designer; round 2 = the user's notes (§0), the current pick is E, voice mode. Mocks (local only): `site/content/voice-ux.html`
+Status: being built on the branch voice-to-voice (plan: docs/voice-mode-plan.md). Round 1 reviewed by designer; round 2 = the user's notes (§0), the pick is E, voice mode; round 3 = the user's notes after trying it (§0.1, wins over anything below). Mocks (local only): `site/content/voice-ux.html`
 on localhost:4747 (four directions, an animation lab, dark/light, NO_COLOR, 80/100/150 columns).
 
 You talk to main, main talks back. The agents keep working; the thread keeps the words.
@@ -20,9 +20,8 @@ D's big kiss inside it, the thread above.
   the mouth opens with the level and up to 3 arcs `)))` open beside it; cut in: it shuts to a
   line). Right: who talks (`you` in accent, `:* main`), then the words as they're said
   (≤ 28 cells a line, so 80 columns fit), then a status row. The thread stays above.
-- **While main works (round 3, the user):** no mini history in voice mode: the real thread is in
-  view, so main's tool lines and messages come in above as in text mode; the pane only turns
-  its `*` and says `main is on it`. (The mini history stays with D, which is dropped.)
+- **While main works:** the kiss turns its `*` and the status row says `∿ main is on it`; the
+  minified work shows beside it (§0.1, the user brought it back after trying it).
 - **What main says is in the thread too (round 3, the user):** the message lands whole in the
   thread at once; its spoken words light up there in step with the voice, the same words as
   beside the kiss; the shown-only details sit under it as usual.
@@ -34,12 +33,48 @@ D's big kiss inside it, the thread above.
   now; the name over the words says who answers; the kiss stays (it's bise talking).
 - **Approvals:** by voice ("allow") and by key, both always on.
 - **Build:** all at once, no sequencing (the user).
-- **`/voice`** becomes voice mode's settings screen (today it toggles dictation); ctrl+r twice
-  is the way in.
+- **`/voice`** is the one voice screen, dictation included (§0.1); ctrl+r twice is the way in.
 - **Under 30 rows** the big kiss shrinks to B's two lanes (you, main) in a 4-row pane.
 - **The brand voice:** to pick later, by ear.
 
-Round 1 follows, kept for the record; where it says "call", read "voice mode".
+### 0.1 Round 3: the user's notes after trying it (699f710)
+
+He used it, on speakers and in French. What changes:
+
+- **Transcribe 3, never Voxtral Mini.** Voxtral Mini misjudged the end of a turn and misheard
+  words. Speech to text is `mistral/voxtral-transcribe-3` by default, for dictation and voice
+  mode. Voxtral Mini is not offered anywhere (an old config that names it reads as Transcribe 3,
+  no error). Voice mode transcribes each turn with that batch model; the end of the turn comes
+  from voice activity (the `about to answer ●●●··` fill, space sends at once).
+- **One `/voice` screen.** Setup and settings were two places; now one screen, the /models
+  layout, top to bottom: dictation (on/off), speech to text (provider · model, Transcribe 3
+  first), voice (Mistral's voices: name · language · gender, `▸ hear it` on press only),
+  language (auto, or one: it feeds the transcription and what is said), listen, read aloud,
+  sounds, who hears you. `/voice setup` opens the same screen.
+- **The work beside the kiss.** While main works, talks or you hold the floor, a column right of
+  the captions (150 columns: up to 44 cells, up to 9 rows, the newest on the status row) shows
+  the minified work since your last message, one row each:
+  `∿ bash npm test -- signup` running (text color), `· read src/signup/Hero.tsx ✓` done (dim,
+  `✓` faint), `· bash npm test -- signup ✗` failed (dim, only `✗` in the error color),
+  `· thinking` in italics, a message as `· text`; cut with `…`. While you talk or cut in, it
+  hides: the pane is yours. At 95 and 80 columns there is no room beside the captions: while main
+  works, its last 6 rows take the captions' place. Under 30 rows (the lanes), nothing.
+  `what it does shows in the thread above` only shows where the column can't.
+- **Main says the whole message.** No more "the rest is on screen": he can't always read. The
+  message is said whole, sentence by sentence; code blocks, tables, URLs and hashes are skipped
+  quietly, a path or an id is said as its last word or skipped, lists are said whole. Space cuts
+  it at any time. Every word bise adds, every number and the quick "on it" are in the message's
+  language (the one you spoke for "on it"): a French message is said in French.
+- **ctrl+c leaves voice mode**, like esc. It never quits bise from voice mode.
+- **It doesn't hear itself.** On speakers it took its own voice for him and answered itself. The
+  echo is cancelled at the source (macOS VoiceProcessingIO: mic and speaker in one unit); bise
+  also drops what it hears while it talks, or within 3 s after, when most of the words are the
+  ones it just said. Without echo cancelling, cutting in needs headphones, and the mic stays shut
+  while the voice plays (and 500 ms after) unless the route is headphones. When bise can't tell
+  speakers from headphones, it treats them as speakers.
+
+Round 1 follows, kept for the record; where it says "call", read "voice mode". Where it says
+"the rest is on screen", Voxtral Realtime or `/talk settings`, §0.1 replaces it.
 
 ## 1. What exists
 
@@ -90,7 +125,8 @@ key (turn detection), a voice out, being cut off, and rules for what main says a
 One message, two depths: the first one or two sentences (~12 s) are said, the rest is shown.
 Never read code, paths, ids, hashes, URLs, tables; numbers rounded and in words. Lists: how
 many, then up to 3 items in 3 words. Only main speaks: an agent's message is told by main
-("cookies asks…"). When there's more: "the rest is on screen".
+("cookies asks…"). When there's more: "the rest is on screen". (Round 3: the whole message is
+said, no "the rest is on screen", see §0.1.)
 
 ## 5. Inbox, news, transcript
 
