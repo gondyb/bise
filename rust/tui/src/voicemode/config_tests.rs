@@ -122,3 +122,22 @@ fn the_ack_job_is_the_small_jobs_model() {
     let keys = Keys { env: &none, store: &store, files: &[] };
     assert!(ack_job_of(&setup, &keys).unwrap_err().contains("MISTRAL_API_KEY"));
 }
+
+#[test]
+fn the_speech_to_text_model_is_written_in_voice_and_the_default_unwritten() {
+    let default = Setup::from_text(Some(""), &none).catalog.default_voice_model;
+    let t = "[voice]\nlanguage = \"fr\"\n";
+    let t2 = with_stt_model(t, "openai/gpt-transcribe", &none);
+    assert!(t2.contains("model = \"openai/gpt-transcribe\"") && t2.contains("language = \"fr\""), "{t2}");
+    assert_eq!(Setup::from_text(Some(&t2), &none).voice.model, "openai/gpt-transcribe");
+    // the same again: nothing changes
+    assert_eq!(with_stt_model(&t2, "openai/gpt-transcribe", &none), t2);
+    // back to the catalog's default: the key goes (a newer default applies)
+    let t3 = with_stt_model(&t2, &default, &none);
+    assert!(!t3.contains("model ="), "{t3}");
+    assert!(t3.contains("language = \"fr\""), "{t3}");
+    assert_eq!(with_stt_model("", &default, &none), "");
+    // BISE_VOICE_MODEL is not what the file says
+    let env = |k: &str| (k == "BISE_VOICE_MODEL").then(|| "openai/gpt-transcribe".to_string());
+    assert!(with_stt_model("", "openai/gpt-transcribe", &env).contains("model = \"openai/gpt-transcribe\""));
+}

@@ -985,8 +985,9 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         crate::voicemode::settings::request(crate::voicemode::settings::Open::Settings);
         return Vec::new();
     }
+    // round 2: /voice setup is the same screen, on speech to text
     if v.trim() == "/voice setup" {
-        crate::input::open_voice_setup(app, !app.voice.enabled);
+        crate::voicemode::settings::request_stt();
         return Vec::new();
     }
     let typed = v

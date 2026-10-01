@@ -134,6 +134,37 @@ pub fn with_config(text: &str, cfg: &VoiceModeConfig, env: &dyn Fn(&str) -> Opti
     t
 }
 
+/// The voice role's model (speech to text, dictation and voice mode) set
+/// to `model` ("provider/id") in config.toml (`[voice] model`).
+pub fn save_stt_model(model: &str) -> Result<(), String> {
+    let path = home().config_file();
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let new = with_stt_model(&text, model, &env);
+    if new == text {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, new).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+/// config.toml's `text` with `[voice] model = model`; the catalog's
+/// default unwritten (a newer default then applies), the rest as it was.
+pub fn with_stt_model(text: &str, model: &str, env: &dyn Fn(&str) -> Option<String>) -> String {
+    // the file alone (BISE_VOICE_MODEL is not what is written)
+    let file = Setup::from_text(Some(text), &|k| if k == "BISE_VOICE_MODEL" { None } else { env(k) });
+    let model = file.catalog.canonical_stt(model);
+    let written = file.voice.from == "config";
+    if model == file.catalog.default_voice_model {
+        return if written { without_key(text, "voice", "model") } else { text.to_string() };
+    }
+    if written && file.voice.model == model {
+        return text.to_string();
+    }
+    with_table_key(text, "voice", "model", &bise_catalog::toml_string(&model))
+}
+
 // ---- the jobs ----
 
 /// The setup and the keys as the TUI reads them.

@@ -53,7 +53,7 @@ const THEMES: &[(&str, &str)] =
 pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/voice",
-        desc: "voice mode's settings (ctrl+r twice: voice mode), dictation on or off: /voice [setup]",
+        desc: "voice settings: dictation, the speech-to-text model, the voice, the language (ctrl+r twice: voice mode): /voice [setup]",
         args: &[Arg::Voice],
     },
     Cmd {
@@ -254,16 +254,17 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
 }
 
 /// `/voice`'s rows: the settings first (⏎ on it runs the bare `/voice`:
-/// voice mode's settings screen, dictation's on/off in it), then `setup`.
+/// the one voice screen, dictation's on/off in it), then `setup` (the
+/// same screen, on speech to text).
 fn voice_choices(on: bool, q: &str) -> Vec<Choice> {
     let desc = if on {
-        "voice mode, its voice, who hears you · dictation is on"
+        "dictation, the model, the voice, the language · dictation is on"
     } else {
-        "voice mode, its voice, who hears you · dictation is off"
+        "dictation, the model, the voice, the language · dictation is off"
     };
     [
         Choice { value: "/voice".into(), label: "settings".into(), desc: desc.into(), mark: None },
-        Choice::word("setup", "pick the model that listens to you"),
+        Choice::word("setup", "the same screen, on the speech-to-text model"),
     ]
     .into_iter()
     .filter(|c| matches(q, &[&c.label]))
