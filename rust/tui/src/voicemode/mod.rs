@@ -30,6 +30,7 @@ pub mod kiss; // voice-tui
 pub mod listen; // voice-stt
 pub mod pane; // voice-tui
 pub mod route; // voice-audio
+pub mod settings; // voice-settings
 pub mod speak; // voice-tts
 pub mod timing; // voice-tts
 pub mod tts; // voice-tts
@@ -61,6 +62,10 @@ pub const STOP_WITHIN: Duration = Duration::from_millis(50);
 /// The "on it" line waits this long for the small-jobs model, else a
 /// canned one is said.
 pub const ACK_DEADLINE: Duration = Duration::from_millis(700);
+
+/// The lanes' waves: one level per step, this many kept.
+pub const WAVE_STEP: Duration = Duration::from_millis(100);
+pub const WAVE_LEN: usize = 52;
 
 /// Words that never cut the agent off and never allow anything
 /// (design §0, §5). Lowercase, without punctuation; English and French.
@@ -309,6 +314,10 @@ pub struct PaneView {
     /// your level and the agent's, 0..1, now
     pub you_level: f32,
     pub agent_level: f32,
+    /// the recent levels for the lanes' waves, oldest first, one per
+    /// [`WAVE_STEP`], at most [`WAVE_LEN`]
+    pub you_wave: Vec<f32>,
+    pub agent_wave: Vec<f32>,
     /// since voice mode opened (the header's `● voice mode 2:14`)
     pub elapsed: Duration,
     pub route: Route,
