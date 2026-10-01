@@ -34,8 +34,10 @@ D's big kiss inside it, the thread above.
   now; the name over the words says who answers; the kiss stays (it's bise talking).
 - **Approvals:** by voice ("allow") and by key, both always on.
 - **Build:** all at once, no sequencing (the user).
-- Still open: which brand voice (audition 3 Voxtral TTS voices on the same 3 lines); does
-  `/voice` become voice mode's settings; under 30 rows, does the kiss shrink to B's lanes.
+- **`/voice`** becomes voice mode's settings screen (today it toggles dictation); ctrl+r twice
+  is the way in.
+- **Under 30 rows** the big kiss shrinks to B's two lanes (you, main) in a 4-row pane.
+- **The brand voice:** to pick later, by ear.
 
 Round 1 follows, kept for the record; where it says "call", read "voice mode".
 
