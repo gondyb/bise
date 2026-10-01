@@ -2167,6 +2167,31 @@ fn model_and_reasoning_choose_for_the_agent_in_view() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::Passthrough { .. } | Effect::Say { .. })));
 }
 
+/// dev-flow §2, §7: `/flow` and main's `sb flow` go to the daemon
+/// (Effect::Flow: the config and the detection are files); a task's
+/// `sb flow` is refused, nothing reaches sb-core.
+#[test]
+fn flow_is_the_users_and_mains() {
+    use crate::flow::FlowMode;
+    let mut t = T::new();
+    t.spawn_task("docs");
+    let fx = t.user("docs", "/flow trunk");
+    assert!(
+        fx.iter().any(|e| matches!(e, Effect::Flow { client: Some(_), token: None, set: Some(FlowMode::Trunk) })),
+        "{:?}",
+        fx
+    );
+    let (_, fx) = t.req(MAIN, AgentReq::Flow { set: None });
+    assert!(fx.iter().any(|e| matches!(e, Effect::Flow { client: None, token: Some(_), set: None })), "{:?}", fx);
+    let (_, fx) = t.req("docs", AgentReq::Flow { set: Some(FlowMode::Pr) });
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Flow { .. })));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Reply { body, .. } if body["ok"] == false)), "{:?}", fx);
+    let r = |set: &str| AgentReq::from_json(&serde_json::json!({"cmd": "flow", "set": set}));
+    assert_eq!(r(""), Ok(AgentReq::Flow { set: None }));
+    assert_eq!(r("pr"), Ok(AgentReq::Flow { set: Some(FlowMode::Pr) }));
+    assert!(r("x").is_err());
+}
+
 /// BENCH (hub-lag): the cost of one step on a real journal.
 /// SB_BENCH_JOURNAL=<journal.jsonl> cargo test -p switchboard bench_step -- --ignored --nocapture
 #[test]

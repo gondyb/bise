@@ -30,6 +30,8 @@ pub use parse::Part;
 pub use paths::{Fs, LexicalFs, RealFs, Roots};
 pub use rules::{Rule, Rules};
 pub use tiers::{Hard, Risk, Why};
+#[cfg(test)]
+mod flow_tests;
 
 /// The global mode (design §8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +73,21 @@ pub struct Call {
     /// The edit tool on in this agent's request (`edit` or `apply_patch`,
     /// the gate JSON's `edit_tool`): the deny-once hint names it.
     pub edit_tool: String,
+    /// The repo's flow (dev-flow §6's approvals rows); None: unknown,
+    /// only the flow-free tiers.
+    pub flow: Option<FlowRules>,
+}
+
+/// The repo's flow as the approvals read it (dev-flow §6, "Approvals").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlowRules {
+    pub mode: crate::flow::FlowMode,
+    /// `[flow] push`: trunk flow pushes the default branch after a land.
+    pub push: bool,
+    /// The default branch.
+    pub base: String,
+    /// The agent's own branch (its worktree's); None in the shared folder.
+    pub branch: Option<String>,
 }
 
 impl Call {
@@ -231,6 +248,7 @@ fn judge_bash(
         base: Some(roots.cwd.clone()),
         fetched: false,
         known,
+        flow: call.flow.as_ref(),
     };
     let classes: Vec<(Part, tiers::Class)> = parsed
         .parts
@@ -253,7 +271,24 @@ fn judge_bash(
             always: None,
         };
     }
+    // dev-flow §6: what the flow makes the user's call (a card that
+    // offers "always"), unless a saved rule allows it (tier 2)
     let mut tier = 1u8;
+    let mut asks: Vec<&tiers::Ask> = vec![];
+    for (p, c) in &classes {
+        let tiers::Class::Ask(a) = c else { continue };
+        if rules.allows_bash(&call.repo, &p.text(), &p.exact(), tiers::pattern_ok(p) && !p.stdin_args) {
+            tier = 2;
+        } else {
+            asks.push(a);
+        }
+    }
+    if let Some(first) = asks.first() {
+        return Verdict::Card {
+            reason: first.reason.clone(),
+            always: Some(asks.iter().map(|a| a.rule.clone()).collect()),
+        };
+    }
     let mut deny: Vec<(Part, tiers::Open)> = vec![];
     let mut left: Vec<(Part, tiers::Open)> = vec![];
     for (p, c) in classes {
@@ -337,6 +372,7 @@ pub fn always_rule(part: &Part) -> String {
         base: Some(PathBuf::from("/")),
         fetched: false,
         known: vec![],
+        flow: None,
     };
     match tiers::classify(part, &mut w) {
         tiers::Class::Open(o) => o.rule,

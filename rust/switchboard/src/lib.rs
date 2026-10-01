@@ -25,6 +25,7 @@ pub mod cli;
 pub mod client;
 pub mod core;
 pub mod daemon;
+pub mod devflow;
 pub mod flow;
 pub mod forge;
 pub mod land;

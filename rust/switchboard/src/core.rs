@@ -99,6 +99,12 @@ pub enum AgentReq {
     Worktree {
         path: String,
     },
+    /// `sb flow [pr|trunk]` (main, dev-flow §2): the repo's flow and the
+    /// question to ask, or the user's answer saved. The daemon's
+    /// (`Effect::Flow`): never sent to sb-core.
+    Flow {
+        set: Option<crate::flow::FlowMode>,
+    },
     Report {
         kind: String,
         summary: String,
@@ -227,6 +233,12 @@ impl AgentReq {
                     s => return Err(format!("unknown status: {} (working|done|blocked)", s)),
                 },
                 note: jstr(v, "note"),
+            },
+            "flow" => AgentReq::Flow {
+                set: match jstr(v, "set").trim() {
+                    "" => None,
+                    m => Some(crate::devflow::parse_mode(m).map_err(|_| "usage: sb flow [pr|trunk]".to_string())?),
+                },
             },
             "worktree" => AgentReq::Worktree {
                 path: match jstr(v, "path").trim() {
@@ -480,6 +492,14 @@ pub enum Effect {
         model: Option<String>,
         effort: Option<String>,
         default: bool,
+    },
+    /// `/flow` and `sb flow` (dev-flow §2, §7): the daemon reads the
+    /// config and the detection, saves a switch, and answers the client
+    /// (`client`) or the agent's request (`token`).
+    Flow {
+        client: Option<ClientId>,
+        token: Option<Token>,
+        set: Option<crate::flow::FlowMode>,
     },
     /// A PR event (pr-design §10): the daemon logs it (pr-news routes
     /// them, wave 3). The journaled ones also come as `Journal`.
@@ -1897,6 +1917,7 @@ impl Hub {
                 effort,
                 default: false,
             }),
+            UserCmd::Flow { set } => fx.push(Effect::Flow { client: Some(client), token: None, set }),
             UserCmd::Help => fx.push(notice(client, HELP)),
             UserCmd::Invalid(e) => fx.push(notice(client, &e)),
         }
@@ -2003,6 +2024,14 @@ impl Hub {
             } => json!({"cmd": "ask", "to": to, "text": text, "timeout_s": timeout_s}),
             AgentReq::Status { status, note } => {
                 json!({"cmd": "status", "status": status, "note": note})
+            }
+            AgentReq::Flow { set } => {
+                if self.st.resolve(from).as_deref() != Some(MAIN) {
+                    reply(fx, json!({"ok": false, "error": "sb flow is main's: ask main"}));
+                    return;
+                }
+                fx.push(Effect::Flow { client: None, token: Some(token), set });
+                return;
             }
             AgentReq::Worktree { path } => {
                 let Some(name) = self.st.resolve(from) else {
@@ -2153,6 +2182,7 @@ plain text        message to the agent in view (main by default)
 /interrupt        interrupt the turn of the agent in view
 /compact          compact the conversation of the agent in view
 /model [m] [default]  the model of the agent in view (default: also config.toml's)
+/flow [pr|trunk]  how this repo ships code (PRs or straight to main), why, and switch it
 /reasoning [effort]   its reasoning effort (none, low, medium, high, max...)";
 
 #[cfg(test)]

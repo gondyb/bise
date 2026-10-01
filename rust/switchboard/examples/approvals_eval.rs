@@ -65,6 +65,7 @@ fn main() {
             home: "/h".into(),
             bise: "/h/.bise".into(),
             edit_tool: "edit".into(),
+            flow: None,
         };
         let req = CheckReq {
             call,
