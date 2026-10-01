@@ -1,6 +1,6 @@
 # voice to voice: design proposal
 
-Status: proposal for review, nothing built. Mocks (local only): `site/content/voice-ux.html`
+Status: proposal for review, nothing built. Designer reviewed it (brand): pick confirmed, changes folded in. Mocks (local only): `site/content/voice-ux.html`
 on localhost:4747 (four directions, an animation lab, dark/light, NO_COLOR, 80/100/150 columns).
 
 You talk to main, main talks back. The agents keep working; the thread keeps the words.
@@ -27,18 +27,22 @@ key (turn detection), a voice out, being cut off, and rules for what main says a
 - **Enter / leave:** `/talk` or ctrl+r twice (ctrl+r alone stays dictation). esc hangs up.
   The first `/talk` shows who hears you, once (§6).
 - **The pane:** the composer's 4 rows become: the bar, the `you` lane (accent, your level),
-  the main lane (text color; main's `:*` is its mouth, `:o` `:O` with the level), the keys row.
-  The bar breathes accent → rule while it listens. tab types (the call stays, the mic pauses).
+  the main lane (text color; main's `:*` there is its mouth, `:*` ↔ `:o` only: `:O` reads as shock), the keys row.
+  The `:*` in the header and the panel never changes: it's the logo. The bar breathes in one
+  slow ~2 s ease, accent → rule, while it listens. tab types (the call stays, the mic pauses).
 - **Captions:** what you say builds live in the thread under a dim bar (not sent yet), partial
   words dim. Sent at the end of your turn (semantic turn detection, ~0.6 s), then `said ✓✓`.
 - **Main's answer:** written whole at once; the spoken part highlighted word by word.
 - **Speakers:** when the output is not headphones, the call switches itself to hold-space
   (A): main would hear its own voice and stop. The divider says `headphones` / `speakers`.
 - **States and their cells:** listening `●` blink + your lane; thinking: the gust on main's
-  lane (`{g3} thinking`) or today's rolling wave; speaking: mouth + main's lane + `)))`;
+  lane (the gust: the brand's wind); speaking: mouth + main's lane + `)))`;
   cut in: main's lane drops within ~200 ms, its sentence ends `—` + faint `you cut in`;
   muted: `○ muted` in the top bar and the lane, flat and faint.
-- **Header:** `● on a call 2:14` while the mic is open, in every view (also agents' views).
+- **Header:** `● on a call 2:14` while the mic is open, in every view (also agents' views); in
+  accent, never in the error color (a call isn't an error). Muted: `○` faint.
+- **Waves:** blocks `▁▂▃▄▅▆▇█` for both lanes, the dictation chip's language. No braille
+  (font-dependent, mush when small), no dots (too quiet).
 - **Motion budget:** cells change in place at ~10 fps; nothing bounces or slides. Accent = you,
   text = main, dim = main at work, faint = nobody. `BISE_REDUCE_MOTION`: still frames (the `●`
   stays lit, the lanes freeze). `NO_COLOR`: bold/dim only; the breathing bar becomes bold/dim.
@@ -62,8 +66,8 @@ many, then up to 3 items in 3 words. Only main speaks: an agent's message is tol
 - **News:** never over you, never in a pause you think in: after 2 s of silence, one
   sentence, after a soft click. Levels in `/talk settings`: what needs you + what you asked
   (default) / everything main would write / nothing. Several: "three things: … which first?"
-- **Transcript:** a faint line opens and closes the call (`· call ended · 14:09 · 7 min · 4
-  things said, 3 answers`); your messages carry `said`; no audio is kept.
+- **Transcript:** a faint line opens and closes the call (`· call ended · 7 min · 4 things said,
+  3 answers`: no clock time, the transcript has it); your messages carry `said`; no audio is kept.
 
 ## 6. Settings and privacy
 
@@ -90,7 +94,7 @@ macOS, VoiceProcessingIO; elsewhere headphones. Headphones vs speakers from the 
 
 ## 8. Open questions
 
-1. The word: "call" (/talk, hang up) or "voice mode"?
+1. The word: "call" (/talk, hang up), designer's and my pick over "voice mode". OK?
 2. The key: ctrl+r twice, or a new one?
 3. Approvals by voice ("allow") or keys only?
 4. One bise voice for everyone, or the user's pick?
