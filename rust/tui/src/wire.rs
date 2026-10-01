@@ -112,9 +112,11 @@ pub(crate) enum Ev {
     You(String, Mark, bool),
     // the approvals gate of the running call (`sb gate : check|card|done <n>`)
     Gate(Gate),
-    // a gate's card answered (`sb approval`): allowed or not, the line,
-    // the user's note
-    Approval { ok: bool, text: String, note: String },
+    // an inbox item answered (`sb approval`, an answer's `sb route`, or
+    // the box's own fold): allowed or not, the sentence, the user's own
+    // words under it (a typed answer, a no's note), what the item asked,
+    // opened (BISE-307: the full question and the whole answer)
+    Approval { ok: bool, text: String, note: String, asked: String, open: bool },
     Assistant(String),
     // the model's reasoning for the message that follows: rendered
     // collapsed as "thought for Ns"; ctrl+o expands every section, a

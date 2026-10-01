@@ -335,7 +335,9 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
 }
 
 pub(crate) fn is_message(ev: &Ev) -> bool {
-    matches!(ev, Ev::You(..) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. } | Ev::Answered { .. })
+    // an answer to an inbox item reads like your message (BISE-307): a
+    // block with a blank row around it
+    matches!(ev, Ev::You(..) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. } | Ev::Answered { .. } | Ev::Approval { .. })
 }
 
 pub(crate) fn is_tool_block(ev: &Ev) -> bool {
@@ -902,6 +904,9 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
         Ev::Release(r) => r.discloses(),
         // a long message of yours folds (BISE-239)
         Ev::You(t, ..) => crate::render::you_folds(t),
+        // an answer to an inbox item opens on its full question and
+        // words (BISE-307)
+        Ev::Approval { text, note, asked, .. } => crate::render::answer_opens(text, note, asked),
         _ => false,
     }
 }
@@ -1012,6 +1017,7 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. }
         | Ev::Fold { open, .. }
+        | Ev::Approval { open, .. }
         | Ev::You(_, _, open) => *open = !*open,
         Ev::Tool(td) if crate::toolbox::opens_as_box(td) => {
             // BISE-223: the row opens into its box (15 rows), a box that
@@ -1411,6 +1417,7 @@ fn own_open(ev: &Ev) -> Option<bool> {
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. }
         | Ev::Fold { open, .. }
+        | Ev::Approval { open, .. }
         | Ev::You(_, _, open) => Some(*open),
         // a row, or an open box that still hides lines, is closed
         Ev::Tool(td) if crate::toolbox::opens_as_box(td) => {

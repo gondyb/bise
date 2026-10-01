@@ -660,17 +660,22 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
         }
     }
     // an answer given here: its fold line is in this feed already
-    let folded = line
-        .strip_prefix("sb route : ")
-        .and_then(|r| answer_route(&unescape_md(r)).map(|(_, id, _)| id))
-        .is_some_and(|id| sb.folded_in(id, agent));
+    let answer_id = line.strip_prefix("sb route : ").and_then(|r| answer_route(&unescape_md(r)).map(|(_, id, _)| id));
+    let folded = answer_id.is_some_and(|id| sb.folded_in(id, agent));
+    // BISE-307: what the item asked, for its line to open on (the
+    // inbox's card while the hub still holds it)
+    let asked = answer_id.and_then(|id| sb.card_by_id(id)).map(|c| c.text.trim().to_string());
     let mut queued = None;
     with_feed(app, agent, |app| {
         if folded {
             let n0 = app.events.len();
             feed::seen_at(app, pos, n0);
         } else {
+            let n0 = app.events.len();
             ingest_at(app, line, pos, ts);
+            if let Some(id) = answer_id {
+                ask_of(app, n0, id, asked);
+            }
         }
         trim_window(app);
         // BISE-89: its turn ended, the oldest queued message goes (and
@@ -688,6 +693,29 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
     }
     if steered {
         crate::hints::once(app, crate::hints::Hint::FirstSteer);
+    }
+}
+
+/// The answer to card `id` just read (events from `n0`): what the item
+/// asked, from the inbox (`asked`), else from the card's own line in
+/// this feed (`#12 question @main : …`); unknown, the line opens on the
+/// answer alone (BISE-307).
+fn ask_of(app: &mut App, n0: usize, id: u64, asked: Option<String>) {
+    let head = format!("#{id} ");
+    let found = asked.or_else(|| {
+        app.events[..n0.min(app.events.len())].iter().rev().find_map(|e| match e {
+            Ev::Card { text, .. } if text.starts_with(&head) => Some(crate::render::card_parts(text).map_or("", |p| p.2).trim().to_string()),
+            _ => None,
+        })
+    });
+    let Some(q) = found.filter(|q| !q.is_empty()) else { return };
+    for i in n0..app.events.len() {
+        if let Ev::Approval { asked, .. } = &mut app.events[i] {
+            *asked = q.clone();
+            if let Some(c) = app.cache.get_mut(i) {
+                *c = None;
+            }
+        }
     }
 }
 
@@ -1193,14 +1221,22 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
         "approval" => {
             let f: Vec<String> = raw.split(" : ").map(field).collect();
             let get = |i: usize| f.get(i).cloned().unwrap_or_default();
-            let (who, what) = (get(1), clip_chars(&get(2), 60));
+            // BISE-307: never cut here, the line cuts at the width and
+            // opens whole
+            let (who, what) = (get(1), get(2).trim().to_string());
             // a sandbox card's fold says the sandbox was off for it (designer)
-            let ok = |text: String| Ev::Approval { ok: true, text, note: String::new() };
+            let ok = |text: String| Ev::Approval { ok: true, text, note: String::new(), asked: String::new(), open: false };
             match get(0).as_str() {
                 "allowed" => ok(format!("you allowed {}: {}", who, what)),
                 "outside" => ok(format!("you let {} run it outside the sandbox: {}", who, what)),
                 "outside-always" => ok(format!("you always let {} run outside the sandbox here", what)),
-                _ => Ev::Approval { ok: false, text: format!("you said no to {}: {}", who, what), note: get(3) },
+                _ => Ev::Approval {
+                    ok: false,
+                    text: format!("you said no to {}: {}", who, what),
+                    note: get(3).trim().to_string(),
+                    asked: String::new(),
+                    open: false,
+                },
             }
         }
         "card-closed" => match text.strip_prefix('#').and_then(|t| t.split_once(' ')) {
@@ -1213,7 +1249,10 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
         // an answer to an item: the box's fold line (BISE-305, designer:
         // one sentence), `✓ you answered flow-prompts: oui`
         "route" => match answer_route(&text) {
-            Some((who, _, said)) => Ev::Approval { ok: true, text: format!("you answered {who}: {said}"), note: String::new() },
+            Some((who, _, said)) => {
+                let (text, note) = cards::answered(who, said);
+                Ev::Approval { ok: true, text, note, asked: String::new(), open: false }
+            }
             None => Ev::Info(format!("→ {}", text)),
         },
         "spawn" => Ev::Info(format!("✚ {}", text)),
@@ -1640,16 +1679,6 @@ mod nav_key_tests {
             assert_eq!(nav(KeyCode::Char(c), KeyModifiers::CONTROL), None);
         }
     }
-}
-
-/// `s` cut to `n` chars, with `…` when cut.
-fn clip_chars(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        return s.to_string();
-    }
-    let mut t: String = s.chars().take(n.saturating_sub(1)).collect();
-    t.push_str(crate::theme::ellipsis());
-    t
 }
 
 /// `#12 confirm @api-v2 : …`: a gate's card line.

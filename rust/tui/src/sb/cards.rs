@@ -118,7 +118,11 @@ pub(super) enum CardHit {
 pub(super) struct Fold {
     pub(super) ok: bool,
     pub(super) text: String,
+    /// The user's own words under the sentence (a typed answer, a no's
+    /// note); the history draws them like a message of yours (BISE-307).
     pub(super) note: String,
+    /// What the item asked (its text): the history's line opens on it.
+    pub(super) asked: String,
 }
 
 /// How long the fold of an answer stays on top of the box, and `✓ inbox
@@ -695,7 +699,8 @@ fn step(app: &mut App, d: isize, wrap: bool) {
 
 /// Answer card `id` with `reply`; the history says the box's fold line
 /// (`✓ you answered perf: both`); the view moves on.
-fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
+/// `picked`: the short label of the option picked (on the line).
+fn answer(app: &mut App, id: u64, reply: &str, picked: Option<&str>) {
     // the TUI's own cards: answered here, their own result row
     if super::setup::is_local(id) {
         if super::setup::valid(app, id, reply) {
@@ -708,9 +713,10 @@ fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
     app.sb.send_input(format!("/answer {} {}", id, reply));
     // the thread says the box's fold line (designer: one sentence); a
     // gate's card folds with the hub's own (`✓ you allowed …`)
-    let fold = fold_of(&c, reply, said);
+    let fold = fold_of(&c, reply, picked);
     if c.kind != "confirm" {
-        push_event(&mut app.events, &mut app.cache, Ev::Approval { ok: fold.ok, text: fold.text.clone(), note: fold.note.clone() });
+        let ev = Ev::Approval { ok: fold.ok, text: fold.text.clone(), note: fold.note.clone(), asked: fold.asked.clone(), open: false };
+        push_event(&mut app.events, &mut app.cache, ev);
         app.sb.card.folded.push((id, app.sb.focus.clone()));
     }
     let open = app.sb.card.open && app.sb.card.sel == Some(id);
@@ -731,16 +737,21 @@ fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
 /// card, approvals-design.md §9): `you allowed t3: npm publish`, `you
 /// said no to t3: npm publish` and the note, `you answered sad-404:
 /// both`.
-pub(super) fn fold_of(c: &Card, reply: &str, said: &str) -> Fold {
+pub(super) fn fold_of(c: &Card, reply: &str, picked: Option<&str>) -> Fold {
     let gate = matches!(c.kind.as_str(), "confirm" | "approval");
     if !gate {
-        return Fold { ok: true, text: format!("you answered {}: {}", c.agent, said), note: String::new() };
+        // a picked option: its short label on the line (`both`)
+        let (text, note) = match picked {
+            Some(p) => (format!("you answered {}: {}", c.agent, p), String::new()),
+            None => answered(&c.agent, reply),
+        };
+        return Fold { ok: true, text, note, asked: c.text.trim().to_string() };
     }
     let what = shape(c).summary;
     let no = reply == "no" || reply == "deny" || reply.starts_with("deny: ");
     if no {
-        let note = reply.strip_prefix("deny: ").unwrap_or("").to_string();
-        return Fold { ok: false, text: format!("you said no to {}: {}", c.agent, what), note };
+        let note = reply.strip_prefix("deny: ").unwrap_or("").trim().to_string();
+        return Fold { ok: false, text: format!("you said no to {}: {}", c.agent, what), note, asked: String::new() };
     }
     let outside = c.text.lines().next().is_some_and(|h| h.ends_with("outside the sandbox"));
     let text = if outside {
@@ -748,7 +759,25 @@ pub(super) fn fold_of(c: &Card, reply: &str, said: &str) -> Fold {
     } else {
         format!("you allowed {}: {}", c.agent, what)
     };
-    Fold { ok: true, text, note: String::new() }
+    Fold { ok: true, text, note: String::new(), asked: String::new() }
+}
+
+/// A short answer: on the sentence's line (`you answered perf: both`).
+const ON_THE_LINE: usize = 30;
+
+/// The sentence of an answer to `who` and the words under it (BISE-307,
+/// designer): a picked option or any short one-line answer stays on the
+/// line (`you answered perf: both`), anything longer goes under it, whole
+/// (`you answered main` + the words). The same split for the box's own
+/// fold and the hub's line (another view, a reload).
+pub(super) fn answered(who: &str, words: &str) -> (String, String) {
+    use unicode_width::UnicodeWidthStr;
+    let w = words.trim();
+    if !w.contains('\n') && w.width() <= ON_THE_LINE {
+        (format!("you answered {who}: {w}"), String::new())
+    } else {
+        (format!("you answered {who}"), w.to_string())
+    }
 }
 
 /// Card `id` is answered or closed: hidden until the hub drops it; the
@@ -784,7 +813,7 @@ fn pick_digit(app: &mut App, id: u64, d: usize) -> bool {
 fn pick(app: &mut App, id: u64, i: usize) -> bool {
     let Some(s) = app.sb.card_by_id(id).map(shape) else { return false };
     let (Some(reply), Some(said)) = (s.options.get(i), s.short.get(i)) else { return false };
-    answer(app, id, reply, said);
+    answer(app, id, reply, Some(said));
     true
 }
 
@@ -797,21 +826,20 @@ fn submit(app: &mut App) {
     // a setup card: never in the history (the key card's text is a key)
     if super::setup::is_local(id) {
         if !text.is_empty() {
-            answer(app, id, &text, "");
+            answer(app, id, &text, None);
         }
         return;
     }
     if text.is_empty() {
         if enter == Enter::Ack {
-            answer(app, id, "seen", "seen");
+            answer(app, id, "seen", Some("seen"));
         }
         return;
     }
     app.history.insert(0, app.ed.text.clone());
-    let short = cut(&one_line(&text), 40);
     match enter {
-        Enter::Deny => answer(app, id, &format!("deny: {text}"), &format!("deny: {short}")),
-        _ => answer(app, id, &text, &short),
+        Enter::Deny => answer(app, id, &format!("deny: {text}"), None),
+        _ => answer(app, id, &text, None),
     }
 }
 

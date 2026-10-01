@@ -278,7 +278,13 @@ fn more_row(es: &[Entry], hidden: &[usize], w: usize) -> Drawn {
 /// `✗ you said no to …: … · "note"` (all dim).
 fn fold_row(f: &Fold, w: usize) -> Drawn {
     let (mark, st) = if f.ok { (theme::glyph(theme::G_RECEIVED), fg(theme::accent())) } else { (theme::glyph(theme::G_FAILED), fg(theme::dim())) };
-    let t = if f.note.is_empty() { f.text.clone() } else { format!("{} · \"{}\"", f.text, f.note) };
+    // the box's fold stays one line: a typed answer after the sentence,
+    // a no's note in quotes (the history has them whole, BISE-307)
+    let t = match (f.note.is_empty(), f.ok) {
+        (true, _) => f.text.clone(),
+        (false, true) => format!("{}: {}", f.text, f.note.split_whitespace().collect::<Vec<_>>().join(" ")),
+        (false, false) => format!("{} · \"{}\"", f.text, f.note.split_whitespace().collect::<Vec<_>>().join(" ")),
+    };
     let room = w.saturating_sub(mark.width() + 1);
     Drawn::plain(Line::from(vec![Span::styled(mark, st), Span::raw(" "), Span::styled(cut(&t, room), fg(theme::dim()))]))
 }

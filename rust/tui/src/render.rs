@@ -362,14 +362,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             },
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
-        // an inbox item answered, folded (approvals-design.md §9,
-        // designer): the mark (✓ accent, ✗ dim), the line, the note in
-        // double quotes, dim; the same sentence as the box's fold
-        Ev::Approval { ok, text, note } => {
-            let (mark, mark_st) = if *ok { (glyph(G_RECEIVED), Style::default().fg(accent())) } else { (glyph(G_FAILED), dim_st) };
-            let t = if note.is_empty() { text.clone() } else { format!("{text} · \"{note}\"") };
-            glyph_line(mark, mark_st, t, dim_st, width)
-        }
+        Ev::Approval { ok, text, note, asked, open } => answer_lines(*ok, text, note, asked, *open, width),
         Ev::Said { glyph, head, dim } => {
             // ✗ a failure (error); ? it needs you, ✓ it worked (accent)
             let calm = *glyph != "✗";
@@ -906,6 +899,118 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
     rows
 }
 
+// ---- an answer to an inbox item (BISE-307, designer) ----
+
+/// The columns an answer's head may take before it is cut, width-free
+/// (80 columns less the mark) like [`you_folds`].
+const ANSWER_HEAD: usize = 77;
+
+/// Whether the line of an answer opens: its head is cut at 80 columns
+/// (the sentence and the question on one line), the question has more
+/// lines, or its words fold like a long message of yours.
+pub(crate) fn answer_opens(text: &str, note: &str, asked: &str) -> bool {
+    use unicode_width::UnicodeWidthStr;
+    let asked = asked.trim();
+    let head = text.width() + if asked.is_empty() { 0 } else { 3 + one_line(asked.lines().next().unwrap_or("")).width() };
+    head > ANSWER_HEAD || asked.contains('\n') || you_folds(note)
+}
+
+/// `s` on one line: runs of whitespace become one space.
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `s` in at most `w` columns, cut with `…`.
+fn cut_cols(s: &str, w: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    if s.width() <= w {
+        return s.to_string();
+    }
+    let e = ellipsis();
+    let room = w.saturating_sub(e.width());
+    let (mut out, mut used) = (String::new(), 0);
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if used + cw > room {
+            break;
+        }
+        used += cw;
+        out.push(ch);
+    }
+    out.push_str(e);
+    out
+}
+
+/// An inbox item answered (approvals-design.md §9; BISE-307, designer):
+/// the head `✓ you answered main · <the question>` on one row (✓
+/// accent, ✗ dim; the sentence in text, the question dim, cut with `…`),
+/// then your own words like a message of yours (the accent bar, text
+/// from column 3, 20 rows then `▸ n more lines`). Open: `▾` at the
+/// head's end, the head whole, the full question hung at column 3, dim,
+/// the words whole.
+fn answer_lines(ok: bool, text: &str, note: &str, asked: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let d = Style::default().fg(dim());
+    let text_st = Style::default().fg(crate::theme::text());
+    let mut mark_st = if ok { Style::default().fg(accent()) } else { d };
+    if ok && crate::find::no_color() {
+        mark_st = mark_st.add_modifier(Modifier::BOLD);
+    }
+    let mark = Span::styled(format!(" {} ", glyph(if ok { G_RECEIVED } else { G_FAILED })), mark_st);
+    let pad = Span::raw("   ");
+    let asked = asked.trim();
+    let opens = answer_opens(text, note, asked);
+    let mut rows = if open && opens {
+        let head = Line::from(vec![Span::styled(text.to_string(), text_st), Span::styled(format!(" {}", glyph(G_OPEN)), d)]);
+        let mut rows = hung_rows(&mark, &pad, [head], width);
+        let q = asked.lines().map(|l| Line::from(Span::styled(l.trim_end().to_string(), d)));
+        rows.extend(hung_rows(&pad, &pad, q, width));
+        rows
+    } else {
+        let room = width.saturating_sub(3).max(1);
+        let mut head = vec![mark];
+        if text.width() >= room || asked.is_empty() {
+            head.push(Span::styled(cut_cols(text, room), text_st));
+        } else {
+            head.push(Span::styled(text.to_string(), text_st));
+            let left = room - text.width();
+            if left > 3 + 1 {
+                // its first line (a question's options open under it)
+                let first = asked.lines().next().unwrap_or("");
+                head.push(Span::styled(format!(" · {}", cut_cols(&one_line(first), left - 3)), d));
+            }
+        }
+        vec![Line::from(head)]
+    };
+    if note.trim().is_empty() {
+        return rows;
+    }
+    // your words, like a message of yours
+    let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
+    let units: Vec<Vec<Line<'static>>> = note
+        .trim()
+        .split('\n')
+        .map(|l| hung_rows(&bar, &bar, [Line::from(Span::styled(l.trim_end().to_string(), text_st))], width))
+        .collect();
+    let total: usize = units.iter().map(Vec::len).sum();
+    if !open && total > YOU_ROWS {
+        let (mut words, mut shown) = (Vec::new(), 0);
+        for u in &units {
+            let room = YOU_ROWS - words.len();
+            words.extend(u.iter().take(room).cloned());
+            if u.len() > room {
+                break;
+            }
+            shown += 1;
+        }
+        rows.extend(words);
+        rows.push(Line::from(vec![bar.clone(), Span::styled(crate::toolbox::more_label(units.len() - shown), d)]));
+    } else {
+        rows.extend(units.into_iter().flatten());
+    }
+    rows
+}
+
 /// The bar in front of your messages: `│`, `|` under `BISE_ASCII=1`.
 fn user_bar() -> &'static str {
     if crate::theme::ascii_mode() {
@@ -1370,6 +1475,58 @@ mod multiline_tests {
         }
         assert!(s.last().unwrap().ends_with("end ✓✓"), "{s:#?}");
         assert!(!s.iter().any(|r| r.contains('\n')));
+    }
+
+    fn answer(ok: bool, text: &str, note: &str, asked: &str, open: bool) -> Ev {
+        Ev::Approval { ok, text: text.into(), note: note.into(), asked: asked.into(), open }
+    }
+
+    /// BISE-307 (the user: « crop trop vite, et ne peuvent pas être
+    /// ouvertes »): the head on one row with the question, your words
+    /// whole under the bar like a message of yours.
+    #[test]
+    fn an_answer_reads_like_your_message() {
+        let words = "Non mais ça dépend des tâches quoi, la plupart du temps on veut que chaque agent garde son worktree";
+        let s = screen(answer(true, "you answered main", words, "Should every task get its own worktree?", false), 60);
+        assert_eq!(s[0], " ✓ you answered main · Should every task get its own worktr…", "{s:#?}");
+        assert!(s[1..].iter().all(|r| r.starts_with("│  ")), "{s:#?}");
+        let said: String = s[1..].iter().map(|r| r.trim_start_matches("│  ")).collect::<Vec<_>>().join(" ");
+        assert_eq!(said, words, "the whole answer, never cut");
+        // a picked option on the line, a short question: nothing to open
+        let s = screen(answer(true, "you answered perf: both", "", "v1 or v2?", false), 60);
+        assert_eq!(s, vec![" ✓ you answered perf: both · v1 or v2?"]);
+        assert!(!crate::feed::discloses(&answer(true, "you answered perf: both", "", "v1 or v2?", false)));
+        // a no: ✗, its note under the bar
+        let s = screen(answer(false, "you said no to t3: rm -rf build", "pas maintenant", "", false), 60);
+        assert_eq!(s, vec![" ✗ you said no to t3: rm -rf build", "│  pas maintenant"]);
+    }
+
+    /// Open: `▾` at the head's end, the question whole at column 3, the
+    /// words whole; a long answer folds at 20 rows like a message.
+    #[test]
+    fn an_answer_opens_on_its_question_and_folds_when_long() {
+        let q = "Which provider do we ship first?
+Anthropic has the most users, OpenAI the most demand.";
+        let ev = answer(true, "you answered main", "Anthropic first, then OpenAI next week", q, true);
+        assert!(crate::feed::discloses(&ev));
+        let s = screen(ev, 60);
+        assert_eq!(s[0], format!(" ✓ you answered main {}", crate::theme::G_OPEN), "{s:#?}");
+        assert_eq!(s[1], "   Which provider do we ship first?", "{s:#?}");
+        assert_eq!(s[2], "   Anthropic has the most users, OpenAI the most demand.", "{s:#?}");
+        assert_eq!(s[3], "│  Anthropic first, then OpenAI next week", "{s:#?}");
+        let long: String = (1..=30).map(|i| format!("line {i}
+")).collect();
+        let s = screen(answer(true, "you answered main", &long, "go?", false), 60);
+        assert_eq!(s.len(), 1 + 20 + 1, "{s:#?}");
+        assert_eq!(s[21], "│  ▸ 10 more lines", "{s:#?}");
+        let s = screen(answer(true, "you answered main", &long, "go?", true), 60);
+        assert_eq!(s.len(), 2 + 30, "{s:#?}");
+        // an approval's long command: cut on the line, whole open
+        let cmd = format!("you allowed t3: npm publish --access public {}", "--tag next ".repeat(8));
+        let s = screen(answer(true, &cmd, "", "", false), 60);
+        assert!(s.len() == 1 && s[0].ends_with('…'), "{s:#?}");
+        let s = screen(answer(true, &cmd, "", "", true), 60);
+        assert!(s.len() > 1 && s.last().unwrap().ends_with(crate::theme::G_OPEN), "{s:#?}");
     }
 
     #[test]

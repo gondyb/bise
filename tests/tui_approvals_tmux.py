@@ -123,7 +123,8 @@ def session(E, env, home, bise, shot):
         shot(t, "card-hard-rule", sc)
         t.typed("use a branch")
         t.keys("Enter")
-        sc = t.wait('you said no to main: git push origin main --force · "use a branch"')
+        # BISE-307: the note under the line, like a message of yours
+        sc = t.wait_re(r"✗ you said no to main: git push origin main --force.*\n.*│  use a branch")
         assert "you said deny" not in sc, sc
         shot(t, "fold-no", sc)
         t.wait_re(MAIN_IDLE)
