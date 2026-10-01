@@ -235,8 +235,28 @@ mod tests {
         std::thread::spawn(move || {
             use std::io::{Read, Write};
             let (mut s, _) = l.accept().unwrap();
+            // the whole request (headers, then Content-Length bytes):
+            // answering after the first read closed the socket on a
+            // body still being written (a flake under load)
+            let mut req = Vec::new();
             let mut buf = vec![0u8; 8192];
-            let _ = s.read(&mut buf);
+            loop {
+                let n = s.read(&mut buf).unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                req.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&req).to_string();
+                if let Some(end) = text.find("\r\n\r\n") {
+                    let len = text[..end]
+                        .lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                        .unwrap_or(0);
+                    if req.len() >= end + 4 + len {
+                        break;
+                    }
+                }
+            }
             let b = r#"{"choices":[{"message":{"content":"On it."}}]}"#;
             let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", b.len(), b);
         });

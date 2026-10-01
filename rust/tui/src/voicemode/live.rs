@@ -211,11 +211,23 @@ pub(crate) fn leave(app: &mut App) {
     }
 }
 
+thread_local! {
+    /// The messages you said (not typed) in voice mode, this session: the
+    /// thread marks them `said` (in memory; a restart shows them typed).
+    static SAID: std::cell::RefCell<std::collections::HashSet<String>> = Default::default();
+}
+
+/// Your message `text` (as the hub echoes it) was said in voice mode.
+pub(crate) fn was_said(text: &str) -> bool {
+    SAID.with(|s| s.borrow().contains(text.trim()))
+}
+
 fn apply(app: &mut App, acts: Vec<Act>) {
     for a in acts {
         match a {
             Act::Send { agent, text } => {
                 if !answer_by_voice(app, &text) {
+                    SAID.with(|s| s.borrow_mut().insert(text.trim().to_string()));
                     app.sb.send(serde_json::json!({"op": "input", "focus": agent, "text": text, "voice": true}));
                     app.pending = true;
                 }
