@@ -176,6 +176,10 @@ fn request(h: Hint) -> bool {
         if is_seen(&mut st, &path, h) {
             return false;
         }
+        // the mode's tip (seen once drawn) gives way to the thing's own
+        if matches!(st.active, Some(Hint::FirstYolo | Hint::FirstAuto)) && !matches!(h, Hint::FirstYolo | Hint::FirstAuto) {
+            st.active = None;
+        }
         st.pending.push(h);
         true
     })
@@ -320,13 +324,14 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
             let read = theme::glyph(theme::G_READ);
             rows(feed).filter(|(_, t)| t.trim_start().starts_with(theme::glyph(theme::G_YOU)) && t.contains(read)).map(|(y, _)| y).next_back()
         }
-        // the key bar's mode, at the bottom (approvals-design.md §8)
+        // the key bar's mode (approvals-design.md §8): the box sits right
+        // above the composer pane, at its right end, never over your text
         Hint::FirstYolo | Hint::FirstAuto => {
             let area = buf.area;
-            (area.y..area.bottom()).rev().find(|&y| {
-                let t = row_text(buf, y, area.x, area.right());
-                t.contains(crate::keybar::MODE_KEY) || t.contains("shift+tab")
-            })
+            let rows = |r: Rect| (r.y..r.bottom()).rev().map(move |y| (y, row_text(buf, y, r.x, r.right())));
+            let bar = rows(area).find(|(_, t)| t.contains(crate::keybar::MODE_KEY) || t.contains("shift+tab"))?.0;
+            // the composer's top border: the last `├` row above the key bar
+            rows(Rect { height: bar.saturating_sub(area.y), ..area }).find(|(_, t)| t.trim_start().starts_with('├')).map(|(y, _)| y)
         }
     }
 }

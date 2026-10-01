@@ -188,7 +188,8 @@ def main():
         sc = t.wait("agents talk to each other.", 60)
         shot("10-hint-first-level3", sc)
         seen = prefs(root).get("hints")
-        assert seen == {"first_agent": True, "first_card": True, "first_level3": True}, seen
+        # approvals-design.md §8: the first launch's yolo tip, seen too
+        assert seen == {"first_agent": True, "first_card": True, "first_level3": True, "first_yolo": True}, seen
         # the second launch: no onboarding
         t.start(120, 34, env(root, home))
         sc = t.wait(NORMAL)

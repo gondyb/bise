@@ -203,8 +203,9 @@ pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
         let rest = cut(&rest, w.saturating_sub(word.width()));
         return Line::from(vec![Span::styled(word, Style::default().fg(theme::accent())), Span::styled(rest, dim)]);
     }
-    // the hub says the mode in its hello: nothing to show before
-    if a.mode.is_empty() {
+    // the hub says the mode in its hello: nothing to show before; a
+    // modifier held: the bar is that modifier's keys, all of them
+    if a.mode.is_empty() || crate::ctrlhint::on(app) {
         return keys_line(app, width);
     }
     let tag = mode_tag(a.word());
