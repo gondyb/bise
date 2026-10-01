@@ -544,7 +544,7 @@
       <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
       <div class="grp">you're still the boss</div>
       <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
-      <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
+      <div class="feat blow"><div class="mini" data-play="prs"></div><h3>you review, you merge</h3><p>in a repo that takes pull requests, every change gets its own branch and its own PR. review it on GitHub like a teammate's; the panel shows where each one stands. no agent ever merges: that's yours.</p></div>
     </div>
   </div>
 </section>
@@ -1202,6 +1202,14 @@ const plays = {
     await m.wait(1200); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; await m.wait(700);
     m.line(`<span class="dim">@ sad-404 to you:</span> got it. the dog keeps its job. hat on.`, "b"); await m.wait(2200);
     m.line(`<span class="acc">✓</span> sad-404 done · 3m 40s`, "b"); await m.wait(3200);
+  },
+  async prs(m) {
+    await m.main("sad-404 opened #409: the dog gets a hat."); await m.wait(1300);
+    m.line(`<span class="err">↑</span> <span class="dim">#409 · checks fail: e2e/404.spec.ts</span>`); await m.wait(1300);
+    await m.main("sad-404 fixed the test. #409 is green, it waits for your review."); await m.wait(1300);
+    await m.send("left 2 comments on #409. the hat is too big");
+    await m.main("told sad-404. smaller hat, pushed to #409."); await m.wait(1500);
+    m.line(`<span class="acc">✓</span> #409 merged · sad-404 archived, its worktree removed`, "b"); await m.wait(3200);
   },
   async direct(m) {
     m.line(`<span class="faint">you → </span><span class="acc">main</span>`); await m.wait(1000);
