@@ -70,73 +70,137 @@ your agent installs bise and brings over what you already have: your API key, yo
 
 four words to learn: you, main, agents, inbox.
 
-## features
+## the models grew up. you can stop babysitting
 
-### talk whenever
+ten things you'll notice in the first hour.
 
-send the next idea while the last one runs. the composer is never locked.
+### the team runs itself
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/talk-dark.svg"><img src="docs/brand/readme/feat/talk-light.svg" width="680" alt="you send a second idea while the first agent works."></picture>
+#### hand it something huge
 
-### agents sync on their own
+give main a big goal. it splits it into jobs, runs the agents, restarts the ones that stop half-way, and keeps going until it's done.
 
-every agent can message every other one. they ask, share and hand off, folded out of your way.
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/resume-dark.svg"><img src="docs/brand/readme/feat/resume-light.svg" width="680" alt="you give main one big goal. it runs three agents at a time, starts again the one that stops on an error, and keeps going until all 12 pages are done."></picture>
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/sync-dark.svg"><img src="docs/brand/readme/feat/sync-light.svg" width="680" alt="two agents agree on who edits a shared file."></picture>
+#### worktrees? don't think about it
 
-### every MCP server, always on
+agents share your folder. when one needs its own copy, it makes a worktree, works there and cleans it up after. no branch to name, no folder to delete, nothing to keep in your head.
 
-connect as many MCP servers and skills as you want, and never pick which ones to turn on. agents call tools by writing small TypeScript scripts, so a hundred servers don't fill the context.
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/worktree-dark.svg"><img src="docs/brand/readme/feat/worktree-light.svg" width="680" alt="dark-mode and cookies share your folder; perf gets its own worktree for a clean build, finishes, and the worktree is cleaned up."></picture>
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/tools-dark.svg"><img src="docs/brand/readme/feat/tools-light.svg" width="680" alt="an agent calls Sentry, Linear and GitHub tools, one row each."></picture>
+### your head stays yours
 
-### only the real decisions reach you
+#### talk whenever. you never wait
 
-main answers the obvious questions itself. the real ones wait in your inbox: a couple of choices, one key. `ctrl+1` opens it, or a click.
+say the next thing while the last one runs. your composer is never locked.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/card-dark.svg"><img src="docs/brand/readme/feat/card-light.svg" width="680" alt="a question waits in your inbox and you answer with one key."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/talk-dark.svg"><img src="docs/brand/readme/feat/talk-light.svg" width="680" alt="you send three ideas in a row. main starts an agent for each while you type the next one: you never wait."></picture>
 
-### quiet by default
+#### zen mode while you type
 
-what matters to you shows. tool calls and messages between agents fold into one line. `ctrl+o` opens them all, in full, and folds them back.
+start typing and everything else fades: the agents, the counts, the chatter. just you and your words. send it and it all comes back. what the agents said to each other stays folded, ctrl+o opens it.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/quiet-dark.svg"><img src="docs/brand/readme/feat/quiet-light.svg" width="680" alt="the work between agents stays folded; ctrl+o opens every tool call and message."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/zen-dark.svg"><img src="docs/brand/readme/feat/zen-light.svg" width="680" alt="you start typing and everything else fades: the agents, the counts. perf finishes meanwhile. you send, and it all comes back."></picture>
 
-### talk to any agent, anytime
+### no more "yes, continue"
 
-`⌥` + a number, or `@name`. ask it why, push it, then go back to main. nobody has to stop.
+#### you're not the router
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/direct-dark.svg"><img src="docs/brand/readme/feat/direct-light.svg" width="680" alt="you switch to one agent, ask it a question, and go back to main."></picture>
+main answers the agents for you: the obvious questions, the way you would, and it tells you why. only the real decisions reach you.
 
-### change your mind mid-run
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/card-dark.svg"><img src="docs/brand/readme/feat/card-light.svg" width="680" alt="three agents ask main a question. main answers two of them itself, the way you would, and passes you the one decision that is yours."></picture>
 
-a correction lands in the running agent. ✓ it got it, ✓✓ it read it.
+#### agents sync on their own
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/steer-dark.svg"><img src="docs/brand/readme/feat/steer-light.svg" width="680" alt="you correct a running agent and it changes course."></picture>
+every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.
 
-### nothing gets dropped
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/sync-dark.svg"><img src="docs/brand/readme/feat/sync-light.svg" width="680" alt="release asks emoji-csv and dark-mode what it needs; they answer; the four messages fold into one line, and main says there is nothing for you."></picture>
 
-when an agent stops half-way, main starts it again from where it was. quit bise, update it, come back tomorrow: your agents, your thread and your draft come back.
+### every tool you have
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/resume-dark.svg"><img src="docs/brand/readme/feat/resume-light.svg" width="680" alt="an agent stops on a provider error and main restarts it."></picture>
+#### all your MCPs. all your skills. always on
 
-### worktrees? don't think about it
+GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.
 
-agents share your folder. when one needs its own copy, it makes a worktree, works there and cleans it up after. no branch to name, no folder to delete.
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/tools-dark.svg"><img src="docs/brand/readme/feat/tools-light.svg" width="680" alt="42 MCP servers are on. you ask why signup is slow; main writes a few lines of code that call Sentry, GitHub and Slack, and answers in two lines."></picture>
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/worktree-dark.svg"><img src="docs/brand/readme/feat/worktree-light.svg" width="680" alt="one agent gets its own worktree; the others share the folder."></picture>
+#### bring your Agent Plugins
 
-### and also
+skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.
 
-- **your token bill can relax.** an agent starts when a job needs one. no committee of agents reviewing each other.
-- **Agent Plugins.** skills, MCP servers and hooks in the [Agent Plugins](https://agent-plugins.org) format load as they are, from `~/.agents/plugins` or your repo. Vibe plugins too.
-- **a model per agent.** `/model` and `/reasoning`.
-- **voice.** `/voice`, then `ctrl+r`.
-- **images.** paste a screenshot with `ctrl+v`, or drag it in.
-- **quotes.** select lines in the history and start typing: they come along as a quote.
-- **a real shell.** ``ctrl+` `` opens a terminal in your repo.
-- **hold ctrl, option or cmd** to see their shortcuts, in Ghostty and kitty.
-- **message passing, proven.** the hub that carries messages between agents is written in [Bend](https://github.com/HigherOrderCO/Bend), with proofs that no message is lost or sent twice (`bend/PROOF.bend`).
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/plugins-dark.svg"><img src="docs/brand/readme/feat/plugins-light.svg" width="680" alt="on its first run, bise finds your skills, plugins and MCP servers; you ask for release notes and the agent uses your own skill."></picture>
+
+### you're still the boss
+
+#### talk to any agent, anytime
+
+⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/direct-dark.svg"><img src="docs/brand/readme/feat/direct-light.svg" width="680" alt="you press alt+1 and talk to perf directly: why is signup slow, then add a check. alt+0 takes you back to main. nobody stopped."></picture>
+
+#### fits your PR flow
+
+in a repo that takes pull requests, every change gets its own branch and its own PR, then goes through your usual flow: CI, review bots, teammates. the panel shows where each one stands.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/prs-dark.svg"><img src="docs/brand/readme/feat/prs-light.svg" width="680" alt="cookies opens pull request #409. CI fails, it fixes the test; a review bot asks for a bigger button, you say do it; #409 merges. the panel shows where it stands."></picture>
+
+## polished down to the last character
+
+hundreds of tiny details. you'll feel them before you see them.
+
+#### your token bill can relax
+
+bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/tokens-dark.svg"><img src="docs/brand/readme/feat/tokens-light.svg" width="680" alt="you ask for a one-word typo fix. main does it itself: too small for an agent. 0 agents started, the count stays at 2."></picture>
+
+#### show it a screenshot
+
+paste it with ctrl+v or drag it in. an image is one chip in your text.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/screenshot-dark.svg"><img src="docs/brand/readme/feat/screenshot-light.svg" width="680" alt="you type a message, paste a screenshot with ctrl+v: it lands as one chip in your text, and the agent gets the image."></picture>
+
+#### or just talk
+
+turn on /voice, press ctrl+r, say it.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/voice-dark.svg"><img src="docs/brand/readme/feat/voice-light.svg" width="680" alt="you press ctrl+r and say it; a level meter moves while you talk; your words land in the composer as text, and you send them."></picture>
+
+#### ask about anything on screen
+
+select a few lines in the history and start typing: they come along as a quote.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/quote-dark.svg"><img src="docs/brand/readme/feat/quote-light.svg" width="680" alt="you select &#x27;4.1 s to 0.9 s&#x27; in perf&#x27;s answer and start typing: the lines come along as a quote chip, and perf answers about them."></picture>
+
+#### a model per agent
+
+the big one for the hard job, a fast one for the chores. /model and /reasoning.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/model-dark.svg"><img src="docs/brand/readme/feat/model-light.svg" width="680" alt="each agent shows its model in the panel. you switch to release and type /model opus, then /reasoning hi: its line goes from haiku·lo to opus·hi."></picture>
+
+#### a real shell, one key away
+
+ctrl+` opens a terminal in your repo. it keeps running while hidden.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/shell-dark.svg"><img src="docs/brand/readme/feat/shell-light.svg" width="680" alt="ctrl+` opens a terminal in your repo; you start the dev server and hide it; it keeps running; ctrl+` again and the new requests are there."></picture>
+
+#### restart whenever you like
+
+update to the latest version mid-work, or quit and come back tomorrow. no work is ever lost: your agents resume right away, and your thread, your draft and your queue come back too.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/restart-dark.svg"><img src="docs/brand/readme/feat/restart-light.svg" width="680" alt="you are typing a draft while three agents work. bise restarts. it comes back at once: the agents pick up where they were, your draft is still in the composer."></picture>
+
+#### agent communication is proven correct
+
+we have the proof, thanks to [Bend](https://bend-lang.com), a language built for the LLM era. no message lost, none sent twice.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/proof-dark.svg"><img src="docs/brand/readme/feat/proof-light.svg" width="680" alt="in bise&#x27;s terminal you run bend PROOF.bend: no message lost, none delivered twice, a restart is the same state, nothing waits forever. all proofs check."></picture>
+
+#### your terminal
+
+your colors, light or dark, text at a reading width.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/theme-dark.svg"><img src="docs/brand/readme/feat/theme-light.svg" width="680" alt="the same bise screen in your terminal&#x27;s dark colors, then light, then dark again; the text stops at a reading width."></picture>
 
 ## from source
 
