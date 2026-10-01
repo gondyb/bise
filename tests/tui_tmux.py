@@ -164,9 +164,10 @@ def in_view(name):
     return r"you → %s " % re.escape(name)
 
 
-# main idle: its panel row's glyph (BISE-303: the divider and the panel
-# say no `idle` at rest; the panel shows from 90 columns)
-MAIN_IDLE = r"\b0 ○ main\b"
+# main idle (BISE-303: the divider and the panel say no `idle` at rest):
+# its panel row's glyph (from 90 columns), or, in main's view, a divider
+# label with no gust after it (`you → main · mistral-small · high · yolo ─`)
+MAIN_IDLE = r"\b0 ○ main\b|you → main(?: · [\w.\-]+(?:[ ·][\w.\-]+)*)* ─"
 
 
 PLACEHOLDER = re.compile(r"^(what's on your mind\?|talk to \S+ directly)$")

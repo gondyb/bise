@@ -59,14 +59,15 @@ def cells(row):
     return out
 
 
-def fg_of(sc, text):
-    """The foreground of the first char of `text` on the colored screen."""
+def fg_of(sc, text, at=0):
+    """The foreground of `text`'s char `at` (its first) on the colored
+    screen."""
     for row in sc.splitlines():
         cs = cells(row)
         plain = "".join(c for c, _ in cs)
         k = plain.find(text)
         if k >= 0:
-            return cs[k][1]
+            return cs[k + at][1]
     raise AssertionError("not on screen: %r" % text)
 
 
@@ -117,7 +118,8 @@ def main():
         time.sleep(0.3)
         sc = t.screen(colors=True)
         assert fg_of(sc, "const") in KEYWORD, fg_of(sc, "const")
-        assert fg_of(sc, "42") in NUMBER, fg_of(sc, "42")
+        # the code's 42, not the divider's context (BISE-303: `42k · 4%`)
+        assert fg_of(sc, "x = 42", 4) in NUMBER, fg_of(sc, "x = 42", 4)
         assert fg_of(sc, "```ts") in DIM, fg_of(sc, "```ts")
         assert fg_of(sc, "- one") in DIM, fg_of(sc, "- one")
         assert fg_of(sc, "one") in TEXT, fg_of(sc, "one")
