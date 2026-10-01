@@ -40,6 +40,7 @@ fn view(phase: Phase) -> PaneView {
         elapsed: Duration::from_secs(134),
         route: Route::Headphones,
         heard_answer: None,
+        work: Vec::new(),
     }
 }
 

@@ -324,6 +324,45 @@ pub struct PaneView {
     pub route: Route,
     /// a question or an approval was heard: `heard "the first one" → 1 smaller` (1.5 s)
     pub heard_answer: Option<String>,
+    /// round 2 (the user): what the agent does this turn, minified, on
+    /// the pane's right while it works (its tool calls and thinking; the
+    /// thread above keeps them whole). Oldest first; the pane keeps the
+    /// last ones that fit.
+    pub work: Vec<Work>,
+}
+
+/// One line of the agent's work this turn, for the pane's right side.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Work {
+    pub kind: WorkKind,
+    /// the tool's name and its short args or intent (`bash · cargo test`),
+    /// or the thinking's first words; one line, the pane cuts it
+    pub text: String,
+    pub state: WorkState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkKind {
+    Tool,
+    Thinking,
+    /// an agent message between tool calls
+    Message,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkState {
+    Running,
+    Done,
+    Failed,
+}
+
+/// Round 2: the mic and the speaker opened together, with the echo of
+/// the speaker cancelled at the source when `aec` (macOS VoiceProcessingIO);
+/// else plain devices (barge-in then needs headphones).
+pub struct VoiceIo {
+    pub mic: Box<dyn Mic>,
+    pub speaker: Box<dyn Speaker>,
+    pub aec: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

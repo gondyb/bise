@@ -403,6 +403,13 @@ impl Speaker for QueueSpeaker {
     }
 }
 
+/// Round 2: the mic and the speaker together, the speaker's echo
+/// cancelled in the mic when the platform can (macOS VoiceProcessingIO,
+/// voice-echo); until then the plain devices, `aec: false`.
+pub fn open_voice_io() -> Result<super::VoiceIo, String> {
+    Ok(super::VoiceIo { mic: Box::new(CpalMic), speaker: open_speaker()?, aec: false })
+}
+
 /// The default output device (cpal), f32 resampled from TTS_RATE. Never
 /// opened by a test.
 #[cfg(not(target_os = "linux"))]

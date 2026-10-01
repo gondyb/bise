@@ -245,3 +245,71 @@ only on the user's press, and in tests never), the first-time "who hears you" sc
 `voicemode/answers.rs` (`is_allow`, `pick`, plan §4.7) and in `sb/cards.rs` the `heard "…" → 1
 smaller` line for 1.5 s (esc undoes). Screens: the designer signs off (captures 150/95/80, dark +
 light, NO_COLOR; `sb send designer`).
+
+## 8. Round 2: the user's notes on 699f710
+
+What he found, and the fix:
+
+| # | the user | the fix | owner |
+|---|---|---|---|
+| 1 | hands-free end of turn works badly; Voxtral Mini isn't good enough; Transcribe 3 is much better: never use Voxtral Mini, don't even offer it | the voice role defaults to `mistral/voxtral-transcribe-3`; Voxtral Mini (batch `voxtral-mini-latest`, realtime `voxtral-mini-transcribe-realtime-2602`) leaves the catalog and every picker (an old config naming it reads as Transcribe 3); voice mode transcribes each turn with the voice role's batch model (VAD ends the turn) | voice-models |
+| 2 | the model choice is in "setup", the rest in "settings": one menu | `/voice` is one screen: dictation on/off, the speech-to-text model, the voice, the language, listen, read aloud, sounds, who hears you; `/voice setup` opens the same screen | voice-settings2 |
+| 3 | bring back the minified tool calls and thinking beside the kiss while bise works | `PaneView.work` (the controller fills it from the feed); the pane draws it on its right side | voice-tui2 (draw), lead (data) |
+| 4 | never stop on "the rest is on screen" (he can't always read); read the whole message; space cuts it; the fixed English phrase breaks French | `speakable` says the whole message (code blocks, tables and URLs skipped quietly, paths and ids said as their last word or skipped), no added "the rest is on screen"; numbers and every added word in the message's language; the canned "on it" in the language you spoke | voice-tts2 |
+| 5 | ctrl+c in voice mode should leave voice mode, like esc | ctrl+c = esc in voice mode | lead |
+| 6 | on speakers it hears itself, takes it for him and answers itself | echo cancelled at the source (macOS VoiceProcessingIO: mic + speaker in one voice-processing unit) behind `audio::open_voice_io()`; the controller also drops what it hears that matches what the agent just said, and without AEC never lets the mic through while the agent talks unless the route is headphones | voice-echo (AEC), lead (filter, gating) |
+| 7 | choose the voice (type of voice) and the language | the Mistral voices list (`GET /v1/audio/voices`: name, languages, gender) in `/voice`, ▸ hear it on press; the language row (auto, or one) feeds the transcription and `speakable` | voice-settings2 |
+
+Same rules as §3 (branch only, own worktree, launchctl for gates: the bend-tui test binary is over
+the bash tool's 50 MB cap, `launchctl submit` jobs restart when they exit: `launchctl remove` as soon
+as the log has its end). New contracts in `mod.rs`: `PaneView.work: Vec<Work>` (`Work { kind:
+Tool|Thinking|Message, text, state: Running|Done|Failed }`), `VoiceIo { mic, speaker, aec }` and
+`audio::open_voice_io()` (a stub with `aec: false` until voice-echo lands).
+
+### 8.1 Briefs, round 2 (main spawns them as written)
+
+Common: read §8 and the files you own first; same rules as §3; tell `voice-mode` and main your SHAs.
+
+**voice-models.** Owns `rust/catalog/models.toml` (the voice models), `rust/catalog/src/voice.rs`
+(+ tests), `voicemode/listen.rs`, `voice/stt.rs`, `voice.rs` (dictation's texts only). Make
+`mistral/voxtral-transcribe-3` the default voice model (dictation and voice mode); remove Voxtral
+Mini from the catalog and from every list the user sees (`voxtral-mini-latest`, the realtime mini);
+a config or env that names it resolves to Transcribe 3 with no error. `realtime_model` returns None
+for every provider now (no realtime model we'd offer); `listener_for` gives the batch listener; keep
+the realtime code compiled but unused only if it costs nothing, else remove it with its tests.
+Check the Transcribe 3 request (language, context bias) against the current Mistral docs; one
+`#[ignore]` live test on a fixture (nothing played).
+
+**voice-echo.** Owns `voicemode/audio.rs`, `route.rs`, a new `voicemode/aec.rs`. Build
+`open_voice_io()` on macOS with a VoiceProcessingIO AudioUnit (coreaudio-sys; input and output in one
+unit, so the speaker's echo is removed from the mic), 16 kHz mono blocks out (as `CpalMic`), TTS PCM
+in (as the speaker today, same `Speaker` contract: queue, clock, stop within 50 ms, level),
+`aec: true`; any failure falls back to the plain devices with `aec: false`. Never open the real
+devices in tests: the unit's render/input callbacks are tested through their pure parts; tell main
+when a by-hand check with the user's mic is the only way left. Also: re-check `output_route()`
+(the user's speakers may have read as headphones): when unsure, Unknown.
+
+**voice-settings2.** Owns `voicemode/settings.rs`, `voicemode/config.rs`, a new
+`voicemode/voices.rs`, `commands.rs` (`/voice`), `onboarding/*` only where `/voice setup` and the
+dictation picker point to (make them open the one screen). One `/voice` screen in the /models
+layout: dictation on/off, speech to text (provider · model: Transcribe 3 first; no Voxtral Mini),
+voice (Mistral's voices from `GET {base}/audio/voices`, cached for the session; name · language ·
+gender; ▸ hear it on press only), language (auto + the voices' languages; feeds the transcription
+and what is said), listen, read aloud, sounds, who hears you. `config` saves `tts_voice` and
+`language`; `say_job` uses the chosen voice. Designer sign-off on the screen (150/95/80, dark +
+light, NO_COLOR).
+
+**voice-tui2.** Owns `voicemode/pane.rs`, `kiss.rs`, `ui.rs` (voice parts) and their tests. Draw
+`PaneView.work` on the pane's right side while the agent works and talks (the mocks' D minified
+history: one row per tool call `· bash cargo test ✓`, thinking `· thinking…`, running ones lit,
+failed ones in the error color, newest at the bottom, the last ones that fit); the kiss and the
+captions keep their places; under 30 rows and at 80 columns nothing new (no room). Designer
+sign-off (150/95/80, dark + light, NO_COLOR).
+
+**voice-tts2.** Owns `voicemode/speak.rs`, `timing.rs`, `ack.rs`, `tts.rs` and their tests. The whole
+message is said, sentence by sentence (code blocks, tables, URLs, hashes skipped quietly; a path or
+an id said as its last word or skipped; lists said whole); no "the rest is on screen" (drop `more`'s
+sentence); every word bise adds and every number in the message's language (detect it: a
+`speak::language(text) -> Option<&'static str>` on the message, else the config's); `canned(n,
+lang)` in English and French (the language you spoke: the heard text). The word mapping to the
+message (`src`) must stay exact for the thread's lighting.

@@ -267,6 +267,8 @@ pub struct VoiceMode {
     you_wave: VecDeque<f32>,
     agent_wave: VecDeque<f32>,
     wave_at: Instant,
+    /// the agent's work this turn, minified for the pane's right side
+    work: Vec<super::Work>,
 }
 
 impl VoiceMode {
@@ -335,6 +337,7 @@ impl VoiceMode {
             you_wave: VecDeque::new(),
             agent_wave: VecDeque::new(),
             wave_at: now,
+            work: Vec::new(),
         };
         vm.start_listener();
         Ok(vm)
@@ -939,6 +942,7 @@ impl VoiceMode {
             elapsed: now.duration_since(self.started),
             route: self.route,
             heard_answer: self.heard_answer.as_ref().map(|(l, _)| l.clone()),
+            work: self.work.clone(),
         }
     }
 
