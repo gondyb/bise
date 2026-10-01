@@ -21,6 +21,9 @@ UI?
   prescribe. Main asks when it matters and the user hasn't said.
 - **Q3 yes**: in trunk flow, main is pushed after every land
   (`[flow] push = true` by default).
+- **This repo is trunk flow**, and **the flow also depends on the task**:
+  experimental or risky work (computer use) goes on a local feature
+  branch the user tries before main gets it (§5.1).
 
 ## 1. The answer in short
 
@@ -81,7 +84,7 @@ all.
 | docs, notes, small config | a branch and a PR (it's still a change to a shared repo) | a commit on main from the shared folder |
 | a code change | a branch from `origin/<default>` in a worktree, a PR. A new one, or the place of agents already on that change | the shared folder when it's small and nobody else edits those files; else a worktree (new or shared), then *land* (§5) |
 | a change next to another agent's (the same feature, a test for it, a review fix) | main may put it **in the same worktree, on the same branch**: one PR, several agents | same: one worktree, several agents, one land |
-| a long feature (several phases) | one PR or a PR per phase: **you choose**; main asks if you haven't said | a local branch, then a review item for you before it lands |
+| an experimental, risky or big feature | one PR or a PR per phase: **you choose**; main asks if you haven't said | a local feature branch, several agents landing on it, a build you try, a merge on your go (§5.1) |
 
 What main weighs to isolate (in its prompt as hints, not rules): two
 agents in the same files, a build or tests that must not see another
@@ -197,16 +200,126 @@ In PR flow the same `sb land --here` commits on the branch, then the
 hub pushes it (one push at a time per branch): several agents on one
 branch never race each other's pushes.
 
-**A long feature branch**: the agent says it's ready; the hub opens a
-review item for you (`approvals is ready to land: 14 commits, +3,120
-−410 · 1 land it · 2 show the diff · 3 not yet`), then lands it like
-above. Today main does that by hand (`is-ancestor` then `update-ref`).
+**A risky or big feature**: a feature branch, tried and merged on your
+go (§5.1).
 
 **Pushing** (the user's Q3): in trunk flow, the hub pushes main after
 every land, `[flow] push = true` by default (what this repo does now).
 `push = false` keeps the lands local until you ask. A push that fails
 (offline, main moved on the remote): the hub fetches, rebases the lands
 not pushed yet, tries again; still failing, main says it once.
+
+### 5.1 Feature branches in trunk flow
+
+The user, setting this repo to trunk (2026-10-01): « ça dépend des
+tâches : les trucs un peu plus expérimentaux genre computer use, on les
+veut dans une branche pour tester et vérifier que ça casse pas la
+release. » So the flow is per repo, and main can still put **one
+feature** on its own local branch. That's what approvals and
+computer-use did by hand: a local branch made from main's tip, several
+agents each in their own worktree landing onto it (private index, CAS on
+`refs/heads/<feature>`), the user trying a local build, main merging on
+the user's go.
+
+**When main picks a feature branch** (trunk flow only; in PR flow every
+change is a branch already):
+
+| Main picks a feature branch when… | example |
+|---|---|
+| it's experimental: it may not work, or not be kept | computer use, a new model provider |
+| it's risky for a release: the core loop, the hub, security, the sandbox, packaging, a migration | approvals' gate, the place table |
+| it's big: several agents, or more than a day, or several phases | approvals (5 agents, 3 phases) |
+| you ask: "in a branch", "I want to try it first", "don't land it yet" | — |
+| a release is close (a launch freeze) | today's 17:30 freeze |
+
+Everything else lands straight on main. When unsure, main asks once
+(`computer-use straight on main, or on a branch you try first?`). Your
+words win both ways: "just land it" puts a feature task back on main.
+
+**What it is.** A **feature** is a local branch, named after the
+feature (`computer-use`, no prefix: you type it), made from main's tip,
+**never pushed** (it's for trying, not for sharing; in a shared repo
+that's PR flow). Each of its agents still works in its own worktree (or
+shares one, §3.1); they all land onto the feature branch, never main:
+`sb land` targets the agent's feature. The hub keeps the features in the
+place table: a place of kind `feature` with its branch, its agents and
+their worktrees.
+
+**Keeping up with main.** The branch drifts while main moves. `sb
+feature sync <name>` (main runs it when the branch is far behind, or
+before a try): the hub holds the feature's lands, rebases the branch on
+main, runs the check, then each agent's worktree moves to the new tip.
+A conflict goes to the agent the files belong to (Q7). Never automatic
+mid-work.
+
+**Trying it (the user tests a build).** When the feature's agents report
+done (or you ask: "let me try computer-use"), the hub opens an inbox
+item:
+
+```
+┃ ? computer-use is ready to try                        3 agents · 2h
+┃
+┃   14 commits on computer-use, 3 behind main · +3,120 −410
+┃   the check passes. nothing of it is on main.
+┃
+┃   1 build it to try
+┃   2 show the diff
+┃   3 not yet
+```
+
+`1` syncs if behind, then builds the branch with the repo's `[flow] try`
+command, in a temp worktree, without touching your folder or the running
+version. In this repo: `scripts/versions.sh build computer-use`, which
+prints a version dir; the item then says how to run it: `try it in
+another terminal: ~/.bise/dev/versions/fd25c45/bise` (never `sb restart`
+on its own: switching the live hub is yours, `/version`). Elsewhere:
+whatever `try` says (`pnpm build && pnpm preview`, `cargo run --release`,
+or nothing: main tells you the branch name to check out). While it
+builds, the feature's box shows `Δ` (§6 "a version is building or on
+trial").
+
+**The merge, on your go only.** After a try the item turns into:
+
+```
+┃ ? computer-use: merge it into main?
+┃
+┃   you tried fd25c45 18m ago. 14 commits · the check passes.
+┃
+┃   1 merge it into main
+┃   2 keep working on it
+┃   3 drop it (the branch is kept 30 days: /restore)
+```
+
+`1`: the hub holds the feature's lands, rebases it on main, runs the
+full check, fast-forwards main (the history stays linear, as in this
+repo), pushes main (`push = true`), archives the feature's agents, then
+deletes the local branch (its tip kept in `refs/switchboard/trash/` like
+a drop). A conflict or a red check: back to the agents, and the item
+waits. You can also just say "merge computer-use" to main: same steps.
+Main never merges a feature without your go; nothing else lands a
+feature on main.
+
+**What main's prompt gets** (trunk flow, added to §6):
+
+- "Most work lands on main. Put a task on a **feature branch** when it's
+  experimental, risky for a release (core loop, hub, security, sandbox,
+  packaging, a migration), big (several agents or more than a day), or
+  the user asks; during a launch freeze, everything does. When unsure,
+  ask once. The user's words win both ways."
+- "`sb feature new <name>` (from main's tip), then spawn its agents with
+  `--feature <name>`: each gets its own worktree and lands on that
+  branch. Say it in your routing line: `computer-use goes on its own
+  branch: you'll try it before it reaches main.`"
+- "When its agents are done, `sb feature ready <name>` opens the try
+  item. Never merge a feature without the user's go; `sb feature merge
+  <name>` only after it."
+- "When the branch is far behind main, or before a try: `sb feature sync
+  <name>`."
+
+**A task's prompt** on a feature: "You work for the feature
+`computer-use`, a local branch the user will try before it reaches main.
+Your worktree is yours; `sb land` puts your commits on `computer-use`,
+never on main. Never merge it, never push it."
 
 ## 6. What changes in the agents' instructions
 
@@ -293,11 +406,26 @@ flow, and the choice:
 - **Sidebar, trunk flow**: a land waiting shows `…` (in a box's border,
   or as a solo row's mark); ctrl held, its words say `waits to land ·
   2nd`.
+- **Sidebar, a feature branch** (§5.1; designer to confirm): its agents
+  land on one branch, so by BISE-306's rule a feature with 2 or more
+  live agents is a box, even when each has its own worktree: `╭─ ψ
+  computer-use ───── ─`, its agents inside. Its mark (in the border, or
+  a solo row's last column): `Δ` dim while its try build builds or is
+  on trial (book §6's meaning), `ψ` otherwise; never `↑` (no PR in
+  trunk flow). Ctrl held, the lid: `feature · 14 commits · 3 behind main
+  · not tried` (or `tried fd25c45 18m ago`).
+- **Main's feed**: `computer-use goes on its own branch: you'll try it
+  before it reaches main.` (routing); `✓ computer-use merged into main
+  (14 commits, a1b2c3d) · pushed · its 3 agents archived`.
+- **Inbox**: the feature's "ready to try" item, then "merge it into
+  main?" (§5.1).
+- **`/flow`** lists the open features under the flow: `lands on main ·
+  1 feature branch: computer-use (3 agents, 14 commits, not tried)`.
 - **Main's feed**: `✓ dark-mode landed 3 commits on main (a1b2c3)` (and
   `· pushed` when it pushed); a refused land: `dark-mode can't land:
   login.rs changed on main too. it's rebasing.`
-- **Inbox**: the flow question (once per repo); a long branch ready to
-  land; a "just commit it" on a shared repo.
+- **Inbox**: the flow question (once per repo); a feature ready to try,
+  then to merge; a "just commit it" on a shared repo.
 - **Header, ctrl held**: what happens to the work, after the folder:
   `~/acme · lands via PRs` or `~/acme · lands on main` (designer: "PRs"
   alone reads like a count next to `↑ 3 PRs`).
