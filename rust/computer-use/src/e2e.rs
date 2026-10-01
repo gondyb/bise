@@ -697,6 +697,13 @@ fn mcp_protocol_and_not_set_up() {
     assert_eq!(code(&mut a, "tabs", json!({}))["code"], "no_browser");
     let st = ok(&mut a, "status", json!({}));
     assert_eq!(st["browsers"], json!([{"name": "Chrome", "version": null, "connected": false, "extension_version": null}]));
+    // off/uninstall: the manifest and the shim go, other files stay
+    let other = p.app_support().join("Google/Chrome/NativeMessagingHosts/com.other.host.json");
+    std::fs::write(&other, "{}").unwrap();
+    let gone = crate::browsers::unrepair(&p);
+    assert_eq!(gone["manifests"].as_array().unwrap().len(), 1, "{gone}");
+    assert!(!crate::browsers::ALL[0].manifest_path(&p).exists() && !p.shim().exists());
+    assert!(other.exists(), "never another program's host");
     for h in brokers.lock().unwrap().drain(..) {
         h.shutdown();
     }

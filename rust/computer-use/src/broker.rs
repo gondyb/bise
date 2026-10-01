@@ -31,6 +31,8 @@ use crate::{image, refuse, state};
 
 /// The helper's bundle name and id (C5).
 pub const HELPER_APP: &str = "bise Computer Use";
+/// Its executable (CFBundleExecutable): what `bise computer-use off` quits.
+pub const HELPER_EXE: &str = "bise-computer-use";
 pub const HELPER_ID: &str = "dev.bise.computer-use";
 
 #[derive(Clone, Debug)]
@@ -604,13 +606,27 @@ fn ctl_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
             "status" => Ok(full_status(sh)),
             "request" => request_permission(sh, str_of(&args, "what").unwrap_or("")),
             "permissions" => Ok(permissions(sh)),
+            // computer use turned off (`bise computer-use off`): every
+            // agent lets go, then the broker exits after its answer
+            "quit" => {
+                let names: Vec<String> = lock(&sh.inner).agents.keys().cloned().collect();
+                for a in &names {
+                    drop_agent(sh, a);
+                }
+                Ok(json!({"quit": true}))
+            }
             _ => Err(err("bad_args", "unknown command")),
         };
+        let quit = str_of(&req, "op") == Some("quit");
         let out = match r {
             Ok(r) => json!({"id": id, "ok": true, "result": r}),
             Err(e) => json!({"id": id, "ok": false, "error": e}),
         };
-        if !send_line(&w, &out) {
+        let sent = send_line(&w, &out);
+        if quit {
+            std::process::exit(0);
+        }
+        if !sent {
             break;
         }
     }

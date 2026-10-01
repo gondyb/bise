@@ -63,10 +63,9 @@ def main():
         # the prompt says what each plugin is for (the built-in computer
         # plugin: browser and Mac apps), the new one included
         first = json.dumps(reqs[0]) if reqs else ""
-        check("## Plugins" in first and "- `computer`: computer use" in first,
-              "the first prompt names the computer plugin and what it does")
-        check("Mac apps" in first and "computer:computer-use" in first,
-              "... its Mac apps and its skill")
+        # computer use is opt-in: nothing of it before /computer-use
+        check("## Plugins" not in first and "computer:computer-use" not in first,
+              "computer use is off by default: not in the first prompt")
         check("- `hello-plugin`: Test fixture" in last and "- `hello-plugin`" not in first,
               "the relaunched prompt names the new plugin")
         # the new REPL loaded the plugin: its skill is in the run's index
@@ -85,9 +84,17 @@ def main():
         time.sleep(5)
         check(repl_pid(E) == pid, "no relaunch while nothing changes")
         # disabling it relaunches again
-        open(E.env["BEND_PLUGINS_STATE"], "w").write('{"disabled": ["hello-plugin"]}')
+        # (and /computer-use turning computer use on, in the same write)
+        open(E.env["BEND_PLUGINS_STATE"], "w").write('{"disabled": ["hello-plugin"], "enabled": ["computer"]}')
         c.wait(lambda: repl_pid(E) not in (None, pid), 60, "relaunched after a disable")
         check(True, "a disable relaunches too")
+        c.wait_idle("main")
+        c.say("hello on")
+        c.wait_line("main", "ack: hello on")
+        on = json.dumps(E.fake_requests()[-1])
+        check("- `computer`: computer use" in on and "Mac apps" in on and "computer:computer-use" in on,
+              "computer use on: the prompt names it, its Mac apps and its skill")
+        check("- `hello-plugin`" not in on, "the disabled plugin left the prompt")
     finally:
         if FAILS:
             os.environ["SB_KEEP"] = "1"

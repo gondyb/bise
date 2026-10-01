@@ -129,6 +129,22 @@ pub fn repair(paths: &Paths, exe: &Path, current: Option<&Path>) -> Result<Value
     Ok(json!({"shim": shim, "manifests": written}))
 }
 
+/// The reverse of [`repair`] (`bise computer-use uninstall`): every
+/// browser's manifest of our host (ours by name) and the shim. Returns
+/// what it removed.
+pub fn unrepair(paths: &Paths) -> Value {
+    let mut removed = Vec::new();
+    for b in ALL.iter() {
+        let f = b.manifest_path(paths);
+        if std::fs::remove_file(&f).is_ok() {
+            removed.push(json!({"browser": b.name, "manifest": f}));
+        }
+    }
+    let shim = paths.shim();
+    let shim_removed = std::fs::remove_file(&shim).is_ok();
+    json!({"manifests": removed, "shim": shim_removed.then_some(shim)})
+}
+
 /// `CFBundleShortVersionString` of an app bundle.
 pub fn app_version(app: &Path) -> Option<String> {
     let out = std::process::Command::new("plutil")

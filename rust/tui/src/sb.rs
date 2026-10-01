@@ -1015,7 +1015,16 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         },
         "/welcome" => crate::onboarding::run(app),
         // computer-use-design.md §8: the setup steps, polled live
-        "/computer-use" => app.computer_use = Some(crate::computer_use::Screen::open()),
+        // opt-in (computer-use-ship.md §1): opening it turns the plugin on,
+        // off/uninstall turn it off (the agents follow at their next idle)
+        "/computer-use" => match typed.split_whitespace().nth(1) {
+            None => {
+                crate::computer_use::set_on(true);
+                app.computer_use = Some(crate::computer_use::Screen::open());
+            }
+            Some(w @ ("off" | "uninstall")) => out.push(Ev::Info(crate::computer_use::turn_off(w == "uninstall"))),
+            Some(other) => out.push(Ev::Warn(format!("/computer-use {other}: off or uninstall"))),
+        },
         // §7.3: the turn stops and the agent lets go of Chrome and its apps
         // until you write to it again
         "/stop" => match typed.split_whitespace().nth(1).map(|n| n.trim_start_matches('@').to_string()) {

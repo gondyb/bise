@@ -38,6 +38,7 @@ fn roots(t: &Tmp) -> Roots {
         workspace: Some(t.0.join("ws")),
         data: t.0.join("data"),
         disabled: Vec::new(),
+        enabled: Vec::new(),
     }
 }
 
@@ -251,13 +252,39 @@ fn built_in_root_loads_shadows_and_disables() {
 #[test]
 fn the_repo_ships_the_computer_plugin() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-    let r = Roots { builtin: Some(root), user: None, workspace: None, data: std::env::temp_dir(), disabled: vec![] };
+    let r = Roots { builtin: Some(root), user: None, workspace: None, data: std::env::temp_dir(), disabled: vec![], enabled: vec!["computer".into()] };
     let res = resolve(&r);
     assert!(res.diagnostics.is_empty(), "{:?}", res.diagnostics);
     let p = res.plugins.iter().find(|p| p.name == "computer").expect("plugins/computer");
     assert_eq!((p.scope, p.state), (Scope::BuiltIn, State::Loaded));
     assert_eq!(p.servers.len(), 1);
     assert_eq!(p.servers[0].args, ["computer-use", "mcp"]);
+    // opt-in: off for everyone until /computer-use enables it, nothing loaded
+    let off = Roots { enabled: vec![], ..r };
+    let res = resolve(&off);
+    let p = res.plugins.iter().find(|p| p.name == "computer").unwrap();
+    assert_eq!(p.state, State::Disabled);
+    assert!(p.servers.is_empty() && p.skills.is_empty());
+    assert_eq!(res.loaded().count(), 0);
+}
+
+#[test]
+fn a_default_off_plugin_loads_only_once_enabled() {
+    let t = tmp("optin");
+    let mut r = roots(&t);
+    let m = manifest("opt").replacen('{', "{\"extensions\": {\"dev.bise\": {\"default\": \"off\"}},", 1);
+    write(&t.0.join("user/opt/plugin.json"), &m);
+    let res = resolve(&r);
+    assert!(res.diagnostics.is_empty(), "the bise extension is known: {:?}", res.diagnostics);
+    assert_eq!(res.plugins[0].state, State::Disabled);
+    let before = fingerprint(&r);
+    r.enabled = vec!["opt".into()];
+    assert_ne!(fingerprint(&r), before, "enabling moves the fingerprint");
+    assert_eq!(resolve(&r).plugins[0].state, State::Loaded);
+    r.disabled = vec!["opt".into()];
+    assert_eq!(resolve(&r).plugins[0].state, State::Disabled, "disabled wins");
+    let bad = manifest("opt").replacen('{', "{\"extensions\": {\"dev.bise\": {\"default\": \"maybe\"}},", 1);
+    assert!(parse_manifest(&bad).is_err());
 }
 
 #[test]

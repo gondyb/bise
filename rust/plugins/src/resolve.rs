@@ -139,6 +139,10 @@ pub struct Roots {
     /// where `${PLUGIN_DATA}` roots live (one folder per plugin name)
     pub data: PathBuf,
     pub disabled: Vec<String>,
+    /// the opt-in plugins turned on (a manifest with
+    /// `"extensions": {"dev.bise": {"default": "off"}}` loads only when
+    /// its name is here)
+    pub enabled: Vec<String>,
 }
 
 impl Roots {
@@ -157,6 +161,7 @@ impl Roots {
             workspace: workspace.map(|w| w.join(".agents").join("plugins")),
             data,
             disabled: crate::state::disabled(&crate::state::state_path()),
+            enabled: crate::state::enabled(&crate::state::state_path()),
         }
     }
 }
@@ -171,6 +176,7 @@ pub fn fingerprint(roots: &Roots) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     roots.disabled.hash(&mut h);
+    roots.enabled.hash(&mut h);
     let stat = |p: &Path, h: &mut std::collections::hash_map::DefaultHasher| {
         if let Ok(m) = std::fs::metadata(p) {
             m.len().hash(h);
@@ -281,8 +287,15 @@ pub struct Manifest {
     pub name: String,
     pub version: Option<String>,
     pub description: Option<String>,
+    /// the extensions bise does not know (reported, ignored)
     pub extensions: Vec<String>,
+    /// `"extensions": {"dev.bise": {"default": "off"}}`: opt-in, loaded
+    /// only once enabled (computer use: /computer-use turns it on)
+    pub default_off: bool,
 }
+
+/// bise's own manifest extension.
+pub const BISE_EXTENSION: &str = "dev.bise";
 
 fn opt_string(o: &Map<String, Value>, k: &str) -> Result<Option<String>, String> {
     match o.get(k) {
@@ -342,13 +355,25 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         }
     }
     let mut extensions = Vec::new();
+    let mut default_off = false;
     if let Some(ex) = o.get("extensions") {
         let ex = ex.as_object().ok_or("/extensions must be an object")?;
         for (k, v) in ex {
-            if !v.is_object() {
+            let Some(v) = v.as_object() else {
                 return Err(format!("/extensions/{} must be an object", k));
+            };
+            if k == BISE_EXTENSION {
+                for (f, fv) in v {
+                    match (f.as_str(), fv.as_str()) {
+                        ("default", Some("off")) => default_off = true,
+                        ("default", Some("on")) => {}
+                        ("default", _) => return Err(format!("/extensions/{}/default must be \"on\" or \"off\"", k)),
+                        _ => return Err(format!("unknown field /extensions/{}/{}", k, f)),
+                    }
+                }
+            } else {
+                extensions.push(k.clone());
             }
-            extensions.push(k.clone());
         }
     }
     Ok(Manifest {
@@ -356,6 +381,7 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         version: opt_string(o, "version")?,
         description: opt_string(o, "description")?,
         extensions,
+        default_off,
     })
 }
 
@@ -637,6 +663,7 @@ fn load_unsupported(p: &mut Plugin, extensions: &[String], out: &mut Vec<Diagnos
 struct Candidate {
     plugin: Plugin,
     extensions: Vec<String>,
+    default_off: bool,
 }
 
 fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -> Vec<Candidate> {
@@ -676,6 +703,7 @@ fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -
             .map_err(|e| format!("unreadable: {}", e))
             .and_then(|t| parse_manifest(&t));
         let mut extensions = Vec::new();
+        let mut default_off = false;
         match parsed {
             Ok(m) => {
                 p.namespace = identifier(&m.name);
@@ -685,11 +713,12 @@ fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -
                 p.description = m.description;
                 p.state = State::Loaded;
                 extensions = m.extensions;
+                default_off = m.default_off;
             }
             Err(e) => out.push(diag("plugin.manifest.invalid", Severity::Error, &folder,
                 format!("{}: {}", manifest.display(), e))),
         }
-        found.push(Candidate { plugin: p, extensions });
+        found.push(Candidate { plugin: p, extensions, default_off });
     }
     found
 }
@@ -761,7 +790,8 @@ pub fn resolve(roots: &Roots) -> Resolution {
     }
     // enable state, then components
     for c in cands.iter_mut() {
-        if c.plugin.state == State::Loaded && roots.disabled.contains(&c.plugin.name) {
+        let off = roots.disabled.contains(&c.plugin.name) || (c.default_off && !roots.enabled.contains(&c.plugin.name));
+        if c.plugin.state == State::Loaded && off {
             c.plugin.state = State::Disabled;
         }
         if c.plugin.state == State::Loaded {

@@ -67,6 +67,7 @@ fn fixture_plugin_end_to_end() {
         workspace: Some(plugins.clone()),
         data: base.join("data"),
         disabled: vec![],
+        enabled: vec![],
     };
     let opts = bridge::Opts { dir: dir.clone(), parent: Some(parent.id()), roots };
     let server = std::thread::spawn(move || bridge::serve(opts));
@@ -146,6 +147,7 @@ fn failing_server_is_a_diagnostic() {
         workspace: Some(plugins),
         data: base.join("data"),
         disabled: vec![],
+        enabled: vec![],
     };
     // nothing to serve: returns once the files are written
     bridge::serve(bridge::Opts { dir: dir.clone(), parent: None, roots }).unwrap();

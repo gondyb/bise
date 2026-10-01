@@ -110,8 +110,15 @@ live REPLs, so two sessions (or two Switchboard tasks) never share it.
    the user one is listed as `shadowed`. Same `name` twice in one root:
    both dropped (`plugin.name.collision`).
 5. **Enable state.** `~/.bend-harness/plugins.json`:
-   `{"disabled": ["name", ...]}`. A disabled plugin is listed, its
-   components are not loaded.
+   `{"disabled": ["name", ...], "enabled": ["name", ...]}`. A disabled
+   plugin is listed, its components are not loaded. **Opt-in**: a
+   manifest with `"extensions": {"dev.bise": {"default": "off"}}` (bise's
+   own extension, never reported as unsupported) loads only when its name
+   is in `enabled`; `disabled` still wins. `plugins enable <name>` adds to
+   `enabled` and drops from `disabled`, `disable` the reverse. The
+   built-in `computer` plugin is opt-in: `/computer-use` turns it on,
+   `/computer-use off|uninstall` turns it off (docs/computer-use-ship.md
+   §1).
 6. **Skills.** Each `skills/<dir>/SKILL.md`, realpath inside the plugin
    root, with a YAML frontmatter holding a one-line `name` and
    `description`. Published as `<namespace>:<name>`. A bad one:

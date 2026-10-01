@@ -59,6 +59,32 @@ fn json_of(args: &[&str]) -> Option<Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
+/// The opt-in (computer-use-ship.md §1): the built-in `computer` plugin
+/// is off until /computer-use turns it on. The hub sees the plugins
+/// change and relaunches each agent at its next idle, prompt included.
+pub(crate) fn set_on(on: bool) {
+    let _ = bend_plugins::state::set_enabled(&bend_plugins::state::state_path(), "computer", on);
+}
+
+/// /computer-use off|uninstall: the plugin off, then `bise computer-use
+/// off|uninstall` (the broker, hosts and helper quit; uninstall also
+/// removes what setup wrote). The line the feed shows.
+pub(crate) fn turn_off(uninstall: bool) -> String {
+    set_on(false);
+    let v = json_of(&[if uninstall { "uninstall" } else { "off" }]).unwrap_or(Value::Null);
+    let mut s = String::from("computer use is off: agents lose it at their next idle");
+    if uninstall {
+        s.push_str(". removed the browser hosts and its files");
+        let left: Vec<&str> = v["left_to_you"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        for l in left {
+            s.push_str(&format!("\n  · {l}"));
+        }
+    } else {
+        s.push_str(". /computer-use turns it back on");
+    }
+    s
+}
+
 /// Run it on a thread, its output dropped (stop, resume, drop).
 pub(crate) fn fire(args: &[&str]) {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();

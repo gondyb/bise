@@ -135,6 +135,24 @@ pub fn main(args: &[String]) -> i32 {
                 }
             }
         }
+        // turned off (/computer-use off): the broker and the helper exit;
+        // the plugin's enable state is the caller's (the TUI)
+        "off" => {
+            print(&off(&paths));
+            0
+        }
+        // off, then nothing of it left on disk but the app bundle; what
+        // only the user can remove is said in `left_to_you`
+        "uninstall" => {
+            let mut v = off(&paths);
+            let _ = std::fs::remove_dir_all(paths.dir());
+            v["left_to_you"] = json!([
+                "remove the bise extension in each browser (Extensions page)",
+                "remove \"bise Computer Use\" in System Settings > Privacy & Security > Accessibility and > Screen Recording",
+            ]);
+            print(&v);
+            0
+        }
         "help" | "-h" | "--help" => {
             println!("{}", USAGE);
             0
@@ -144,6 +162,30 @@ pub fn main(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// Computer use off: the host manifests and the shim go (a browser with
+/// the extension can no longer start the host, so nothing starts the
+/// broker again; setup's repair writes them back), the broker lets every
+/// agent go and exits, the native hosts and the helper app quit.
+fn off(paths: &Paths) -> Value {
+    let removed = browsers::unrepair(paths);
+    let broker = match Conn::ctl(paths).and_then(|mut c| c.call("quit", &json!({}))) {
+        Ok(_) => "stopped",
+        Err(_) => "not running",
+    };
+    // by their exact command lines: never another program
+    let pkill = |args: &[&str]| {
+        std::process::Command::new("pkill")
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    let hosts = pkill(&["-f", "computer-use chrome-host chrome-extension://"]);
+    let helper = pkill(&["-x", broker::HELPER_EXE]);
+    json!({"off": true, "removed": removed, "broker": broker, "hosts_quit": hosts, "helper_quit": helper})
 }
 
 fn run_broker(paths: &Paths, a: &[&str]) -> i32 {
