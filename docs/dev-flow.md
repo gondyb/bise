@@ -312,6 +312,6 @@ Answered: Q1, Q2, Q4, Q5 (§0). Still open:
    when you ask?
 6. The sidebar for a shared worktree: grouped under one line (A) or
    flat rows with the branch on the held line (B)? (mock, "the flow")
-7. Several agents on one branch: who commits the rebase when it
-   conflicts? My pick: the agent the conflict's files belong to, the
-   others' lands held meanwhile; main picks when it's several.
+Answered later (2026-10-01): **Q7, who rebases a shared branch that
+conflicts: the agent the conflict's files belong to**, the branch's other
+lands held meanwhile; main picks when the files are several agents'.
