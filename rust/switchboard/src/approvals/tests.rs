@@ -856,6 +856,32 @@ fn rules_file_round_trips_and_keeps_the_rest() {
     );
 }
 
+/// `/approvals`, backspace: one entry leaves the file, the rest stays
+/// byte for byte.
+#[test]
+fn a_removed_rule_leaves_the_file_and_only_it() {
+    let r = |p: &str| Rule { project: Some("/w/repo".into()), tool: "bash".into(), pattern: Some(p.into()), ..Rule::default() };
+    let text = rules::append(&rules::append(&rules::append("", &r("a *")), &r("b *")), &r("c *"));
+    let mid = rules::without(&text, &r("b *")).unwrap();
+    assert_eq!(mid, rules::append(&rules::append("", &r("a *")), &r("c *")));
+    let first = rules::without(&text, &r("a *")).unwrap();
+    assert_eq!(first, rules::append(&rules::append("", &r("b *")), &r("c *")));
+    assert_eq!(rules::without(&text, &r("z *")), None);
+    // a hand-written entry with a comment, the old `prefix`
+    let hand = "# mine\n[[allow]]\ntool = \"bash\"\nprefix = \"make\" # keep\n\n[[allow]]\ntool = \"gmail.send_email\"\n";
+    let gmail = Rule { tool: "gmail.send_email".into(), ..Rule::default() };
+    assert_eq!(rules::without(hand, &gmail).unwrap(), "# mine\n[[allow]]\ntool = \"bash\"\nprefix = \"make\" # keep\n");
+    let make = Rule { tool: "bash".into(), pattern: Some("make *".into()), ..Rule::default() };
+    assert_eq!(rules::without(hand, &make).unwrap(), "# mine\n[[allow]]\ntool = \"gmail.send_email\"\n");
+    let dir = std::env::temp_dir().join(format!("approvals-remove-{}", std::process::id()));
+    let f = rules::file(&dir);
+    rules::save(&f, &r("a *")).unwrap();
+    assert_eq!(rules::remove(&f, &r("a *")), Ok(true));
+    assert_eq!(rules::remove(&f, &r("a *")), Ok(false));
+    assert!(rules::load(&f).unwrap().rules.is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 // ---- risk classes (the sandbox part reads them)
 
 #[test]

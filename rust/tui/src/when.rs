@@ -82,6 +82,12 @@ pub(crate) fn mark(ms: u64, off: i32, now: u64, now_off: i32) -> String {
     day_and_time(ms, off, now, now_off)
 }
 
+/// How many local calendar days separate `ms` from `now` (0: today).
+pub(crate) fn days_ago(ms: u64, off: i32, now: u64, now_off: i32) -> i64 {
+    let day = |t: u64, o: i32| ((t / 1000) as i64 + o as i64).div_euclid(86_400);
+    day(now, now_off) - day(ms, off)
+}
+
 // ---- the real clock ----
 
 /// Now, ms since the epoch.

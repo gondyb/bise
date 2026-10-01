@@ -12,6 +12,8 @@ pub(crate) struct App {
     pub(crate) term: term::Term,
     // the /help or /shortcuts overlay, when open
     pub(crate) help: Option<help::Overlay>,
+    // the /approvals screen, when open
+    pub(crate) approvals: Option<approvals_screen::Screen>,
     pub(crate) debug: bool,
     // feed scrollback: follow means stick to the bottom (any scroll up
     // turns it off, End/enter turn it back on). A pinned view is anchored
@@ -213,6 +215,7 @@ impl App {
             connected: true,
             term: crate::term::Term::default(),
             help: None,
+            approvals: None,
             debug,
             follow: true,
             anchor: (0, 0),

@@ -332,6 +332,9 @@ fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16)
     if help::mouse(app, m) {
         return;
     }
+    if approvals_screen::mouse(app, m) {
+        return;
+    }
     match app.term.mouse(m, term_h) {
         term::MouseDone::Pass => {}
         term::MouseDone::Took => return,
@@ -565,6 +568,9 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         app.cmd_keys = true;
     }
     if help::on_key(app, k) {
+        return false;
+    }
+    if approvals_screen::on_key(app, k) {
         return false;
     }
     if term::on_key(app, k) {

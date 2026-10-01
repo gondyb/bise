@@ -230,3 +230,47 @@ pub fn save(path: &Path, rule: &Rule) -> Result<(), RulesErr> {
     }
     std::fs::rename(&tmp, path).map_err(io)
 }
+
+/// The file's text without the first `[[allow]]` entry that reads as
+/// `rule` (every field equal), the rest kept byte for byte; None: no such
+/// entry. An entry runs from its `[[allow]]` line to the next one.
+pub fn without(text: &str, rule: &Rule) -> Option<String> {
+    let mut starts: Vec<usize> = Vec::new();
+    let mut at = 0;
+    for l in text.split_inclusive('\n') {
+        if l.trim() == "[[allow]]" {
+            starts.push(at);
+        }
+        at += l.len();
+    }
+    let ends = starts.iter().skip(1).copied().chain(std::iter::once(text.len()));
+    let (s, e) = starts.iter().copied().zip(ends).find(|&(s, e)| {
+        parse(&text[s..e]).is_ok_and(|r| r.rules.len() == 1 && r.rules[0] == *rule)
+    })?;
+    // the blank line `append` puts before an entry goes with it (an
+    // entry before another holds that one's blank line already)
+    let s = if e == text.len() && text[..s].ends_with("\n\n") { s - 1 } else { s };
+    Some(format!("{}{}", &text[..s], &text[e..]))
+}
+
+/// Remove a rule from the file (`/approvals`, backspace): same writes as
+/// [`save`]. `Ok(false)`: no entry reads as it (edited meanwhile).
+pub fn remove(path: &Path, rule: &Rule) -> Result<bool, RulesErr> {
+    let old = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(RulesErr::Io(e.to_string())),
+    };
+    parse(&old)?;
+    let Some(new) = without(&old, rule) else { return Ok(false) };
+    let tmp = path.with_extension("toml.tmp");
+    let io = |e: std::io::Error| RulesErr::Io(e.to_string());
+    std::fs::write(&tmp, new).map_err(io)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
+    }
+    std::fs::rename(&tmp, path).map_err(io)?;
+    Ok(true)
+}

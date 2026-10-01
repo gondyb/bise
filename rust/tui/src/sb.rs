@@ -193,10 +193,50 @@ pub(crate) struct Approvals {
     pub(crate) env: bool,
     /// `jev`, `model` or `off`
     pub(crate) checker: String,
-    /// each rule, one line: `bash · cargo test * · <repo>`
-    pub(crate) rules: Vec<String>,
+    /// who checks: `TypeSafe`, `OpenRouter`, a chat model's id
+    pub(crate) checker_who: String,
+    /// Jev's model id (`jev-1.13`), "" for the others
+    pub(crate) checker_model: String,
+    /// the workspace's git common root: the rules below are its own
+    pub(crate) repo: String,
+    /// the saved rules of this repo and of every project (`/approvals`)
+    pub(crate) rules: Vec<Rule>,
     /// a switch: the key bar's 3-second flash since then
     pub(crate) flash: Option<std::time::Instant>,
+}
+
+/// One saved rule of `~/.bise/approvals.toml`, as the hub sent it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Rule {
+    /// the hub's fields as they came: `remove_rule` sends them back
+    pub(crate) raw: Value,
+    pub(crate) tool: String,
+    pub(crate) pattern: String,
+    pub(crate) path: String,
+    /// no project: it applies in every repo
+    pub(crate) every: bool,
+    /// when "always" saved it (ms), when the file says
+    pub(crate) added: Option<u64>,
+    /// `card #12, api-v2`
+    pub(crate) from: String,
+    /// `sandbox = false`: its commands run outside the sandbox
+    pub(crate) outside: bool,
+}
+
+impl Rule {
+    fn of(v: &Value) -> Rule {
+        Rule {
+            raw: v.clone(),
+            tool: str_of(v, "tool"),
+            pattern: str_of(v, "pattern"),
+            path: str_of(v, "path"),
+            every: str_of(v, "project").is_empty(),
+            // the hub writes ms; a hand-written date is not read
+            added: str_of(v, "added").parse().ok(),
+            from: str_of(v, "from"),
+            outside: v.get("sandbox").and_then(|x| x.as_bool()) == Some(false),
+        }
+    }
 }
 
 impl Approvals {
@@ -230,7 +270,7 @@ impl Sb {
         self.calls
     }
 
-    fn send(&mut self, v: Value) {
+    pub(crate) fn send(&mut self, v: Value) {
         let mut s = v.to_string();
         s.push('\n');
         if let Ok(mut w) = self.writer.lock() {
@@ -551,26 +591,12 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
 
 /// The hub's `approvals` event (approvals-design.md §8): the mode for the
 /// key bar; `flash`: a switch (the 3-second flash, the first switch to
-/// auto's tip); `show`: `/approvals` asked (its lines in the feed).
+/// auto's tip); `show`: `/approvals` asked (its screen opens).
 fn approvals_event(app: &mut App, v: &Value) {
-    let rules: Vec<String> = v
+    let rules: Vec<Rule> = v
         .get("rules")
         .and_then(|r| r.as_array())
-        .map(|a| {
-            a.iter()
-                .map(|r| {
-                    let what = str_of(r, "pattern");
-                    let what = if what.is_empty() { str_of(r, "path") } else { what };
-                    let tool = str_of(r, "tool");
-                    let head = if tool == "bash" || what.is_empty() { what.clone() } else { format!("{tool} {what}") };
-                    let head = if head.is_empty() { tool } else { head };
-                    match str_of(r, "project") {
-                        p if p.is_empty() => format!("{head} · every project"),
-                        p => format!("{head} · {}", home_tilde(&p)),
-                    }
-                })
-                .collect()
-        })
+        .map(|a| a.iter().map(Rule::of).collect())
         .unwrap_or_default();
     let a = &mut app.sb.approvals;
     let was = a.mode.clone();
@@ -581,6 +607,9 @@ fn approvals_event(app: &mut App, v: &Value) {
     a.mode = str_of(v, "mode");
     a.env = v.get("env").and_then(|x| x.as_bool()).unwrap_or(false);
     a.checker = str_of(v, "checker");
+    a.checker_who = str_of(v, "checker_who");
+    a.checker_model = str_of(v, "checker_model");
+    a.repo = str_of(v, "repo");
     a.rules = rules;
     if v.get("flash").and_then(|x| x.as_bool()) == Some(true) {
         a.flash = Some(std::time::Instant::now());
@@ -589,9 +618,16 @@ fn approvals_event(app: &mut App, v: &Value) {
             crate::hints::once(app, crate::hints::Hint::FirstAuto);
         }
     }
+    // `/approvals`: its screen; a removal the hub refused: why
     if v.get("show").and_then(|x| x.as_bool()) == Some(true) {
-        for l in approvals_lines(&app.sb.approvals) {
-            push_event(&mut app.events, &mut app.cache, Ev::Info(l));
+        app.approvals = Some(crate::approvals_screen::Screen::default());
+    }
+    if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+        match app.approvals.as_mut() {
+            Some(s) => s.said = Some(e.to_string()),
+            None => {
+                push_event(&mut app.events, &mut app.cache, Ev::Warn(format!("/approvals: {e}")));
+            }
         }
     }
 }
@@ -603,34 +639,6 @@ pub(crate) fn toggle_approvals(app: &mut App) {
     if !app.sb.approvals.mode.is_empty() {
         app.sb.send(serde_json::json!({"op": "approvals", "mode": "toggle"}));
     }
-}
-
-/// `/approvals`: the mode, the checker (changed in /models) and the
-/// saved rules (approvals-design.md §8).
-pub(crate) fn approvals_lines(a: &Approvals) -> Vec<String> {
-    let mode = match a.word() {
-        "auto" if a.checker == "off" => "auto · edits run, commands ask you",
-        "auto" => "auto · safe calls run, risky ones ask you",
-        _ => "yolo · everything runs, nothing asks",
-    };
-    let env = if a.env { " (BISE_APPROVALS, this session only)" } else { "" };
-    let checker = match a.checker.as_str() {
-        "jev" => "Jev by TypeSafe",
-        "model" => "a chat model",
-        "off" => "off · every command asks you",
-        _ => "none yet",
-    };
-    let mut out = vec![
-        format!("approvals: {mode}{env}. shift+tab or /approvals yolo|auto switches."),
-        format!("checker: {checker}. /models changes it."),
-    ];
-    if a.rules.is_empty() {
-        out.push("always allowed: nothing yet (a card's \"always\" adds a rule)".into());
-    } else {
-        out.push("always allowed (~/.bise/approvals.toml):".into());
-        out.extend(a.rules.iter().map(|r| format!("  {r}")));
-    }
-    out
 }
 
 fn apply_state(app: &mut App, v: &Value) {
@@ -1507,14 +1515,6 @@ mod nav_key_tests {
         for c in ['g', 'f', 'n', 'p', 'r', 'x', 'a', 'c', 'o', 'z'] {
             assert_eq!(nav(KeyCode::Char(c), KeyModifiers::CONTROL), None);
         }
-    }
-}
-
-/// `p` with the user's home as `~`.
-fn home_tilde(p: &str) -> String {
-    match std::env::var("HOME") {
-        Ok(h) if !h.is_empty() && p.starts_with(&h) => format!("~{}", &p[h.len()..]),
-        _ => p.to_string(),
     }
 }
 

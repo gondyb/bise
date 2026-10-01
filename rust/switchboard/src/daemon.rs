@@ -1308,15 +1308,22 @@ impl Shell {
                     self.set_mode(m);
                     let ev = self.approvals_ev(true);
                     self.broadcast(&ev);
-                } else if let Some(c) = self.clients.get_mut(&id) {
-                    let ev = {
-                        let mut v = self.gates.info(bise_home::Home::from_env().root());
-                        v["ev"] = json!("approvals");
-                        v["flash"] = json!(false);
-                        v["show"] = json!(true);
-                        v
-                    };
-                    write_json(c, &ev);
+                } else {
+                    let mut ev = self.approvals_ev(false);
+                    ev["show"] = json!(true);
+                    if let Some(c) = self.clients.get_mut(&id) {
+                        write_json(c, &ev);
+                    }
+                }
+            }
+            // `/approvals`, backspace on a rule: the user removes it
+            "remove_rule" => {
+                if let Err(e) = self.remove_rule(v.get("rule").unwrap_or(&Value::Null)) {
+                    let mut ev = self.approvals_ev(false);
+                    ev["error"] = json!(e);
+                    if let Some(c) = self.clients.get_mut(&id) {
+                        write_json(c, &ev);
+                    }
                 }
             }
             "confirm" => self.step(Input::ClientConfirm {
@@ -1964,11 +1971,17 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     if busy {
                         // adopted mid-turn: busy until its `--- idle`
                         sh.step(Input::ReplLine {
-                            agent: name,
+                            agent: name.clone(),
                             line: "  obs: turn_started".into(),
                         });
                     } else {
-                        sh.step(Input::ReplReady { agent: name });
+                        sh.step(Input::ReplReady { agent: name.clone() });
+                    }
+                    // design §10: a restart keeps the card the REPL waits on
+                    if adopted {
+                        sh.gate_restore(&dir, &name);
+                    } else {
+                        sh.gate_fresh(&name);
                     }
                 }
             }

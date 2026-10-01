@@ -93,29 +93,60 @@ impl Gates {
         }
     }
 
-    /// What the TUI shows (the key bar, `/approvals`).
-    pub(super) fn info(&self, bise: &Path) -> Value {
+    /// What the TUI shows (the key bar, `/approvals`): the rules of
+    /// `repo` (the workspace's git common root) and of every project, in
+    /// the file's order, each field as the file has it (`remove_rule`
+    /// sends one back).
+    pub(super) fn info(&self, bise: &Path, repo: &Path) -> Value {
         let rules = rules::load(&rules::file(bise)).unwrap_or_default();
         let list: Vec<Value> = rules
             .rules
             .iter()
-            .map(|r| {
-                json!({
-                    "tool": r.tool,
-                    "pattern": r.pattern,
-                    "path": r.path.as_ref().map(|p| p.display().to_string()),
-                    "project": r.project.as_ref().map(|p| p.display().to_string()),
-                })
-            })
+            .filter(|r| r.project.as_deref().is_none_or(|p| p == repo))
+            .map(rule_json)
             .collect();
         let checker = match self.runner.checker() {
             Checker::Jev => "jev",
             Checker::Model => "model",
             Checker::Off => "off",
         };
-        let who = self.runner.route().who();
-        json!({"mode": self.mode.word(), "env": self.env, "checker": checker, "checker_who": who, "rules": list})
+        let route = self.runner.route();
+        let who = route.who();
+        // `/approvals`: `TypeSafe · jev-1.13`
+        let model = match &route {
+            approvals::checker::Route::Jev { model, .. } => model.clone(),
+            _ => String::new(),
+        };
+        json!({"mode": self.mode.word(), "env": self.env, "checker": checker, "checker_who": who, "checker_model": model,
+               "repo": repo.display().to_string(), "rules": list})
     }
+}
+
+/// A rule as the TUI reads it, and sends it back to remove it.
+fn rule_json(r: &rules::Rule) -> Value {
+    json!({
+        "tool": r.tool,
+        "pattern": r.pattern,
+        "path": r.path.as_ref().map(|p| p.display().to_string()),
+        "project": r.project.as_ref().map(|p| p.display().to_string()),
+        "added": r.added,
+        "from": r.from,
+        "sandbox": r.sandbox,
+    })
+}
+
+/// The rule a `remove_rule` op names (the fields `rule_json` gave).
+pub(super) fn rule_of_json(v: &Value) -> Option<rules::Rule> {
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
+    Some(rules::Rule {
+        tool: s("tool")?,
+        project: s("project").map(PathBuf::from),
+        pattern: s("pattern"),
+        path: s("path").map(PathBuf::from),
+        added: s("added"),
+        from: s("from"),
+        sandbox: v.get("sandbox").and_then(|x| x.as_bool()),
+    })
 }
 
 /// A gate line of the runtime: `<n> <json>`.
@@ -123,6 +154,37 @@ pub(super) fn parse_gate(rest: &str) -> Option<(String, Value)> {
     let (n, j) = rest.split_once(' ')?;
     let v: Value = serde_json::from_str(j).ok()?;
     (!n.is_empty() && v.get("tool").is_some()).then(|| (n.to_string(), v))
+}
+
+/// The gate an adopted REPL still waits in (design §10: a hub restart
+/// keeps the card): the last `gate <n> …` line the old hub read (before
+/// `offset`) with no `gate-done <n>` in the whole log. Its rest (`<n>
+/// <json>`), or None. A gate line after `offset` is the new hub's: the
+/// pump reads it again.
+pub(super) fn open_gate(wire: &str, offset: usize) -> Option<String> {
+    let cut = wire.get(..offset.min(wire.len())).unwrap_or(wire);
+    let mut open: Option<&str> = None;
+    for l in cut.lines() {
+        if let Some(rest) = l.strip_prefix("gate ") {
+            open = Some(rest);
+        } else if let Some(rest) = l.strip_prefix("gate-done ") {
+            let n = rest.split_whitespace().next().unwrap_or("");
+            if open.and_then(|o| o.split_whitespace().next()) == Some(n) {
+                open = None;
+            }
+        }
+    }
+    let rest = open?;
+    let n = rest.split_whitespace().next()?;
+    let done = wire.lines().any(|l| {
+        l.strip_prefix("gate-done ").and_then(|r| r.split_whitespace().next()) == Some(n)
+    });
+    (!done).then(|| rest.to_string())
+}
+
+/// Identical calls share a card: tool, arguments, repo, a rerun or not.
+fn same_of(call: &Call, rerun: bool) -> String {
+    format!("{}\u{0}{}\u{0}{}\u{0}{}", call.tool, call.args, call.repo.display(), rerun)
 }
 
 /// The verdict line for the gate file (one line: a reason's newlines are
@@ -298,13 +360,14 @@ fn summary_of(call: &Call) -> String {
 }
 
 /// The rule "always" saves for this card, as the rules file holds it; a
-/// sandbox card's runs outside the sandbox (`sandbox = false`).
-fn rule_of(tool: &str, repo: &Path, text: &str, outside: bool) -> rules::Rule {
+/// sandbox card's runs outside the sandbox (`sandbox = false`). `from`:
+/// `card #12, api-v2, web` (what `/approvals` says of it).
+fn rule_of(tool: &str, repo: &Path, text: &str, outside: bool, from: &str) -> rules::Rule {
     let mut r = rules::Rule {
         project: Some(repo.to_path_buf()),
         tool: tool.to_string(),
         added: Some(crate::util::now_ms().to_string()),
-        from: Some("card".into()),
+        from: Some(from.to_string()),
         sandbox: outside.then_some(false),
         ..Default::default()
     };
@@ -369,11 +432,35 @@ impl Shell {
     }
 
     /// The `approvals` event for the TUIs (`flash`: a switch just happened).
-    pub(super) fn approvals_ev(&self, flash: bool) -> Value {
-        let mut v = self.gates.info(&self.bise_root());
+    pub(super) fn approvals_ev(&mut self, flash: bool) -> Value {
+        let repo = self.ws_repo();
+        let mut v = self.gates.info(&self.bise_root(), &repo);
         v["ev"] = json!("approvals");
         v["flash"] = json!(flash);
         v
+    }
+
+    /// The workspace's git common root (asked once).
+    fn ws_repo(&mut self) -> PathBuf {
+        let ws = self.hub.workspace.clone();
+        self.gates.repos.entry(String::new()).or_insert_with(|| repo_of(&ws)).clone()
+    }
+
+    /// `/approvals`, backspace on a rule: it leaves approvals.toml; every
+    /// TUI hears the new list. `Err`: what the screen says.
+    pub(super) fn remove_rule(&mut self, v: &Value) -> Result<(), String> {
+        let rule = rule_of_json(v).ok_or("no such rule")?;
+        let path = rules::file(&self.bise_root());
+        let gone = rules::remove(&path, &rule).map_err(|e| e.to_string())?;
+        self.gates.rules = None;
+        let ev = self.approvals_ev(false);
+        self.broadcast(&ev);
+        if gone {
+            log_line(&self.opts.paths, &format!("approvals: the user removed {}", crate::util::one_line(&v.to_string())));
+            Ok(())
+        } else {
+            Err("this rule is no longer in ~/.bise/approvals.toml.".into())
+        }
     }
 
     /// Append a verdict to the gate file of `dir`'s waiting call and
@@ -620,7 +707,7 @@ impl Shell {
         keys: Vec<CacheKey>,
     ) {
         let Some(w) = self.gates.waiting.get(dir).cloned() else { return };
-        let same = format!("{}\u{0}{}\u{0}{}\u{0}{}", call.tool, call.args, call.repo.display(), w.rerun.is_some());
+        let same = same_of(call, w.rerun.is_some());
         let id = match self.gates.cards.iter().find(|(_, c)| c.same == same).map(|(id, _)| *id) {
             Some(id) => {
                 if let Some(c) = self.gates.cards.get_mut(&id) {
@@ -681,8 +768,9 @@ impl Shell {
             Answer::Allow => (true, String::new()),
             Answer::Always => {
                 let bise = self.bise_root();
+                let from = std::iter::once(format!("card #{id}")).chain(names.iter().cloned()).collect::<Vec<_>>().join(", ");
                 for r in c.always.iter().flatten() {
-                    if let Err(e) = rules::save(&rules::file(&bise), &rule_of(&c.tool, &c.repo, r, c.rerun.is_some())) {
+                    if let Err(e) = rules::save(&rules::file(&bise), &rule_of(&c.tool, &c.repo, r, c.rerun.is_some(), &from)) {
                         log_line(&self.opts.paths, &format!("approvals: {e}"));
                     }
                 }
@@ -718,7 +806,8 @@ impl Shell {
         for f in feeds {
             self.feed(&f, &fold);
         }
-        self.broadcast(&self.approvals_ev(false));
+        let ev = self.approvals_ev(false);
+        self.broadcast(&ev);
     }
 
     /// `gate-done <n> <how>`: the runtime went on (a verdict, or an
@@ -785,6 +874,134 @@ impl Shell {
             }
         }
     }
+
+    /// A hub restart adopted `dir`'s REPL (design §10): the gate it still
+    /// waits in, read again from its wire log, answers to the journaled
+    /// card; with no card yet (the checker ran), it is judged again.
+    pub(super) fn gate_restore(&mut self, dir: &str, name: &str) {
+        let adir = self.opts.paths.agent_dir(dir);
+        let wire = std::fs::read(adir.join("wire.log")).unwrap_or_default();
+        let wire = String::from_utf8_lossy(&wire);
+        let offset: usize = std::fs::read_to_string(adir.join("wire.offset"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        let card = |sh: &Self| {
+            sh.hub
+                .st
+                .open_cards()
+                .filter(|c| c.kind == "confirm" && c.agent == name && !sh.gates.cards.contains_key(&c.id))
+                .map(|c| c.id)
+                .max()
+        };
+        let Some(rest) = open_gate(&wire, offset) else {
+            // no wait left: a card of the old wait has nothing to answer
+            while let Some(id) = card(self) {
+                self.step(Input::ConfirmClose { card: id, res: "interrupted".into() });
+            }
+            return;
+        };
+        log_line(&self.opts.paths, &format!("{name}: waits in gate {} since before the restart", clip_n(&rest)));
+        match card(self) {
+            Some(id) => self.rebind_card(dir, name, &rest, id),
+            None => self.on_gate(dir, name, &rest),
+        }
+    }
+
+    /// A fresh REPL waits in no gate: its agent's journaled cards close.
+    pub(super) fn gate_fresh(&mut self, name: &str) {
+        let stale: Vec<u64> = self
+            .hub
+            .st
+            .open_cards()
+            .filter(|c| c.kind == "confirm" && c.agent == name && !self.gates.cards.contains_key(&c.id))
+            .map(|c| c.id)
+            .collect();
+        for id in stale {
+            self.step(Input::ConfirmClose { card: id, res: "interrupted".into() });
+        }
+    }
+
+    /// The journaled card `id` answers `dir`'s gate again: what the old
+    /// hub knew of it (its "always" rules, the cache keys, a rerun) is
+    /// judged again, without the checker; the card's text stays.
+    fn rebind_card(&mut self, dir: &str, name: &str, rest: &str, id: u64) {
+        let Some((n, v)) = parse_gate(rest) else { return };
+        let nonce = v.get("nonce").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let Some(port) = self.ports.get(dir).copied() else { return };
+        let file = mode::gate_file(&self.opts.paths.agent_run(dir), port);
+        let w = Waiting { n, nonce, file, agent: name.to_string(), card: Some(id), flags: String::new(), rerun: None };
+        self.gates.waiting.insert(dir.to_string(), w);
+        let tool = v.get("tool").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let args = args_of(&tool, v.get("args"));
+        let call = self.call_of(dir, name, tool, args);
+        let rules = self.rules_now();
+        let sandboxed = call.tool == "bash" && self.sandbox_on();
+        let rerun = if sandboxed { Rerun::of(&call, &v) } else { None };
+        let (always, keys) = match &rerun {
+            Some(r) => (Some(r.always()), vec![r.key.clone()]),
+            None => {
+                if sandboxed {
+                    self.sandbox_ready(dir, &call);
+                }
+                let cache = self.gates.caches.entry(call.repo.clone()).or_default();
+                if sandboxed {
+                    let flags = sandbox::allow_flags(&call, &rules, cache, &approvals::RealFs);
+                    if let Some(w) = self.gates.waiting.get_mut(dir) {
+                        w.flags = flags;
+                    }
+                }
+                let mut verdict = approvals::judge(&call, &rules, cache, sandboxed);
+                if let Verdict::DenyOnce { exact, .. } = &verdict {
+                    // the card was its repeat: the old hub's cache said so
+                    for e in exact {
+                        cache.note_denied_once(e);
+                    }
+                    verdict = approvals::judge(&call, &rules, cache, sandboxed);
+                }
+                match verdict {
+                    Verdict::Card { always, .. } => (always, vec![]),
+                    Verdict::Check { parts, keys } => {
+                        let tool = (call.tool != "bash").then(|| call.tool.clone());
+                        let always = Some(approvals::always_rules(&parts))
+                            .filter(|a| !a.is_empty())
+                            .or_else(|| parts.is_empty().then_some(tool).flatten().map(|t| vec![t]));
+                        (always, keys)
+                    }
+                    // a rule saved meanwhile covers it: it runs, the card closes
+                    Verdict::Allow { .. } | Verdict::DenyOnce { .. } => {
+                        self.resolve(dir, true, "");
+                        self.step(Input::ConfirmClose { card: id, res: "allowed".into() });
+                        return;
+                    }
+                }
+            }
+        };
+        if let Some(w) = self.gates.waiting.get_mut(dir) {
+            w.rerun = rerun.as_ref().map(|r| r.denial.clone());
+        }
+        let same = same_of(&call, rerun.is_some());
+        self.gates.cards.insert(
+            id,
+            GateCard {
+                same,
+                dirs: vec![dir.to_string()],
+                always,
+                keys,
+                tool: call.tool.clone(),
+                repo: call.repo.clone(),
+                summary: summary_of(&call),
+                rerun: rerun.map(|r| r.denial),
+            },
+        );
+        self.hub.set_on_you(name, true);
+        let snap = self.snapshot();
+        self.broadcast(&snap);
+    }
+}
+
+fn clip_n(rest: &str) -> String {
+    rest.split_whitespace().next().unwrap_or("").to_string()
 }
 
 #[cfg(test)]
@@ -862,8 +1079,27 @@ mod tests {
     /// brief 1e: "always" on a sandbox card saves `sandbox = false`.
     #[test]
     fn a_sandbox_card_saves_a_rule_outside_the_sandbox() {
-        let r = rule_of("bash", Path::new("/w/repo"), "cp *", true);
+        let r = rule_of("bash", Path::new("/w/repo"), "cp *", true, "card #3, t1");
+        assert_eq!(r.from.as_deref(), Some("card #3, t1"));
         assert_eq!((r.pattern.as_deref(), r.sandbox), (Some("cp *"), Some(false)));
-        assert_eq!(rule_of("bash", Path::new("/w/repo"), "cp *", false).sandbox, None);
+        assert_eq!(rule_of("bash", Path::new("/w/repo"), "cp *", false, "card #3").sandbox, None);
+    }
+
+    /// design §10: the gate an adopted REPL still waits in.
+    #[test]
+    fn a_restart_finds_the_open_gate() {
+        let g1 = r#"gate 1 {"tool":"bash","args":"ls","nonce":"a"}"#;
+        let g2 = r#"gate 2 {"tool":"bash","args":"npm publish","nonce":"b"}"#;
+        let wire = format!("obs: turn_started\n{g1}\ngate-done 1 allow\n{g2}\n");
+        let all = wire.len();
+        assert_eq!(open_gate(&wire, all).as_deref(), Some(&g2[5..]));
+        // the old hub never read it: the pump reads it again
+        assert_eq!(open_gate(&wire, all - g2.len() - 1), None);
+        // answered, but the old hub died before its gate-done
+        let done = format!("{wire}gate-done 2 allow\n");
+        assert_eq!(open_gate(&done, all), None);
+        assert_eq!(open_gate(&done, done.len()), None);
+        assert_eq!(open_gate("", 0), None);
+        assert_eq!(open_gate(&wire, all + 50).as_deref(), Some(&g2[5..]));
     }
 }
