@@ -4,7 +4,8 @@ the key bar's `⇧⇥ yolo`, shift+tab and its 3-second flash, the mode kept
 in config.toml, `/approvals`, a force push to main in auto: the tool row
 `? waiting for you`, the card in the inbox (main's view and a task's),
 its look (no "always" for a hard rule), a no with a note and its fold;
-a checker-off card with "always allow … here", allowed with `1`.
+a checker-off card for a network call (it asks even with the sandbox)
+with "always allow … here", allowed with `1`.
 
 SB_DUMP=<dir>: every screen checked is written there (designer's review).
 
@@ -89,7 +90,8 @@ def main():
         shot(t, "fold-no", sc)
         t.wait(" idle")
         # a task's call: the card shows in main's view and in the task's
-        t.typed("/new t1: {{bash: npm run build}}")
+        # a network call: it asks even when the sandbox contains the rest
+        t.typed("/new t1: {{bash: curl -s -m 1 http://127.0.0.1:9/}}")
         t.keys("Enter")
         sc = t.wait("t1 wants to run", timeout=60)
         shot(t, "card-in-main-view", sc)
@@ -98,11 +100,11 @@ def main():
         assert "t1 wants to run" in sc, sc
         shot(t, "card-in-task-view", sc)
         open_card(t, "t1")
-        sc = t.wait("always allow npm run build * here")
+        sc = t.wait("2 always allow ")
         t.wait("type why not, ⏎ says no")
         shot(t, "card-checker-off", sc)
         t.keys("1")
-        sc = t.wait("you allowed t1: npm run build")
+        sc = t.wait("you allowed t1: curl -s -m 1 http://127.0.0.1:9/")
         shot(t, "fold-allowed", sc)
 
 
