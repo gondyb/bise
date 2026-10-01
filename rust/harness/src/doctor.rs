@@ -347,6 +347,43 @@ fn rg() -> Check {
     }
 }
 
+/// pr-design §8: the hub follows PRs through gh (its login, never a
+/// token of bise's). `gh`: where it is; `logged_in`: `gh auth status`'s
+/// answer for the repo's host; `origin`: this folder's remote URL.
+pub(crate) fn github_check(gh: Option<&Path>, logged_in: Option<bool>, origin: Option<&str>) -> Check {
+    let repo = origin.and_then(switchboard::forge::repo_of_url);
+    let on_github = repo.as_ref().is_some_and(|r| r.host == "github.com") || (repo.is_some() && logged_in == Some(true));
+    let this = match (&repo, on_github) {
+        (Some(r), true) => format!("this repo's PRs: {}/{}/{}", r.host, r.owner, r.name),
+        _ => "this folder is not a GitHub repo".to_string(),
+    };
+    match (gh, logged_in) {
+        (None, _) if on_github => warn("github", format!("gh not found: {} are not followed", this.replace("this repo's PRs: ", "the PRs of ")), "`brew install gh`, then `gh auth login`"),
+        (None, _) => ok("github", "gh not found (only needed to follow PRs on GitHub)"),
+        (Some(p), Some(false)) if on_github => warn("github", format!("gh is not logged in ({}): PRs are not followed", p.display()), "`gh auth login` once"),
+        (Some(p), Some(false)) => ok("github", format!("gh not logged in ({}); {}", p.display(), this)),
+        (Some(p), _) => ok("github", format!("gh logged in ({}); {}", p.display(), this)),
+    }
+}
+
+fn github() -> Check {
+    let gh = tools_env::which("gh", &tools_path());
+    let origin = run("git", &["remote", "get-url", "origin"]);
+    let host = origin.as_deref().and_then(switchboard::forge::repo_of_url).map_or("github.com".to_string(), |r| r.host);
+    // the exit code only: gh's output names the token's scopes
+    let logged_in = gh.as_ref().map(|g| {
+        Command::new(g)
+            .args(["auth", "status", "--hostname", &host])
+            .env("GH_PROMPT_DISABLED", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    });
+    github_check(gh.as_deref(), logged_in, origin.as_deref())
+}
+
 /// BISE-302: inside tmux, ctrl+1-9 (open inbox item N) pass only with
 /// `extended-keys always`; elsewhere (or tmux already set): nothing.
 /// `tmux`: inside tmux, its `extended-keys` value when it answered.
@@ -688,6 +725,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
         migration(&home),
         git(),
         rg(),
+        github(),
         config,
         keys,
     ];
@@ -721,6 +759,26 @@ mod tests {
         assert!(old.fix.unwrap().contains("14.0"));
         assert_eq!(macos_check(Some("15.1"), "14.0", "x86_64", true).mark, Mark::Warn);
         assert_eq!(macos_check(None, "14.0", "arm64", false).mark, Mark::Warn);
+    }
+
+    #[test]
+    fn github_through_gh() {
+        let gh = Path::new("/opt/homebrew/bin/gh");
+        let gh_url = Some("https://github.com/o/r.git");
+        let c = github_check(Some(gh), Some(true), gh_url);
+        assert_eq!((c.mark, c.detail.as_str()), (Mark::Ok, "gh logged in (/opt/homebrew/bin/gh); this repo's PRs: github.com/o/r"));
+        let c = github_check(Some(gh), Some(false), gh_url);
+        assert_eq!(c.mark, Mark::Warn);
+        assert_eq!(c.fix.as_deref(), Some("`gh auth login` once"));
+        let c = github_check(None, None, gh_url);
+        assert_eq!((c.mark, c.detail.as_str()), (Mark::Warn, "gh not found: the PRs of github.com/o/r are not followed"));
+        // not a GitHub repo: nothing to fix
+        assert_eq!(github_check(None, None, None).mark, Mark::Ok);
+        let c = github_check(Some(gh), Some(false), Some("git@gitlab.com:o/r.git"));
+        assert_eq!((c.mark, c.detail.as_str()), (Mark::Ok, "gh not logged in (/opt/homebrew/bin/gh); this folder is not a GitHub repo"));
+        // GitHub Enterprise: a host gh is logged in to
+        let c = github_check(Some(gh), Some(true), Some("https://ghe.corp/o/r"));
+        assert!(c.detail.ends_with("this repo's PRs: ghe.corp/o/r"), "{}", c.detail);
     }
 
     #[test]

@@ -110,7 +110,9 @@ fn state_word(sb: &Sb, a: &Agent) -> (String, Color) {
 /// each right-aligned in 3 columns, then `ψ` when it has a worktree, 2
 /// columns between them; blank cells stay, so the rows line up. Ctrl
 /// held: its state word takes the time and % columns (8 wide), ψ stays.
-fn columns(app: &App, sb: &Sb, a: &Agent) -> Vec<Span<'static>> {
+/// In a worktree's box (`boxed`) no ψ column: the box says it
+/// (pr-design §4.1 rule 4), the name gets the 2 columns back.
+fn columns(app: &App, sb: &Sb, a: &Agent, boxed: bool) -> Vec<Span<'static>> {
     let d = Style::default().fg(dim());
     let psi = if place_label(a).is_some() { crate::theme::glyph(G_WORKTREE) } else { " " };
     let mut out = if crate::ctrlhint::words(app) {
@@ -121,7 +123,9 @@ fn columns(app: &App, sb: &Sb, a: &Agent) -> Vec<Span<'static>> {
         let fill = sb.usage_of(app, &a.name).map(|u| u.short()).unwrap_or_default();
         vec![Span::styled(format!(" {:>3}  {:>3}", time, fill), d)]
     };
-    out.push(Span::styled(format!("  {}", psi), d));
+    if !boxed {
+        out.push(Span::styled(format!("  {}", psi), d));
+    }
     out
 }
 
@@ -186,7 +190,7 @@ fn row(
 }
 
 /// `s` cut to `max` display columns, `…` at the cut.
-fn fit(s: &str, max: usize) -> String {
+pub(super) fn fit(s: &str, max: usize) -> String {
     if s.width() <= max {
         return s.to_string();
     }
@@ -222,7 +226,7 @@ pub(crate) fn place_label(a: &Agent) -> Option<String> {
 /// The row of live agent `a`, entry `i` of the panel, number `num`
 /// (0 main; blank after 9): ` N G name marks …… TTT  PPP  ψ ` (BISE-303:
 /// no model tag, no state word at rest, the glyph says it).
-fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize, boxed: bool) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
     // BISE-119: main's status sits in the same column as every agent's
@@ -259,7 +263,22 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     let bg = selected.then(selection_bg);
     // the name takes all the room left of the marks and the columns; it
     // is cut only there (BISE-109: no fixed cap)
-    let mut l = row(num, g, &a.name, name_style, marks, columns(app, sb, a), w, bg);
+    let cols = columns(app, sb, a, boxed);
+    let mut l = if boxed {
+        // in a box the columns stay where the other rows have them (ψ's
+        // column blank); a name that would be cut there takes those 3
+        // cells back (pr-design §4.1 rule 4)
+        let mut narrow = row(num, g, &a.name, name_style, marks.clone(), cols.clone(), w.saturating_sub(3), bg);
+        if narrow.spans.get(3).is_some_and(|s| s.content == a.name) {
+            let st = bg.map_or(Style::default(), |c| Style::default().bg(c));
+            narrow.spans.push(Span::styled("   ", st));
+            narrow
+        } else {
+            row(num, g, &a.name, name_style, marks, cols, w, bg)
+        }
+    } else {
+        row(num, g, &a.name, name_style, marks, cols, w, bg)
+    };
     // option held (ctrlhint.rs): ` 1 ` reads `⌥1 `, in the accent
     if let (Some(k), Some(first)) = (num.and_then(|n| crate::ctrlhint::number(app, n)), l.spans.first_mut()) {
         *first = Span::styled(format!("{k} "), first.style.fg(accent()));
@@ -268,14 +287,15 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
 }
 
 /// The live agents (main and the archived left out) by what the header
-/// counts: working, waiting, needs you, done; then the open cards
-/// (BISE-125). None: no agent and no card.
-fn counts(sb: &Sb) -> Option<[usize; 5]> {
+/// counts: working, waiting, needs you, done; the open PRs (pr-design
+/// §4: `↑ 2 PRs`, ctrl held); then the open cards (BISE-125). None: no
+/// agent and no card.
+fn counts(sb: &Sb) -> Option<[usize; 6]> {
     let live: Vec<&Agent> = sb.agents.iter().filter(|a| !a.main && !a.archived()).collect();
     if live.is_empty() && sb.cards.is_empty() {
         return None;
     }
-    let mut n = [0, 0, 0, 0, sb.cards.len()];
+    let mut n = [0, 0, 0, 0, super::places::open_prs(&sb.places), sb.cards.len()];
     for a in live {
         let k = if needs_you(sb, a) {
             2
@@ -295,23 +315,26 @@ fn counts(sb: &Sb) -> Option<[usize; 5]> {
 /// The header counts that fit in `room` columns (QA 14): all of them with
 /// their words when they fit (not `short`), else the numbers only; still
 /// too wide, the least important counts go first ("needs you" stays, then
-/// cards, working, waiting, done), shown in the §8 order. `gust` leads the
-/// working count (BISE-107). The open cards (`# 3 in the inbox`, dim) come last,
-/// so what waits is counted even when the panel is hidden (BISE-125).
+/// cards, working, waiting, done, PRs), shown in the §8 order. `gust` leads the
+/// working count (BISE-107). The open PRs (`↑ 2 PRs`) before the open
+/// cards (`# 3 in the inbox`, dim), which come last, so what waits is
+/// counted even when the panel is hidden (BISE-125).
 /// The panel numbers the items as the strip does (BISE-302).
-fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
+fn fit_counts(n: [usize; 6], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
     // (glyph, word, glyph color, text color): done's check is accent on
     // dim words (BISE-100)
+    let prs = if n[4] == 1 { "PR" } else { "PRs" };
     let parts = [
         (G_WORKING, "working", dim(), dim()),
         (G_WAITING, "waiting", dim(), dim()),
         (G_NEEDS_YOU, "needs you", accent(), accent()),
         (crate::theme::done_glyph(), "done", accent(), dim()),
+        (crate::theme::pr_glyph(), prs, dim(), dim()),
         ("#", "in the inbox", dim(), dim()),
     ];
     let spans = |keep: &[usize], words: bool| -> Vec<Span<'static>> {
         let mut out: Vec<Span<'static>> = Vec::new();
-        for k in (0..5).filter(|k| keep.contains(k)) {
+        for k in (0..6).filter(|k| keep.contains(k)) {
             if !out.is_empty() {
                 out.push(Span::styled(" · ", Style::default().fg(dim())));
             }
@@ -326,7 +349,7 @@ fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -
         }
         out
     };
-    let by_importance: Vec<usize> = [2, 4, 0, 1, 3].into_iter().filter(|&k| n[k] > 0).collect();
+    let by_importance: Vec<usize> = [2, 5, 0, 1, 3, 4].into_iter().filter(|&k| n[k] > 0).collect();
     let fits = |out: &Vec<Span<'static>>| out.iter().map(|s| s.content.width()).sum::<usize>() <= room;
     if !short {
         let out = spans(&by_importance, true);
@@ -416,14 +439,24 @@ impl Sb {
         let fitted = |room: usize| -> Vec<Span<'static>> {
             match counts(self) {
                 None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],
-                Some(n) if !short && !words => fit_counts([0, 0, 0, 0, n[4]], short, room, gust),
+                Some(n) if !short && !words => fit_counts([0, 0, 0, 0, 0, n[5]], short, room, gust),
+                // the PRs only with ctrl held (pr-design §4: nothing new at rest)
+                Some(n) if !words => fit_counts([n[0], n[1], n[2], n[3], 0, n[5]], short, room, gust),
                 Some(n) => fit_counts(n, short, room, gust),
             }
         };
         // the path only beside the counts as they are when nothing is short
         let whole = fitted(usize::MAX);
         let whole_w: usize = whole.iter().map(|s| s.content.width()).sum();
-        let path = home_path(&self.workspace);
+        let mut path = home_path(&self.workspace);
+        // ctrl held: what happens to the work, after the folder (dev-flow §7)
+        let flow = super::places::flow_words(&self.flow);
+        if words && !flow.is_empty() && !path.is_empty() {
+            let with = format!("{} · {}", path, flow);
+            if with.width() + 3 + whole_w <= room {
+                path = with;
+            }
+        }
         if path.is_empty() || path.width() + 3 + whole_w > room {
             return fitted(room);
         }
@@ -451,41 +484,83 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let w = area.width as usize;
     let title = Line::from(Span::styled(format!(" {}", PANEL_TITLE), Style::default().fg(text())));
     let mut lines: Vec<Line> = Vec::new();
+    // pr-design §4.1: the rail of each row of a worktree's box, drawn in
+    // the blank column left of the panel ("" = none)
+    let mut rails: Vec<&'static str> = Vec::new();
+    // the boxes' rows [start, end): never split by the scroll
+    let mut boxes: Vec<(usize, usize)> = Vec::new();
     let numbers = sb.numbers();
-    let nav = sb.nav();
-    let live = nav.iter().filter(|a| !a.archived()).count();
+    let held = crate::ctrlhint::words(app);
     let mut owners: Vec<(usize, Hit)> = Vec::new();
     // the first row of the selected entry (the panel scrolls to it)
     let mut sel_row = None;
-    for (i, a) in nav.iter().take(live).enumerate() {
-        if sb.selected == Some(i) {
-            sel_row = Some(lines.len());
-        }
-        owners.push((lines.len(), Hit::Agent(a.name.clone())));
-        let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
-        lines.push(agent_row(app, sb, a, i, n, w));
-        // the selected agent: what it is for and its last note, under its row
-        if sb.selected == Some(i) && !a.main {
-            for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
-                owners.push((lines.len(), Hit::Agent(a.name.clone())));
-                lines.push(Line::from(Span::styled(
-                    format!("     {}", fit(t, w.saturating_sub(6))),
-                    Style::default().fg(dim()),
-                )));
+    let mut i = 0;
+    for (place, agents) in sb.blocks() {
+        let start = lines.len();
+        if let Some(p) = place {
+            // one blank row between blocks; the border and the lid are
+            // git's, never a row (no hit)
+            lines.push(Line::from(""));
+            rails.push("");
+            let mut border = p.border(w + 1, held);
+            border.spans.remove(0);
+            border.spans.insert(0, Span::styled("─ ", Style::default().fg(rule())));
+            lines.push(border);
+            rails.push("╭");
+            if let Some(lid) = p.lid_line(w + 1).filter(|_| held) {
+                let mut lid = lid;
+                lid.spans.remove(0);
+                lines.push(lid);
+                rails.push("│");
             }
         }
+        for a in agents {
+            if sb.selected == Some(i) {
+                sel_row = Some(lines.len());
+            }
+            owners.push((lines.len(), Hit::Agent(a.name.clone())));
+            let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
+            lines.push(agent_row(app, sb, a, i, n, w, place.is_some()));
+            rails.push(if place.is_some() { "│" } else { "" });
+            // the selected agent: what it is for and its last note, under its row
+            if sb.selected == Some(i) && !a.main {
+                for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
+                    owners.push((lines.len(), Hit::Agent(a.name.clone())));
+                    lines.push(Line::from(Span::styled(
+                        format!("     {}", fit(t, w.saturating_sub(6))),
+                        Style::default().fg(dim()),
+                    )));
+                    rails.push(if place.is_some() { "│" } else { "" });
+                }
+            }
+            i += 1;
+        }
+        if place.is_some() {
+            // the last row closes the box; a box with no agent left (its
+            // PR still open) closes on its own row
+            if rails.last() == Some(&"╭") {
+                lines.push(Line::from(Span::styled("  no agent", Style::default().fg(faint()))));
+                rails.push("╰");
+            } else if let Some(r) = rails.last_mut() {
+                *r = "╰";
+            }
+            boxes.push((start + 1, lines.len()));
+        }
     }
+    let live = i;
+    let before = lines.len();
     cards_lines(app, w, &mut lines, &mut owners, &mut sel_row);
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
+    rails.resize(lines.len().max(before), "");
     // the body under the title: scrolled to keep the selection in view;
     // what does not fit below ends in `+ {n} more`
     let h = (area.height as usize).saturating_sub(2);
-    let (top, more) = window(&lines, &owners, sel_row, h, sb.archived_open, sb.archived().len());
-    let mut body: Vec<Line> = lines.into_iter().skip(top).take(if more.is_some() { h - 1 } else { h }).collect();
+    let (top, shown, more) = window(lines.len(), &owners, &boxes, sel_row, h, sb.archived_open, sb.archived().len());
+    let rails: Vec<&'static str> = rails.into_iter().skip(top).take(shown).collect();
+    let mut body: Vec<Line> = lines.into_iter().skip(top).take(shown).collect();
     if let Some(n) = more {
         body.push(Line::from(Span::styled(format!(" + {} more", n), Style::default().fg(dim()))));
     }
-    let shown = body.len() - usize::from(more.is_some());
     if let Ok(mut hits) = sb.panel_hits.try_borrow_mut() {
         hits.area = area;
         hits.rows = owners
@@ -502,32 +577,60 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let mut all = vec![title, Line::from("")];
     all.extend(body);
     frame.render_widget(Paragraph::new(all), area);
+    // the boxes' rails, in the blank column left of the panel (the
+    // frame's rule is 2 columns left; unframed, the feed's gap)
+    if area.x > 0 {
+        let buf = frame.buffer_mut();
+        let st = Style::default().fg(rule());
+        for (k, r) in rails.iter().enumerate().filter(|(_, r)| !r.is_empty()) {
+            let y = area.y + 2 + k as u16;
+            if y < area.bottom() && buf.area.contains((area.x - 1, y).into()) {
+                buf[(area.x - 1, y)].set_symbol(r).set_style(st);
+            }
+        }
+    }
     // BISE-290: its text selects, copies and has links
     crate::textlayer::text(area);
 }
 
-/// The first body row shown in `h` rows, and the `+ {n} more` count
-/// when rows are left below: the agents under the window (a folded
-/// archived section counts its agents).
+/// The first body row shown in `h` rows, how many rows show, and the `+
+/// {n} more` count when rows are left below: the agents under the
+/// window (a folded archived section counts its agents). A box
+/// (`boxes`, rows [start, end)) never splits (pr-design §4.1 rule 6):
+/// cut at the top it goes up whole (down whole when it holds the
+/// selection), cut at the bottom it goes under `+ n more` whole; a box
+/// taller than the window splits.
 fn window(
-    lines: &[Line],
+    len: usize,
     owners: &[(usize, Hit)],
+    boxes: &[(usize, usize)],
     sel_row: Option<usize>,
     h: usize,
     archived_open: bool,
     archived: usize,
-) -> (usize, Option<usize>) {
-    if lines.len() <= h || h < 2 {
-        return (0, None);
+) -> (usize, usize, Option<usize>) {
+    if len <= h || h < 2 {
+        return (0, len, None);
     }
     // the selection (and the row under it) stays in view, over the
     // `+ n more` row
-    let top = sel_row.map_or(0, |r| (r + 3).saturating_sub(h));
-    if top + h >= lines.len() {
-        // the end of the list fits: no `+ n more`
-        return (lines.len() - h, None);
+    let mut top = sel_row.map_or(0, |r| (r + 3).saturating_sub(h)).min(len - h);
+    let cut = |at: usize| boxes.iter().copied().find(|(s, e)| *s < at && at < *e);
+    if let Some((s, e)) = cut(top) {
+        let holds_sel = sel_row.is_some_and(|r| r >= s && r < e);
+        top = if holds_sel { s } else { e };
     }
-    let end = top + h - 1;
+    if top + h >= len {
+        // the end of the list fits: no `+ n more`
+        return (top, len - top, None);
+    }
+    let mut end = top + h - 1;
+    if let Some((s, _)) = cut(end) {
+        // a box that starts after a blank row: the blank goes too
+        if s > top + 1 {
+            end = s - 1;
+        }
+    }
     let mut below: Vec<&Hit> = Vec::new();
     for (r, hit) in owners {
         if *r >= end && !below.contains(&hit) {
@@ -544,9 +647,10 @@ fn window(
         })
         .sum::<usize>();
     if n == 0 {
-        return (lines.len() - h, None);
+        let top = len - h;
+        return (top, h, None);
     }
-    (top, Some(n))
+    (top, end - top, Some(n))
 }
 
 /// The cards section, under the live agents (BISE-125): a title row
@@ -787,13 +891,24 @@ pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
         return crate::chrome::Who::default();
     };
     let others: Vec<&str> = sb.agents.iter().filter(|x| !x.archived()).map(|x| x.model.as_str()).collect();
+    // its worktree (pr-design §4): the branch, who else is there, the PR
+    let box_of = sb.place_of(a);
     crate::chrome::Who {
         model: if a.model.is_empty() { String::new() } else { crate::models::long_name(&a.model) },
         effort: a.effort.clone(),
         tag: crate::models::tag(&a.model, &a.effort, &others),
-        place: place_label(a),
+        place: box_of.and_then(|p| p.branch.clone()).or_else(|| place_label(a)),
         mode: sb.approvals.mode.clone(),
         flash: crate::keybar::flashing(&sb.approvals),
+        with: box_of
+            .map(|p| p.agents.iter().filter(|n| **n != a.name && sb.agent(n).is_some_and(|x| !x.archived())).cloned().collect())
+            .unwrap_or_default(),
+        pr: box_of.and_then(|p| p.live_pr()).map(|pr| crate::chrome::WhoPr {
+            number: pr.number,
+            url: pr.url.clone(),
+            style: pr.mark_style(),
+            words: if crate::ctrlhint::words(app) { pr.words(Style::default().fg(dim())) } else { Vec::new() },
+        }),
     }
 }
 
@@ -1680,7 +1795,7 @@ mod chrome_tests {
     /// the §8 order; the words go before the counts do.
     #[test]
     fn a_narrow_header_keeps_needs_you_first() {
-        let n = [3, 1, 1, 2, 0];
+        let n = [3, 1, 1, 2, 0, 0];
         let text = |room| fit_counts(n, false, room, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let all = text(200);
         assert!(all.contains("working") && all.contains("needs you"), "{all}");
@@ -2309,7 +2424,7 @@ mod cards_tests {
         assert!(text(200, true).ends_with("· # 3"), "{:?}", text(200, true));
         // short on room: needs you, then the cards, before the rest
         assert_eq!(text(14, true), format!("{} 1 · # 3", G_NEEDS_YOU));
-        let one = [0, 0, 0, 0, 1];
+        let one = [0, 0, 0, 0, 0, 1];
         let s: String = fit_counts(one, false, 100, &[]).iter().map(|s| s.content.to_string()).collect();
         assert_eq!(s, "# 1 in the inbox");
     }

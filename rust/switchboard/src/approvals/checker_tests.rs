@@ -25,7 +25,6 @@ fn call(tool: &str, args: Value) -> Call {
         home: "/h".into(),
         bise: "/h/.bise".into(),
         edit_tool: "edit".into(),
-        flow: None,
     }
 }
 

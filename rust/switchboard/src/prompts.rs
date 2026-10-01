@@ -38,9 +38,8 @@ pub fn temp_line(tmp: &str) -> String {
 }
 
 /// The role of `main` (appended to its system prompt); `tmp`: its temp
-/// folder (main writes its briefs there); `flow`: its Flow section
-/// (`devflow::main_section`, dev-flow §6).
-pub fn main_role(workspace: &str, tmp: &str, flow: &str) -> String {
+/// folder (main writes its briefs there).
+pub fn main_role(workspace: &str, tmp: &str) -> String {
     format!(
         "# Your role: `main`, the agent the user talks to\n\n\
 You are `main`, the permanent orchestrator of the bise workspace `{ws}`. \
@@ -71,35 +70,32 @@ Rules:\n\
 - When you forward with `--expect-reply`, the task's answer comes back by itself as an agent_message (`auto=\"true\"` when it is the end of its turn). Do not poll.\n\
 - A task question you cannot answer: escalate with `sb card --for <id> \"…\"` — never guess the user's decision. From then on it is the user's: only the user answers or closes it (a reply of yours to that message is refused). When it became moot (the task stopped, the user answered you in chat), take it back with `sb card --withdraw <card> \"<why>\"`; never withdraw to answer in the user's place.\n\
 - There is no undo: a task may already have acted on what it received. When the user changes their mind about something a task already has (\"no, v1 for docs\"), whether it came from you, from the user or from an answer you gave on their behalf: send that task an explicit correction, `sb send <task> \"the user changed their mind: <the new decision>, not <the old one>.\"`, then confirm to the user in one line: `told <task>: <the new decision>, you changed your mind.` Never offer or promise to undo or cancel a message.\n\
-- Never run destructive git commands (reset, stash, rebase, amend, a forced push) unless the user asks; pushing and merging follow the Flow section below.\n\
-- Keep your replies short (see how you talk to the user above).\n\n\
-{flow}",
+- Worktrees: use `--worktree` ONLY when the user explicitly asks for an isolated worktree for that task. You may suggest one as a question, never decide it.\n\
+- Never push, merge or run destructive git commands unless the user asks.\n\
+- Keep your replies short (see how you talk to the user above).",
         ws = workspace,
         temp = temp_line(tmp),
         cmds = sb_commands(Who::Everyone),
         main_cmds = cli::command_list(&[Who::Main]),
         msgs = MESSAGES,
-        tone = TONE,
-        flow = flow.trim()
+        tone = TONE
     )
 }
 
-/// A task's place line when the flow is not known (`devflow::task_place`
-/// with no flow): today's words.
-pub fn plain_place(agent: &Agent) -> String {
-    let branch = agent.ws.branch.clone().unwrap_or_default();
-    let p = crate::devflow::TaskPlace {
-        path: &agent.ws.path,
-        branch: (agent.ws.mode == Mode::Worktree).then_some(branch.as_str()),
-        others: &[],
-    };
-    crate::devflow::task_place(None, &p, None)
-}
-
 /// The role of a task (appended to its system prompt); `tmp`: its temp
-/// folder; `place`: its working-directory line, by flow and place
-/// (`devflow::task_place`, dev-flow §6).
-pub fn task_role(agent: &Agent, tmp: &str, place: &str) -> String {
+/// folder.
+pub fn task_role(agent: &Agent, tmp: &str) -> String {
+    let place = match agent.ws.mode {
+        Mode::Worktree => format!(
+            "`{}` — an isolated git worktree on branch `{}`. Work only there. You may commit on your branch; never push unless the user asks.",
+            agent.ws.path,
+            agent.ws.branch.clone().unwrap_or_default()
+        ),
+        Mode::Shared => format!(
+            "`{}` — the shared workspace (the user and other tasks work there too). Do not revert changes you did not make.",
+            agent.ws.path
+        ),
+    };
     format!(
         "# Your role: task `{name}` in a bise workspace\n\n\
 You are the sub-agent of the task `{name}`. `main` is the orchestrator{parent}; the other tasks are your peers. \
@@ -122,7 +118,7 @@ Rules:\n\
             Some(USER) => " (the user created this task directly)",
             _ => " and your parent",
         },
-        place = place.trim(),
+        place = place,
         temp = temp_line(tmp),
         cmds = sb_commands(Who::Task),
         msgs = MESSAGES,
@@ -223,8 +219,6 @@ pub fn tagged(m: &Msg, relation: &str) -> String {
 mod tests {
     use super::*;
 
-    const FLOW: &str = "## Flow\n\n- (the flow section)";
-
     fn msg() -> Msg {
         Msg {
             id: 42,
@@ -278,10 +272,10 @@ mod tests {
     fn a_task_knows_its_origin_is_context_only() {
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let r = task_role(&st.agents["t"], "/t", &plain_place(&st.agents["t"]));
+        let r = task_role(&st.agents["t"], "/t");
         assert!(r.contains("sb inspect main --origin"));
         // BISE-233: past work is searchable
-        for r in [r.as_str(), main_role("/w", "/t", FLOW).as_str()] {
+        for r in [r.as_str(), main_role("/w", "/t").as_str()] {
             assert!(r.contains("refers to past work") && r.contains("sb history"));
         }
         assert!(r.contains("sb show <agent>#<pos>"));
@@ -296,15 +290,15 @@ mod tests {
         st.test_task("t", "");
         let line = "Your temp folder is `/h/agents/t/tmp` (`$TMPDIR`): use it for scratch files, never `/tmp`. It is deleted when you are dropped.";
         assert_eq!(temp_line("/h/agents/t/tmp"), line);
-        for r in [task_role(&st.agents["t"], "/h/agents/t/tmp", &plain_place(&st.agents["t"])), main_role("/w", "/h/agents/t/tmp", FLOW)] {
+        for r in [task_role(&st.agents["t"], "/h/agents/t/tmp"), main_role("/w", "/h/agents/t/tmp")] {
             assert_eq!(r.matches(line).count(), 1);
         }
-        assert!(task_role(&st.agents["t"], "/x", &plain_place(&st.agents["t"])).contains("Your bash tool already runs there.\nYour temp folder is `/x`"));
+        assert!(task_role(&st.agents["t"], "/x").contains("Your bash tool already runs there.\nYour temp folder is `/x`"));
     }
 
     #[test]
     fn main_corrects_by_talking_never_by_undo() {
-        let r = main_role("/w", "/t", FLOW);
+        let r = main_role("/w", "/t");
         assert!(r.contains("There is no undo"));
         assert!(r.contains("the user changed their mind: <the new decision>, not <the old one>."));
         assert!(r.contains("told <task>: <the new decision>, you changed your mind."));
@@ -313,7 +307,7 @@ mod tests {
 
     #[test]
     fn main_speaks_as_i_routes_summarizes_and_says_why() {
-        let r = main_role("/w", "/t", FLOW);
+        let r = main_role("/w", "/t");
         assert!(r.contains("Speak as \"i\""));
         assert!(r.contains("on it: auth-fix takes the safari bug, release takes the note."));
         assert!(r.contains("ONE summary line for the whole burst"));
@@ -331,7 +325,7 @@ mod tests {
         assert!(TONE.ends_with("- Reply in the user's language."));
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let (task, main) = (task_role(&st.agents["t"], "/t", &plain_place(&st.agents["t"])), main_role("/w", "/t", FLOW));
+        let (task, main) = (task_role(&st.agents["t"], "/t"), main_role("/w", "/t"));
         for r in [&task, &main] {
             assert_eq!(r.matches(TONE).count(), 1);
             assert_eq!(r.matches("Reply in the user's language").count(), 1);
@@ -358,7 +352,7 @@ mod tests {
     fn the_prompts_list_the_cli_commands() {
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let (task, main) = (task_role(&st.agents["t"], "/t", &plain_place(&st.agents["t"])), main_role("/w", "/t", FLOW));
+        let (task, main) = (task_role(&st.agents["t"], "/t"), main_role("/w", "/t"));
         for c in cli::COMMANDS {
             let line = format!("- `{}` — {}", c.syntax, c.doc);
             assert_eq!(task.contains(&line), c.who != Who::Main, "task: {}", c.syntax);

@@ -269,7 +269,8 @@ fn the_card_view_takes_the_history_place() {
     assert!(rows[rel + 1].contains("│ ┃ "), "a blank bar row on top: {}", rows[rel + 1]);
     let t = row_of(&rows, "┃ ? perf asks");
     assert_eq!(t, rel + 2);
-    assert!(rows[t].contains("2 of 3 · 6m │"), "{}", rows[t]);
+    // its age one tinted column from the tint's edge, then the box's gap
+    assert!(rows[t].contains("2 of 3 · 6m  │"), "{}", rows[t]);
     assert!(rows[t + 1].contains("┃ the hero image is 4.2 MB. compress it, or lazy-load it?"), "{}", rows[t + 1]);
     let o = row_of(&rows, "┃ 1 compress it (webp, ~300 kB)   2 both: compress, and lazy-load below the fold");
     assert!(rows[o + 1].contains("┃ or type your answer, ⏎ sends it"), "{}", rows[o + 1]);
@@ -279,6 +280,8 @@ fn the_card_view_takes_the_history_place() {
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
     let x = col_of(&rows[t], "? perf");
     assert_eq!(term.backend().buffer()[(x, t as u16)].bg, theme::item_tint());
+    let pad = col_of(&rows[t], "6m  │") + 2;
+    assert_eq!(term.backend().buffer()[(pad, t as u16)].bg, theme::item_tint(), "the padding after the age is tinted");
     assert!(!rows.iter().any(|r| r.contains('▸')), "nothing highlighted on open");
     assert!(rows.iter().any(|r| r.contains("you → ? perf · your answer")), "{}", rows.join("\n"));
     assert_eq!(bar(&app), "1-2 answer   ←→ choose   ↑↓ other items   ctrl+o full screen   esc back to your message");

@@ -19,7 +19,6 @@ mod versions;
 use repl::{adopt, adoptable, busy_at, kill_pid, supervise};
 use versions::version_allowed;
 use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
-use crate::devflow;
 use crate::model::{Agent, Lifecycle, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
@@ -246,6 +245,9 @@ struct Shell {
     gates: gate::Gates,
     /// `sb land`'s line: one land at a time per target ref (dev-flow §5).
     lands: crate::land::Queue,
+    /// The PR poller (pr-design §7, `forge::poll`), on its own thread;
+    /// its answers come back as `Input::Prs`.
+    prs: Option<crate::forge::poll::Poller>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -860,24 +862,6 @@ impl Shell {
             }
             Effect::AskRole { dir, key, request } => self.ask_role(dir, key, request),
             Effect::Confirm { card, agent: _, text } => self.on_confirm(card, &text),
-            Effect::Flow { client, token, set } => {
-                let (ok, text) = self.flow_cmd(set);
-                if let Some(s) = client.and_then(|c| self.clients.get_mut(&c)) {
-                    write_json(s, &json!({"ev": "notice", "text": text}));
-                }
-                if let Some(mut s) = token.and_then(|t| self.replies.remove(&t)) {
-                    let body = if ok {
-                        json!({"ok": true, "text": text})
-                    } else {
-                        json!({"ok": false, "error": text})
-                    };
-                    write_json(&mut s, &body);
-                }
-                if ok && set.is_some() {
-                    let snap = self.snapshot();
-                    self.broadcast(&snap);
-                }
-            }
             Effect::Choose { client, agent, model, effort, default } => {
                 let text = self.choose(&agent, model, effort, default);
                 if let Some(s) = self.clients.get_mut(&client) {
@@ -887,92 +871,47 @@ impl Shell {
                 self.broadcast(&snap);
                 self.switch_idle_repls();
             }
+            Effect::Pr(e) => log_line(&self.opts.paths, &crate::forge::log_line(&e)),
         }
     }
 
-    /// The repo's flow now (dev-flow §2): `[flow]` of the config, and
-    /// the last detection (`detect_flow`'s cache). None: neither yet.
-    fn flow_now(&self) -> Option<devflow::Flow> {
-        let cfg = crate::flow::FlowConfig::load(&self.opts.paths);
-        devflow::resolve(&cfg, devflow::read_cache(&self.opts.paths.state).as_ref())
-    }
-
-    /// dev-flow §2: detect the repo's flow off the hub's loop (git, and
-    /// gh for a GitHub remote: the network), cached next to the state
-    /// for the prompts and `/flow`. At the boot, and again on `/flow`.
-    fn detect_flow(&self) {
-        let (repo, state) = (self.opts.paths.workspace.clone(), self.opts.paths.state.clone());
-        std::thread::spawn(move || {
-            let d = devflow::detect(&devflow::GitProbe { repo });
-            devflow::write_cache(&state, &d);
+    /// The PR poller (pr-design §7): started once, off the loop (it
+    /// finds gh and the repo's forge on its thread); no forge, no asks.
+    fn start_prs(&mut self) {
+        let ws = self.opts.paths.workspace.clone();
+        let bin = self.opts.paths.bin_dir();
+        let log_paths = self.opts.paths.clone();
+        let tx = self.tx.clone();
+        let setup = Box::new(move || {
+            let gh = crate::forge::github::GitHub::find(&crate::tools_env::hub_agent_path(&bin));
+            let url = crate::worktree::git(&ws, &["remote", "get-url", "origin"]).ok()?;
+            let Some(repo) = crate::forge::github::detect(&url, gh.as_ref()) else {
+                log_line(&log_paths, "PRs: origin is not on GitHub, not followed");
+                return None;
+            };
+            log_line(
+                &log_paths,
+                &format!("PRs: following {}/{} on {}{}", repo.owner, repo.name, repo.host, if gh.is_none() { " (gh not found yet)" } else { "" }),
+            );
+            let forge: Box<dyn crate::forge::Forge> = match gh {
+                Some(g) => Box::new(g),
+                None => Box::new(crate::forge::github::GitHub { gh: "gh".into() }),
+            };
+            Some(crate::forge::poll::Watcher::new(repo, forge, Box::new(crate::forge::poll::RepoGit { workspace: ws })))
         });
+        let sink = Box::new(move |r| {
+            let _ = tx.send(Msg::In(Input::Prs(r)));
+        });
+        self.prs = Some(crate::forge::poll::Poller::start(setup, sink));
     }
 
-    /// The commit message style of the repo, from its last 50 subjects.
-    fn commit_style(&self) -> Option<String> {
-        let out = Command::new("git")
-            .args(["log", "-50", "--format=%s"])
-            .current_dir(&self.opts.paths.workspace)
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())?;
-        let text = String::from_utf8_lossy(&out.stdout).into_owned();
-        devflow::commit_style(&text.lines().collect::<Vec<_>>())
-    }
-
-    /// `/flow`, `sb flow` (dev-flow §2, §7): show the flow and why, or
-    /// save a switch (refused to trunk while the branch is protected).
-    /// (ok, the text).
-    fn flow_cmd(&mut self, set: Option<crate::flow::FlowMode>) -> (bool, String) {
-        let now = self.flow_now();
-        let Some(to) = set else {
-            // shown from the cache; a fresh detection for the next time
-            self.detect_flow();
-            let mut text = devflow::show(now.as_ref());
-            if let Some(f) = now.as_ref().filter(|f| f.source == devflow::Source::Suggested) {
-                text.push_str(&format!(
-                    "\nnot saved: ask the user once (`sb card`), then save the answer with `sb flow pr|trunk`. the question:\n{}",
-                    devflow::question(f)
-                ));
-            }
-            return (true, text);
-        };
-        match devflow::switch(now.as_ref(), to) {
-            Err(e) => (false, e),
-            Ok(said) => match crate::flow::save_mode(&self.opts.paths, to) {
-                Ok(()) => {
-                    log_line(&self.opts.paths, &format!("flow saved: {}", to.as_str()));
-                    self.hub.flow = Some(to);
-                    (true, said)
-                }
-                Err(e) => (false, format!("flow not saved: {e}")),
-            },
+    /// Tell the poller the branches to follow (it sends nothing when
+    /// they did not change).
+    fn plan_prs(&mut self) {
+        let plan = crate::forge::poll::Plan { watches: self.hub.pr_watches(), clients: self.hub.has_clients() };
+        if let Some(p) = self.prs.as_mut() {
+            p.plan(plan);
         }
-    }
-
-    /// The role of `a` (its system prompt's end), with the repo's flow
-    /// (dev-flow §6).
-    fn role_of(&self, a: &Agent, tmp: &str) -> String {
-        let flow = self.flow_now();
-        let style = self.commit_style();
-        if a.is_main {
-            let section = devflow::main_section(flow.as_ref(), style.as_deref());
-            return prompts::main_role(&self.hub.workspace, tmp, &section);
-        }
-        let id = a.ws.place_id(&a.dir);
-        let others: Vec<String> = crate::place::places(&self.hub.st, &self.hub.prs)
-            .into_iter()
-            .find(|p| p.id == id)
-            .map(|p| p.agents.into_iter().filter(|n| *n != a.name).collect())
-            .unwrap_or_default();
-        let branch = a.ws.branch.clone().unwrap_or_default();
-        let place = devflow::TaskPlace {
-            path: &a.ws.path,
-            branch: (a.ws.mode == crate::model::Mode::Worktree).then_some(branch.as_str()),
-            others: &others,
-        };
-        prompts::task_role(a, tmp, &devflow::task_place(flow.as_ref(), &place, style.as_deref()))
     }
 
     /// One role-line call in a thread (BISE-126): never waits in the
@@ -1124,7 +1063,11 @@ impl Shell {
         // the approvals mode, read by the runtime before each gated call
         self.write_mode_file(&dir);
         let tmp_s = tmp.to_string_lossy().into_owned();
-        let role = self.role_of(&a, &tmp_s);
+        let role = if a.is_main {
+            prompts::main_role(&self.hub.workspace, &tmp_s)
+        } else {
+            prompts::task_role(&a, &tmp_s)
+        };
         write_logged(&self.opts.paths, &adir.join("role.md"), &role);
         if !adir.join("context.txt").exists() {
             let _ = std::fs::write(adir.join("context.txt"), "");
@@ -1912,6 +1855,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         paths: paths.clone(),
         config: Config::load(&paths),
         log: Box::new(move |s| log_line(&log_paths, s)),
+        merged: BTreeMap::new(),
     };
     // the checker (approvals-design.md §4): a chat model in the role runs
     // through repl-live's one-shot, like the role lines
@@ -1960,6 +1904,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             runner,
         ),
         lands: crate::land::Queue::default(),
+        prs: None,
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -2015,8 +1960,6 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     if !sh.reload_id.is_empty() {
         log_line(&paths, &format!("reload {}: every REPL relaunches at its next idle", sh.reload_id));
     }
-    // dev-flow §2: the repo's flow, detected off the loop (gh may be slow)
-    sh.detect_flow();
     sh.booting = true;
     sh.step(Input::Boot);
     sh.booting = false;
@@ -2039,6 +1982,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     }
     sh.down = sh.down_dirs();
     sh.reap_procs(None);
+    sh.start_prs();
     crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;
@@ -2055,6 +1999,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     sh.check_starts();
                     sh.switch_idle_repls();
                     sh.announce_update();
+                    sh.plan_prs();
                 }
             }
             Msg::ReplConnected {

@@ -62,11 +62,6 @@ pub enum UserCmd {
     Reasoning {
         effort: Option<String>,
     },
-    /// `/flow [pr|trunk]` (dev-flow §7): show the repo's flow and why, or
-    /// switch it (saved in `.switchboard/config.toml`).
-    Flow {
-        set: Option<crate::flow::FlowMode>,
-    },
     Help,
     Invalid(String),
 }
@@ -277,14 +272,6 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             [e] => UserCmd::Reasoning { effort: Some(e.to_ascii_lowercase()) },
             _ => UserCmd::Invalid("usage: /reasoning [<effort>]".into()),
         },
-        "/flow" => match words.as_slice() {
-            [] => UserCmd::Flow { set: None },
-            [m] => match crate::devflow::parse_mode(m) {
-                Ok(m) => UserCmd::Flow { set: Some(m) },
-                Err(e) => UserCmd::Invalid(e),
-            },
-            _ => UserCmd::Invalid("usage: /flow [pr|trunk]".into()),
-        },
         "/help" => UserCmd::Help,
         _ => UserCmd::Passthrough(line.to_string()),
     }
@@ -293,16 +280,6 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn slash_flow() {
-        use crate::flow::FlowMode;
-        assert_eq!(parse("/flow", MAIN), UserCmd::Flow { set: None });
-        assert_eq!(parse("/flow pr", "docs"), UserCmd::Flow { set: Some(FlowMode::Pr) });
-        assert_eq!(parse("/flow trunk", MAIN), UserCmd::Flow { set: Some(FlowMode::Trunk) });
-        assert_eq!(parse("/flow nope", MAIN), UserCmd::Invalid("usage: /flow [pr|trunk]".into()));
-        assert!(matches!(parse("/flow pr trunk", MAIN), UserCmd::Invalid(_)));
-    }
 
     #[test]
     fn model_and_reasoning() {

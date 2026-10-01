@@ -109,11 +109,6 @@ pub const COMMANDS: &[CmdDoc] = &[
         Who::Main,
         "take back your own card when it became moot (the task stopped, the user answered you in chat); the user sees it withdrawn with your why, and the question is yours again. Never to answer in the user's place.",
     ),
-    cmd(
-        "sb flow [pr|trunk]",
-        Who::Main,
-        "how this repo ships code: PRs or straight to main, why, and the question to ask the user when it is not set; with `pr` or `trunk`, save the user's answer (never your own pick).",
-    ),
     cmd("sb rename <task> <new-name>", Who::Main, "rename a task (unique name; the old name still works)."),
     cmd(
         "sb restore <task>",
@@ -407,17 +402,6 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             );
             req.insert("note".into(), json!(str_of(&o, "note")));
         }
-        "flow" => {
-            let (pos, _) = parse_args(rest, &[], &[])?;
-            match pos.as_slice() {
-                [] => {}
-                [m] => {
-                    crate::devflow::parse_mode(m).map_err(|_| "usage: sb flow [pr|trunk]".to_string())?;
-                    req.insert("set".into(), json!(m));
-                }
-                _ => return Err("usage: sb flow [pr|trunk]".into()),
-            }
-        }
         "worktree" => {
             // BISE-136: gate.sh new/done tell the hub where the agent works
             let (pos, _) = parse_args(rest, &[], &[])?;
@@ -612,7 +596,6 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         "rename" => format!("renamed: now @{} (the old name still works)", s("name")),
         "restore" => format!("@{} restored", s("name")),
         "isolate" => format!("@{} now works in its own git worktree", s("name")),
-        "flow" => s("text"),
         "worktree" if s("path").is_empty() => "the hub knows you work in your own workspace again".to_string(),
         "worktree" => format!("the hub knows you work in {}", s("path")),
         _ => "ok".to_string(),

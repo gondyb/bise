@@ -149,7 +149,6 @@ fn call(cmd: &str) -> Call {
         home: "/h".into(),
         bise: "/h/.bise".into(),
         edit_tool: "edit".into(),
-        flow: None,
     }
 }
 

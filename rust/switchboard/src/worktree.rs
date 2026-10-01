@@ -5,6 +5,7 @@
 use crate::core::{Env, Loss};
 use crate::model::{Mode, Workspace};
 use crate::paths::Paths;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -139,6 +140,8 @@ pub struct GitEnv {
     pub config: Config,
     /// Where setup logs go (the hub log).
     pub log: Box<dyn FnMut(&str) + Send>,
+    /// pr-design §6.4: branch -> the head of its merged PR (`pr_merged`).
+    pub merged: BTreeMap<String, String>,
 }
 
 impl GitEnv {
@@ -259,6 +262,10 @@ impl Env for GitEnv {
         crate::util::now_ms()
     }
 
+    fn pr_merged(&mut self, branch: &str, head: &str) {
+        self.merged.insert(branch.to_string(), head.to_string());
+    }
+
     fn is_git(&self) -> bool {
         git(self.ws(), &["rev-parse", "--is-inside-work-tree"]).is_ok_and(|s| s == "true")
     }
@@ -316,6 +323,13 @@ impl Env for GitEnv {
             .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
             .unwrap_or(0);
         let branch = ws.branch.clone().unwrap_or_default();
+        // its PR is merged at this very tip: nothing to lose (a squash
+        // merge leaves its commits on no other branch, RFC 0002 §5.1)
+        if let Some(head) = self.merged.get(&branch) {
+            if git(path, &["rev-parse", "--verify", "-q", &format!("refs/heads/{}", branch)]).ok().as_ref() == Some(head) {
+                return Loss { dirty, unpushed: 0 };
+            }
+        }
         // the pattern is relative to refs/heads/ when it applies to --branches
         let exclude = format!("--exclude={}", branch);
         let unpushed = git(
@@ -481,6 +495,7 @@ mod tests {
                 paths,
                 config,
                 log: Box::new(|_| {}),
+                merged: BTreeMap::new(),
             },
         )
     }

@@ -447,7 +447,6 @@ pub fn allow_flags(call: &Call, rules: &super::Rules, cache: &super::Cache, fs: 
         base: Some(roots.cwd.clone()),
         fetched: false,
         known: tiers::Walk::known_vars(&roots, &parsed.assigned),
-        flow: call.flow.as_ref(),
     };
     let mut saved = false;
     let mut all = true;

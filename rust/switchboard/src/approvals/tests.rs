@@ -18,7 +18,6 @@ fn call(tool: &str, args: serde_json::Value) -> Call {
         home: "/h".into(),
         bise: "/h/.bise".into(),
         edit_tool: "edit".into(),
-        flow: None,
     }
 }
 

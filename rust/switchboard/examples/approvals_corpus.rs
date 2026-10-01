@@ -73,7 +73,6 @@ fn main() {
                             home: home.clone(),
                             bise: bise.clone(),
                         edit_tool: "edit".into(),
-                        flow: None,
                         }),
                     ));
                 }
@@ -229,7 +228,6 @@ fn check_whys(c: &Call) -> Vec<String> {
         base: Some(c.cwd.clone()),
         fetched: false,
         known,
-        flow: None,
     };
     parsed
         .parts
