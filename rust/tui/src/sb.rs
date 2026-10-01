@@ -306,33 +306,33 @@ impl Sb {
         out
     }
 
-    /// The live agents by block (pr-design §4.1): the shared folder's
-    /// (main first, None), then one block per worktree, ordered by its
-    /// first agent's number; in each, the order of their numbers (QA M:
-    /// a newcomer that takes a dropped agent's number sits at that
-    /// number's row, not last). A worktree whose agents are all archived
-    /// keeps its block, empty. Numbers never change; the order follows
-    /// the blocks.
+    /// The live agents by block (pr-design §4.1, option A): the plain
+    /// rows first (None): your folder's agents (main first), then the
+    /// agents alone in their worktree; then one box per worktree that 2
+    /// or more live agents share, ordered by its lowest number. In each
+    /// group, the order of their numbers (QA M: a newcomer that takes a
+    /// dropped agent's number sits at that number's row, not last).
+    /// Numbers never change; the order follows the blocks.
     fn blocks(&self) -> Vec<(Option<&places::Place>, Vec<&Agent>)> {
         let numbers = self.numbers();
         let num = |name: &str| numbers.iter().find(|(n, _)| n == name).map_or(usize::MAX, |(_, k)| *k);
         let live: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
-        let place_of = |a: &Agent| self.place_of(a).and_then(|p| self.places.iter().position(|q| std::ptr::eq(p, q)));
-        let mut shared: Vec<&Agent> = live.iter().copied().filter(|a| place_of(a).is_none()).collect();
-        shared.sort_by_key(|a| num(&a.name));
+        let mut folder: Vec<&Agent> = live.iter().copied().filter(|a| self.place_of(a).is_none()).collect();
+        folder.sort_by_key(|a| num(&a.name));
+        let mut solo: Vec<&Agent> = live.iter().copied().filter(|a| self.place_of(a).is_some() && self.box_of(a).is_none()).collect();
+        solo.sort_by_key(|a| num(&a.name));
         let mut boxes: Vec<(Option<&places::Place>, Vec<&Agent>)> = self
             .places
             .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let mut v: Vec<&Agent> = live.iter().copied().filter(|a| place_of(a) == Some(i)).collect();
+            .filter(|p| self.shared(p))
+            .map(|p| {
+                let mut v = self.live_in(p);
                 v.sort_by_key(|a| num(&a.name));
                 (Some(p), v)
             })
             .collect();
-        // by the number of its first agent (the hub's order), else last
-        boxes.sort_by_key(|(p, _)| p.and_then(|p| p.agents.iter().map(|n| num(n)).find(|k| *k != usize::MAX)).unwrap_or(usize::MAX));
-        let mut out = vec![(None, shared)];
+        boxes.sort_by_key(|(_, v)| v.iter().map(|a| num(&a.name)).min().unwrap_or(usize::MAX));
+        let mut out = vec![(None, folder.into_iter().chain(solo).collect())];
         out.extend(boxes);
         out
     }
@@ -340,6 +340,48 @@ impl Sb {
     /// The worktree `a` works in, when the hub sent it (main never).
     fn place_of(&self, a: &Agent) -> Option<&places::Place> {
         self.places.iter().find(|p| !a.main && (p.agents.contains(&a.name) || (!a.place_id.is_empty() && p.id == a.place_id)))
+    }
+
+    /// The live agents working in worktree `p`.
+    fn live_in(&self, p: &places::Place) -> Vec<&Agent> {
+        self.agents.iter().filter(|a| !a.archived() && self.place_of(a).is_some_and(|q| std::ptr::eq(p, q))).collect()
+    }
+
+    /// Option A (sidebar-wt): a worktree is a box only when 2 or more
+    /// live agents share it.
+    fn shared(&self, p: &places::Place) -> bool {
+        self.live_in(p).len() >= 2
+    }
+
+    /// The box `a` sits in: its worktree when another live agent shares it.
+    fn box_of(&self, a: &Agent) -> Option<&places::Place> {
+        self.place_of(a).filter(|p| self.shared(p))
+    }
+
+    /// The worktree `a` is alone in: its row carries the mark.
+    fn solo_of(&self, a: &Agent) -> Option<&places::Place> {
+        self.place_of(a).filter(|p| !self.shared(p))
+    }
+
+    /// The worktrees with no live agent but an open PR: a numberless row
+    /// each, after the solo rows. One with no agent and no open PR (a
+    /// `gate.sh new` scratch worktree) is never shown.
+    fn orphans(&self) -> Vec<&places::Place> {
+        self.places.iter().filter(|p| p.live_pr().is_some() && self.live_in(p).is_empty()).collect()
+    }
+
+    /// An inbox item asks you about `p`'s PR (ready to merge, pr-design
+    /// §6.3): its `↑` takes the accent. Until the card carries its place
+    /// (pr-merge), a `merge` item of one of its agents, or naming its
+    /// number.
+    fn asks_merge(&self, p: &places::Place) -> bool {
+        let Some(pr) = p.live_pr() else { return false };
+        let tag = format!("#{}", pr.number);
+        self.cards.iter().any(|c| {
+            c.kind == "merge"
+                && (p.agents.contains(&c.agent)
+                    || c.text.match_indices(&tag).any(|(i, _)| !c.text[i + tag.len()..].starts_with(|ch: char| ch.is_ascii_digit())))
+        })
     }
 
     /// The archived tasks, the most recently active first.

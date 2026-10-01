@@ -110,23 +110,20 @@ here a place is its own thing in the hub, and agents join it:
   place sees it; GitHub's news go to the agent that pushed the commit the
   review is about, else the one that opened the PR, else main picks
   (pr-design §6.1).
-- **On screen (the user picked A, grouped, 2026-10-01: "a clear visual
-  line between an agent's row and a git line")**: every worktree is a
-  small box drawn like bise's own frame. Its top border, in the line
-  color, carries the git facts: `╭─ ψ sb/dark-mode ──────── ↑ ─` (the PR
-  mark in its color at the right). Its agents sit inside, behind a rail
-  `│` in column 0 where rows have a blank, the last one closing it with
-  `╰`. A border is never a row: git lives in borders, agents live in
-  rows. Every worktree gets a box, even with one agent; agents in the
-  shared folder stay plain rows outside any box; ψ leaves the rows (the
-  box says it), so names get 2 columns back. Ctrl held: the border adds
-  the PR number (`↑ #412`), and one dim line inside the box, under the
-  border and before any agent, at the border's text column, says the
-  PR's state (`changes asked · checks pass`, `no PR yet · 2 commits`,
-  in trunk flow `waits to land · 2nd`). Numbers never change; the rows'
-  order follows the boxes. A blank row before each box. Mock: the first
-  section of pr-support.html. The divider of an agent in a shared place
-  says who else is there: `ψ sb/dark-mode with i18n`.
+- **On screen** (pr-design §4.1; the user picked the grouped boxes,
+  then the lighter option A, BISE-306): a worktree is a box only when 2
+  or more live agents share it. Its top border, in the line color,
+  carries the git facts: `╭─ ψ sb/dark-mode ──────── ↑ ─`; its agents
+  sit inside behind a rail `│`, the last one closing it with `╰`. An
+  agent alone in its worktree is a plain row with its git state as the
+  mark in the last column (`↑` its PR, `ψ` no PR yet, `…` its land
+  waits), after your folder's rows. Ctrl held: a box adds the PR number
+  (`↑ #412`) and one dim lid line (`changes asked · checks pass`, `no PR
+  yet · 2 commits`, in trunk flow `waits to land · 2nd`); a solo row
+  gets the same words on a line under it (`#415 · checks fail`).
+  Numbers never change; the rows' order follows the blocks. The divider
+  of an agent in a shared place says who else is there: `ψ sb/dark-mode
+  with i18n`.
 | you say "open a PR" | — | a PR, even here |
 | you say "just commit it" | refused if main is protected; else main asks once ("main is shared here, sure?") | — |
 
@@ -289,10 +286,13 @@ repeating the git rules (private index, gate, push).
 Most of it is in [pr-design.md](pr-design.md) (PR flow). For the trunk
 flow, and the choice:
 
-- **Sidebar, places** (picked: A): one box per worktree, git facts in
-  its border, agents inside behind a rail (§3.1).
-- **Sidebar, trunk flow**: a box waiting to land shows `…` in its
-  border; ctrl held, its lid says `waits to land · 2nd`.
+- **Sidebar, places** (picked: A, then the lighter option A of
+  sidebar-wt, BISE-306): a box only for a worktree several agents
+  share, git facts in its border; alone, an agent is a row with its mark
+  (§3.1).
+- **Sidebar, trunk flow**: a land waiting shows `…` (in a box's border,
+  or as a solo row's mark); ctrl held, its words say `waits to land ·
+  2nd`.
 - **Main's feed**: `✓ dark-mode landed 3 commits on main (a1b2c3)` (and
   `· pushed` when it pushed); a refused land: `dark-mode can't land:
   login.rs changed on main too. it's rebasing.`

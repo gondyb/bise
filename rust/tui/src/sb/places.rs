@@ -211,6 +211,78 @@ impl Place {
         Line::from(spans)
     }
 
+    /// The mark of a row alone in this worktree (option A, sidebar-wt),
+    /// in the row's last column, first that applies: `…` dim (its land
+    /// waits), `↑` faint when the forge is late, red when checks fail,
+    /// accent when an inbox item asks you about it (`asks`), faint
+    /// draft, dim open; else `ψ` dim (no PR yet, or merged or closed).
+    /// `NO_COLOR`: red and accent are bold.
+    pub(crate) fn row_mark(&self, asks: bool) -> Span<'static> {
+        let d = Style::default().fg(dim());
+        if self.waits_to_land() {
+            return Span::styled(theme::glyph(G_WAITING).to_string(), d);
+        }
+        let Some(pr) = self.live_pr() else {
+            return Span::styled(theme::glyph(G_WORKTREE).to_string(), d);
+        };
+        let st = if pr.stale_ms.is_none() && !pr.fails() && asks {
+            if no_color() { Style::default().add_modifier(Modifier::BOLD) } else { Style::default().fg(accent()) }
+        } else {
+            pr.mark_style()
+        };
+        Span::styled(theme::pr_glyph().to_string(), st)
+    }
+
+    /// The words line under a solo row or a worktree's row, ctrl held,
+    /// `w` columns: dim, at the name's column, cut with `…`. The hub's
+    /// lid as it is, else `#415 · ` and the PR's words; then ` · ψ
+    /// <branch>` when the branch isn't the agent's name (`name`: the
+    /// row's agent; None, the row already says the branch): last, so the
+    /// cut eats the branch and the state stays. None: nothing to say.
+    pub(crate) fn words_line(&self, name: Option<&str>, w: usize) -> Option<Line<'static>> {
+        let d = Style::default().fg(dim());
+        let mut spans = match (&self.lid, self.live_pr()) {
+            (Some(l), _) => vec![Span::styled(l.clone(), d)],
+            (None, Some(pr)) => {
+                let mut v = vec![Span::styled(format!("#{} · ", pr.number), d)];
+                v.extend(pr.words(d));
+                v
+            }
+            (None, None) => Vec::new(),
+        };
+        if let (Some(n), Some(b)) = (name, &self.branch) {
+            if b.rsplit('/').next() != Some(n) {
+                if !spans.is_empty() {
+                    spans.push(Span::styled(" · ", d));
+                }
+                spans.push(Span::styled(format!("{} {}", theme::glyph(G_WORKTREE), b), d));
+            }
+        }
+        if spans.is_empty() {
+            return None;
+        }
+        let mut line = vec![Span::raw("     ")];
+        line.extend(fit_spans(spans, w.saturating_sub(6)));
+        Some(Line::from(line))
+    }
+
+    /// The row of a worktree with no live agent but an open PR: no
+    /// number, no glyph, its branch faint at the name's column, its mark
+    /// in the mark column (`    sb/palette        ↑`), `w` columns.
+    pub(crate) fn orphan_row(&self, asks: bool, w: usize) -> Line<'static> {
+        let mark = self.row_mark(asks);
+        let room = w.saturating_sub(5 + 3 + 1);
+        let branch = panel::fit(self.branch.as_deref().unwrap_or(&self.id), room);
+        let pad = w.saturating_sub(5 + branch.width() + 3 + 1);
+        Line::from(vec![
+            Span::raw("     "),
+            Span::styled(branch, Style::default().fg(faint())),
+            Span::raw(" ".repeat(pad + 2)),
+            mark,
+            Span::raw(" "),
+        ])
+    }
+
     /// The lid line, ctrl held, `w` columns from the gap column: dim, no
     /// glyph, at the border's text column (after the rail and 2 blanks):
     /// the hub's lid, else the PR's words; None when nothing to say.

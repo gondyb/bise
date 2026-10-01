@@ -109,22 +109,35 @@ fn state_word(sb: &Sb, a: &Agent) -> (String, Color) {
 /// screen"): the turn's time (only while it works) and its context %,
 /// each right-aligned in 3 columns, then `ψ` when it has a worktree, 2
 /// columns between them; blank cells stay, so the rows line up. Ctrl
-/// held: its state word takes the time and % columns (8 wide), ψ stays.
-/// In a worktree's box (`boxed`) no ψ column: the box says it
-/// (pr-design §4.1 rule 4), the name gets the 2 columns back.
-fn columns(app: &App, sb: &Sb, a: &Agent, boxed: bool) -> Vec<Span<'static>> {
+/// held: its state word takes the time and % columns (8 wide), the mark
+/// stays. The mark (option A, sidebar-wt): an agent alone in its
+/// worktree carries its git state ([`places::Place::row_mark`]: `↑`, `ψ`
+/// or `…`); one in a private worktree the hub has no place for, `ψ`;
+/// your folder's agents a blank cell. In a shared worktree's box
+/// (`boxed`) no mark column: the border says it. Short on room (`drop`)
+/// the time goes first (1), then the % (2).
+fn columns(app: &App, sb: &Sb, a: &Agent, boxed: bool, drop: usize) -> Vec<Span<'static>> {
     let d = Style::default().fg(dim());
-    let psi = if place_label(a).is_some() { crate::theme::glyph(G_WORKTREE) } else { " " };
+    let mark = match sb.solo_of(a) {
+        Some(p) => p.row_mark(sb.asks_merge(p)),
+        None if place_label(a).is_some() => Span::styled(crate::theme::glyph(G_WORKTREE).to_string(), d),
+        None => Span::raw(" "),
+    };
     let mut out = if crate::ctrlhint::words(app) {
         let (w, c) = state_word(sb, a);
         vec![Span::styled(format!(" {:>STATE_W$}", w), Style::default().fg(c))]
     } else {
         let time = a.turn_ms.filter(|_| a.status == "working").map(short_age).unwrap_or_default();
         let fill = sb.usage_of(app, &a.name).map(|u| u.short()).unwrap_or_default();
-        vec![Span::styled(format!(" {:>3}  {:>3}", time, fill), d)]
+        match drop {
+            0 => vec![Span::styled(format!(" {:>3}  {:>3}", time, fill), d)],
+            1 => vec![Span::styled(format!(" {:>3}", fill), d)],
+            _ => Vec::new(),
+        }
     };
     if !boxed {
-        out.push(Span::styled(format!("  {}", psi), d));
+        out.push(Span::styled("  ", d));
+        out.push(mark);
     }
     out
 }
@@ -263,21 +276,33 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     let bg = selected.then(selection_bg);
     // the name takes all the room left of the marks and the columns; it
     // is cut only there (BISE-109: no fixed cap)
-    let cols = columns(app, sb, a, boxed);
+    let whole = |l: &Line| l.spans.get(3).is_some_and(|s| s.content == a.name);
+    // short on room (the 24-column panel) the time goes, then the %,
+    // before the name is cut; the mark column stays
+    let fitted = |w: usize| -> Line<'static> {
+        let mut l = Line::default();
+        for drop in 0..3 {
+            l = row(num, g, &a.name, name_style, marks.clone(), columns(app, sb, a, boxed, drop), w, bg);
+            if whole(&l) {
+                break;
+            }
+        }
+        l
+    };
     let mut l = if boxed {
-        // in a box the columns stay where the other rows have them (ψ's
-        // column blank); a name that would be cut there takes those 3
-        // cells back (pr-design §4.1 rule 4)
-        let mut narrow = row(num, g, &a.name, name_style, marks.clone(), cols.clone(), w.saturating_sub(3), bg);
-        if narrow.spans.get(3).is_some_and(|s| s.content == a.name) {
+        // in a box the columns stay where the other rows have them (the
+        // mark's column blank); a name that would be cut there takes
+        // those 3 cells back (pr-design §4.1)
+        let mut narrow = row(num, g, &a.name, name_style, marks.clone(), columns(app, sb, a, boxed, 0), w.saturating_sub(3), bg);
+        if whole(&narrow) {
             let st = bg.map_or(Style::default(), |c| Style::default().bg(c));
             narrow.spans.push(Span::styled("   ", st));
             narrow
         } else {
-            row(num, g, &a.name, name_style, marks, cols, w, bg)
+            fitted(w)
         }
     } else {
-        row(num, g, &a.name, name_style, marks, cols, w, bg)
+        fitted(w)
     };
     // option held (ctrlhint.rs): ` 1 ` reads `⌥1 `, in the accent
     if let (Some(k), Some(first)) = (num.and_then(|n| crate::ctrlhint::number(app, n)), l.spans.first_mut()) {
@@ -522,6 +547,13 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
             lines.push(agent_row(app, sb, a, i, n, w, place.is_some()));
             rails.push(if place.is_some() { "│" } else { "" });
+            // ctrl held, alone in its worktree: its git state in words
+            // under its row (option A, sidebar-wt)
+            if let Some(words) = sb.solo_of(a).filter(|_| held && place.is_none()).and_then(|p| p.words_line(Some(&a.name), w)) {
+                owners.push((lines.len(), Hit::Agent(a.name.clone())));
+                lines.push(words);
+                rails.push("");
+            }
             // the selected agent: what it is for and its last note, under its row
             if sb.selected == Some(i) && !a.main {
                 for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
@@ -535,13 +567,20 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             }
             i += 1;
         }
-        if place.is_some() {
-            // the last row closes the box; a box with no agent left (its
-            // PR still open) closes on its own row
-            if rails.last() == Some(&"╭") {
-                lines.push(Line::from(Span::styled("  no agent", Style::default().fg(faint()))));
-                rails.push("╰");
-            } else if let Some(r) = rails.last_mut() {
+        if place.is_none() {
+            // the worktrees with an open PR and no live agent: a row with
+            // no number and no glyph each, after the solo rows
+            for p in sb.orphans() {
+                lines.push(p.orphan_row(sb.asks_merge(p), w));
+                rails.push("");
+                if let Some(words) = p.words_line(None, w).filter(|_| held) {
+                    lines.push(words);
+                    rails.push("");
+                }
+            }
+        } else {
+            // the last row closes the box
+            if let Some(r) = rails.last_mut() {
                 *r = "╰";
             }
             boxes.push((start + 1, lines.len()));
@@ -1312,10 +1351,15 @@ mod tests {
             assert!(row("eleventh").starts_with(&format!("   {} eleventh", G_IDLE)), "{:?}", row("eleventh"));
             assert!(!t.iter().any(|r| r.to_lowercase().contains("task")), "no \"task\" in the panel");
         }
-        // 28 columns: the name is cut before the columns, ψ kept
+        // 28 columns: the time goes, then the %, before the name is cut;
+        // ψ kept in its column (sidebar-wt, option A)
         let t = trimmed(&panel_rows(&app, 28, 16));
         let big = t.iter().find(|r| r.contains("big-")).unwrap();
-        assert!(big.contains("…") && big.ends_with(G_WORKTREE), "{:?}", big);
+        assert_eq!(big, &format!(" 9 {} big-refactor-of-auth {}", G_WORKING, G_WORKTREE));
+        // narrower still: the name is cut, ψ kept
+        let t = trimmed(&panel_rows(&app, 24, 16));
+        let big = t.iter().find(|r| r.contains("big-")).unwrap();
+        assert!(big.contains("…") && big.ends_with(G_WORKTREE) && big.chars().count() == 23, "{:?}", big);
         // with room, the whole name: no fixed cap (BISE-109)
         let t = trimmed(&panel_rows(&app, 40, 16));
         assert!(t.iter().any(|r| r.contains("big-refactor-of-auth ")), "{}", t.join("\n"));

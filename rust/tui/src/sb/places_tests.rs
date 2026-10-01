@@ -31,11 +31,13 @@ fn place(dir: &str, agents: &[&str], pr: Option<Pr>, lid: Option<&str>) -> Place
     }
 }
 
-/// The mock's panel (pr-support.html): main and sad-404 in your folder,
-/// dark-mode and i18n sharing a worktree with PR #412 (changes asked),
-/// login-fix's #415 failing, emoji-csv with no PR yet, one inbox item.
-/// Numbers: dark-mode 1, sad-404 2, login-fix 3, i18n 4, emoji-csv 5
-/// (creation order), so the boxes reorder the rows, not the numbers.
+/// The mock's panel (sidebar-wt.html, option A): main and sad-404 in
+/// your folder, dark-mode and i18n sharing a worktree with PR #412
+/// (changes asked), login-fix alone (#415, checks fail), emoji-csv alone
+/// (no PR yet), palette alone (draft #418), release alone (waits to
+/// land), docs alone (#409, ready to merge: an inbox item asks you).
+/// Numbers in creation order, so the blocks reorder the rows, not the
+/// numbers.
 fn mock() -> App {
     let mut app = bench::test_app_drained();
     let sb = &mut app.sb;
@@ -45,20 +47,27 @@ fn mock() -> App {
         agent("sad-404", "idle", "shared"),
         Agent { turn_ms: Some(300_000), ..agent("login-fix", "working", "wt:login-fix") },
         Agent { turn_ms: Some(42_000), ..agent("i18n", "working", "wt:dark-mode") },
-        agent("emoji-csv", "waiting", "wt:emoji-csv"),
+        Agent { turn_ms: Some(120_000), ..agent("emoji-csv", "working", "wt:emoji-csv") },
+        agent("palette", "idle", "wt:palette"),
+        agent("release", "waiting", "wt:release"),
+        agent("docs", "idle", "wt:docs"),
     ];
     let failing = Pr { failing: vec!["e2e/login".into()], ..pr(415, "none", "fail") };
+    let draft = Pr { state: "draft".into(), ..pr(418, "none", "running") };
     sb.places = vec![
         place("dark-mode", &["dark-mode", "i18n"], Some(pr(412, "changes_requested", "pass")), None),
         place("login-fix", &["login-fix"], Some(failing), None),
         place("emoji-csv", &["emoji-csv"], None, Some("no PR yet · 2 commits")),
+        place("palette", &["palette"], Some(draft), None),
+        Place { branch: Some("sb/release-notes".into()), ..place("release", &["release"], None, Some("waits to land · 2nd")) },
+        place("docs", &["docs"], Some(pr(409, "approved", "pass")), None),
     ];
     sb.flow = "pr".into();
     sb.activity.insert("i18n".into());
     sb.cards.push(cards::Card {
         id: 1,
-        kind: "question".into(),
-        agent: "sad-404".into(),
+        kind: "merge".into(),
+        agent: "docs".into(),
         text: "#409 is approved, checks pass. merge it?".into(),
         age_ms: 0,
         seen_at: std::time::Instant::now(),
@@ -94,38 +103,45 @@ fn show(rows: &[String]) -> String {
     rows.join("\n")
 }
 
-/// Rule 1 (order), 4 (every worktree a box, ψ out of the rows), the
-/// rail and the closing `╰`, at 31 columns, at rest: the mock's frame.
+/// The panel's width on a `width`-column screen, framed.
+fn panel_w(width: u16) -> u16 {
+    crate::layout::cols(width, 40).panel.unwrap().w
+}
+
+/// Option A at 31 columns (150 wide), at rest: your folder's rows, then
+/// the agents alone in a worktree as plain rows with their mark in the
+/// last column, then a box only for the worktree 2 agents share (its
+/// rows' mark column blank, the border carries it), the inbox.
 #[test]
-fn boxes_at_31_columns() {
+fn a_box_only_when_they_share() {
     let app = mock();
     let r = rows(&app, panel_w(150), 24);
     let want = [
         "  agents",
         "",
         "  0 ∿ main :*       1m",
-        "  2 ? sad-404",
+        "  2 ○ sad-404",
+        "  3 ∿ login-fix     5m       ↑",
+        "  5 ∿ emoji-csv     2m       ψ",
+        "  6 ○ palette                ↑",
+        "  7 … release                …",
+        "  8 ○ docs                   ↑",
         "",
         "╭─ ψ sb/dark-mode ───────── ↑ ─",
         "│ 1 ∿ dark-mode     3m",
         "╰ 4 ∿ i18n •       42s",
-        "",
-        "╭─ ψ sb/login-fix ───────── ↑ ─",
-        "╰ 3 ∿ login-fix     5m",
-        "",
-        "╭─ ψ sb/emoji-csv ─────────────",
-        "╰ 5 … emoji-csv",
         "",
         "  inbox",
     ];
     for (k, line) in want.iter().enumerate() {
         assert_eq!(r[k], *line, "row {k}:\n{}", show(&r));
     }
-    assert!(r[16].starts_with("  1 ? sad-404"), "{}", show(&r));
-    // the columns line up with your folder's rows (ψ's column blank)
+    // the mark one column from the edge, the columns line up with the box's
+    assert_eq!(r[4].chars().count(), panel_w(150) as usize);
     let col = |l: &str, w: &str| l.char_indices().position(|(i, _)| l[i..].starts_with(w));
-    assert_eq!(col(&r[2], "1m"), col(&r[6], "3m"), "{}", show(&r));
-    // a long name takes ψ's column back before it is cut
+    assert_eq!(col(&r[2], "1m"), col(&r[11], "3m"), "{}", show(&r));
+    assert_eq!(col(&r[2], "1m"), col(&r[4], "5m"), "{}", show(&r));
+    // a long name in the box takes the mark's column back before it is cut
     let mut long = mock();
     long.sb.agents[4].name = "i18n-everywhere".into();
     long.sb.places[0].agents[1] = "i18n-everywhere".into();
@@ -133,129 +149,176 @@ fn boxes_at_31_columns() {
     assert!(r.iter().any(|l| l.starts_with("╰ 4 ∿ i18n-everywhere 42s")), "{}", show(&r));
     // the selection follows the rows' order, the numbers stay
     let names: Vec<&str> = app.sb.nav().iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(names, ["main", "sad-404", "dark-mode", "i18n", "login-fix", "emoji-csv"]);
+    assert_eq!(names, ["main", "sad-404", "login-fix", "emoji-csv", "palette", "release", "docs", "dark-mode", "i18n"]);
 }
 
-/// Rule 2: the lines in the rule color, ψ and the branch dim, ↑ dim when
-/// open, red when checks fail; never the accent.
+/// A shared box that drops to one live agent is a plain row on the next
+/// draw (its ↑ in the mark column), and a box again when a second one
+/// joins; boxes order by their lowest number.
 #[test]
-fn the_border_colors() {
+fn a_box_down_to_one_agent_is_a_row() {
+    let mut app = mock();
+    app.sb.agents[4].status = "archived".into();
+    let r = rows(&app, panel_w(150), 24);
+    assert!(!r.iter().any(|l| l.contains('╭') || l.contains('╰')), "{}", show(&r));
+    let dark = r.iter().find(|l| l.contains("dark-mode")).unwrap();
+    assert!(dark.starts_with("  1 ∿ dark-mode     3m") && dark.ends_with('↑'), "{}", show(&r));
+    // right after your folder's rows, by its number
+    assert!(r[4].contains("dark-mode") && r[5].contains("login-fix"), "{}", show(&r));
+    // a second one joins: the box is back
+    app.sb.agents[4].status = "working".into();
+    app.sb.agents[6].place_id = "wt:login-fix".into();
+    app.sb.places[1].agents.push("palette".into());
+    app.sb.places[3].agents.clear();
+    let r = rows(&app, panel_w(150), 30);
+    let boxes: Vec<&String> = r.iter().filter(|l| l.starts_with('╭')).collect();
+    assert_eq!(boxes.len(), 2, "{}", show(&r));
+    assert!(boxes[0].contains("sb/dark-mode") && boxes[1].contains("sb/login-fix"), "{}", show(&r));
+    // palette's own worktree (its draft still open, no agent): a row with
+    // no number and no glyph, its mark in the mark column
+    let orphan = r.iter().find(|l| l.contains("sb/palette")).unwrap();
+    assert!(orphan.starts_with("      sb/palette ") && orphan.ends_with('↑'), "{}", show(&r));
+}
+
+/// Call 8: a worktree with no live agent and no open PR (a `gate.sh
+/// new` scratch worktree, a merged PR) is never shown; an agent in a
+/// private worktree the hub has no place for keeps its ψ.
+#[test]
+fn a_worktree_with_nothing_to_say_is_not_shown() {
+    let mut app = mock();
+    app.sb.places.push(place("scratch", &[], None, None));
+    let merged = Pr { state: "merged".into(), ..pr(400, "approved", "pass") };
+    app.sb.places.push(place("old", &[], Some(merged), None));
+    let r = rows(&app, panel_w(150), 30);
+    assert!(!r.iter().any(|l| l.contains("scratch") || l.contains("sb/old")), "{}", show(&r));
+    // a merged PR, its agent still there: ψ, no ↑
+    app.sb.places[1].pr.as_mut().unwrap().state = "merged".into();
+    let r = rows(&app, panel_w(150), 30);
+    assert!(r.iter().any(|l| l == "  3 ∿ login-fix     5m       ψ"), "{}", show(&r));
+}
+
+/// The marks' colors: ↑ red when checks fail, accent only through an
+/// inbox item (ready to merge), faint draft, dim open; ψ and … dim; the
+/// shared box's border unchanged.
+#[test]
+fn the_marks_colors() {
     let app = mock();
     let (buf, r) = buffer(&app, panel_w(150), 24);
     let y = |s: &str| r.iter().position(|l| l.contains(s)).unwrap() as u16;
     let at = |x: u16, y: u16| buf[(x, y)].clone();
+    let mark = |row: u16| at(panel_w(150) - 1, row);
+    assert_eq!(mark(y("login-fix")).symbol(), "↑");
+    assert_eq!(mark(y("login-fix")).fg, error());
+    assert_eq!((mark(y("emoji-csv")).symbol(), mark(y("emoji-csv")).fg), ("ψ", dim()));
+    assert_eq!(mark(y("palette")).fg, faint());
+    assert_eq!((mark(y("release")).symbol(), mark(y("release")).fg), ("…", dim()));
+    assert_eq!(mark(y("docs")).fg, accent());
+    // no inbox item: dim
+    let mut quiet = mock();
+    quiet.sb.cards.clear();
+    let (qbuf, qr) = buffer(&quiet, panel_w(150), 24);
+    let docs = qr.iter().position(|l| l.contains("docs")).unwrap() as u16;
+    assert_eq!(qbuf[(panel_w(150) - 1, docs)].fg, dim());
+    // the box: lines in the rule color, ψ dim, its ↑ dim (never accent)
     let dark = y("sb/dark-mode");
-    assert_eq!(at(0, dark).symbol(), "╭");
-    assert_eq!(at(0, dark).fg, rule());
-    assert_eq!(at(3, dark).symbol(), "ψ");
+    assert_eq!((at(0, dark).symbol(), at(0, dark).fg), ("╭", rule()));
     assert_eq!(at(3, dark).fg, dim());
-    let arrow = |row: u16| (0..31).find(|x| at(*x, row).symbol() == "↑").map(|x| at(x, row).fg);
-    assert_eq!(arrow(dark), Some(dim()));
-    assert_eq!(arrow(y("sb/login-fix")), Some(error()));
-    assert_eq!(at(0, y("i18n")).fg, rule());
-    for row in 0..24 {
-        for x in 0..31 {
-            if at(x, row).symbol() == "↑" {
-                assert_ne!(at(x, row).fg, accent());
-            }
-        }
-    }
+    let arrow = (0..31).find(|x| at(*x, dark).symbol() == "↑").map(|x| at(x, dark).fg);
+    assert_eq!(arrow, Some(dim()));
 }
 
-/// Rule 5: ctrl held, the border adds the number, the lid line says the
-/// state at the border's text column, before any agent; the rows get
-/// their state words. The header adds the PRs and the flow.
+/// Ctrl held: the rows' state words, the mark stays; under each solo
+/// row its git state in words at the name's column, dim (`checks fail`
+/// red), cut with `…`; `ψ <branch>` first only when the branch isn't the
+/// agent's name; your folder's rows get nothing; the box keeps its
+/// number and lid. The header adds the PRs and the flow.
 #[test]
-fn ctrl_held_opens_the_lid() {
+fn ctrl_held_says_the_words() {
     let mut app = mock();
     hold(&mut app);
-    let r = rows(&app, panel_w(150), 26);
+    let r = rows(&app, panel_w(150), 32);
     let at = |s: &str| r.iter().position(|l| l.contains(s)).unwrap_or_else(|| panic!("{s}:\n{}", show(&r)));
+    assert_eq!(r[at("sad-404") + 1], "  3 ∿ login-fix     working  ↑", "{}", show(&r));
+    let want = [
+        ("login-fix", "      #415 · checks fail: e2e…"),
+        ("emoji-csv", "      no PR yet · 2 commits"),
+        ("palette", "      #418 · draft · checks r…"),
+        ("release", "      waits to land · 2nd · ψ…"),
+        ("docs", "      #409 · approved · check…"),
+    ];
+    for (name, words) in want {
+        assert_eq!(r[at(name) + 1], words, "{}", show(&r));
+    }
+    assert!(r[at("main :*") + 1].contains("sad-404"), "{}", show(&r));
     let dark = at("sb/dark-mode");
     assert_eq!(r[dark], "╭─ ψ sb/dark-mode ──── ↑ #412 ─", "{}", show(&r));
     assert_eq!(r[dark + 1], "│  changes asked · checks pass");
-    assert!(r[dark + 2].starts_with("│ 1 ∿ dark-mode") && r[dark + 2].ends_with("working"), "{}", show(&r));
-    let login = at("sb/login-fix");
-    assert_eq!(r[login + 1], "│  checks fail: e2e/login");
-    let csv = at("sb/emoji-csv");
-    assert_eq!(r[csv], "╭─ ψ sb/emoji-csv ─────────────");
-    assert_eq!(r[csv + 1], "│  no PR yet · 2 commits");
-    assert!(r[csv + 2].starts_with("╰ 5 … emoji-csv"), "{}", show(&r));
-    // the header: `↑ 2 PRs` with the counts, the flow after the folder
+    // red only on `checks fail`
+    let (buf, _) = buffer(&app, panel_w(150), 32);
+    let y = at("#415") as u16;
+    let red: String = (0..=panel_w(150)).filter(|x| buf[(*x, y)].fg == error()).map(|x| buf[(x, y)].symbol().to_string()).collect();
+    assert_eq!(red.trim(), "checks fail");
+    // stale: the words say how old, the ↑ faint
+    app.sb.places[5].pr.as_mut().unwrap().stale_ms = Some(12 * 60_000);
+    let words = app.sb.places[5].words_line(Some("docs"), 60).unwrap();
+    let t: String = words.spans.iter().map(|s| s.content.to_string()).collect();
+    assert_eq!(t, "     #409 · approved · checks pass · state from 12m ago");
+    assert_eq!(app.sb.places[5].row_mark(true).style.fg, Some(faint()));
+    // the header: `↑ 4 PRs` with the counts, the flow after the folder
     app.sb.workspace = "/w/acme".into();
     let h: String = app.sb.summary(200, false, true, &[]).iter().map(|s| s.content.to_string()).collect();
     assert!(h.starts_with("/w/acme · lands via PRs · "), "{h}");
-    assert!(h.contains(&format!("{} 2 PRs · # 1 in the inbox", G_PR)), "{h}");
-    // at rest: nothing new in the header
+    assert!(h.contains(&format!("{} 4 PRs · # 1 in the inbox", G_PR)), "{h}");
     let rest = mock();
     let h: String = rest.sb.summary(200, false, false, &[]).iter().map(|s| s.content.to_string()).collect();
     assert!(!h.contains("PR") && !h.contains("lands"), "{h}");
-    app.sb.flow = "trunk".into();
-    let h: String = app.sb.summary(200, false, true, &[]).iter().map(|s| s.content.to_string()).collect();
-    assert!(h.starts_with("/w/acme · lands on main · "), "{h}");
 }
 
-/// The panel's width on a `width`-column screen, framed.
-fn panel_w(width: u16) -> u16 {
-    crate::layout::cols(width, 40).panel.unwrap().w
-}
-
-/// Rule 3: the 24-column panel (90-99 wide): the branch is cut with `…`
-/// first, ψ and ↑ stay, a border never wraps; the rows keep their
-/// columns. The widest panel (44): the whole branch.
+/// The 24-column panel (95 wide): the same blocks; a row drops its time
+/// first, then its %, the mark column never; the name is cut before it
+/// touches the mark; the words line cut with `…`; the box's branch cut
+/// first. The widest panel (44): the whole branch.
 #[test]
-fn boxes_at_24_and_44_columns() {
+fn at_24_and_44_columns() {
     let mut app = mock();
     app.sb.places[0].branch = Some("sb/dark-mode-everywhere".into());
-    let narrow = panel_w(95);
+    app.sb.agents[3].name = "login-fix-everywhere".into();
+    app.sb.places[1].agents[0] = "login-fix-everywhere".into();
+    let narrow = 24;
     let r = rows(&app, narrow, 24);
-    let dark = r.iter().find(|l| l.contains("sb/dark")).unwrap();
-    assert_eq!(dark, "╭─ ψ sb/dark-mode-ev… ─ ↑ ─", "{}", show(&r));
     assert!(r.iter().all(|l| l.chars().count() <= narrow as usize + 1), "{}", show(&r));
+    // emoji-csv's time goes (its % is blank here), the mark stays in its column
+    assert!(r.iter().any(|l| l == "  5 ∿ emoji-csv        ψ"), "{}", show(&r));
+    let login = r.iter().find(|l| l.contains("login-fix")).unwrap();
+    assert_eq!(login, "  3 ∿ login-fix-every… ↑", "{}", show(&r));
+    let dark = r.iter().find(|l| l.contains("sb/dark")).unwrap();
+    assert_eq!(dark, "╭─ ψ sb/dark-mode-… ─ ↑ ─", "{}", show(&r));
     hold(&mut app);
-    let r = rows(&app, narrow, 26);
-    let dark = r.iter().position(|l| l.contains("sb/dark")).unwrap();
-    assert_eq!(r[dark], "╭─ ψ sb/dark-mo… ─ ↑ #412 ─", "{}", show(&r));
-    assert_eq!(r[dark + 1], "│  changes asked · checks…", "{}", show(&r));
+    let r = rows(&app, narrow, 30);
+    let at = |s: &str| r.iter().position(|l| l.contains(s)).unwrap_or_else(|| panic!("{s}:\n{}", show(&r)));
+    // held, the state word stays: the name is cut, the mark stays
+    assert_eq!(r[at("5 ∿ emoji")], "  5 ∿ emoji-… working  ψ", "{}", show(&r));
+    assert_eq!(r[at("5 ∿ emoji") + 1], "      no PR yet · 2 com…", "{}", show(&r));
+    // a branch that isn't the agent's name comes last: the cut eats it
+    assert_eq!(r[at("3 ∿ login") + 1], "      #415 · checks fail", "{}", show(&r));
+    assert_eq!(r[at("7 … release") + 1], "      waits to land · 2…", "{}", show(&r));
+    let words = app.sb.places[1].words_line(Some("login-fix-everywhere"), 60).unwrap();
+    let t: String = words.spans.iter().map(|s| s.content.to_string()).collect();
+    assert_eq!(t, "     #415 · checks fail: e2e/login · ψ sb/login-fix");
+    assert_eq!(r[at("sb/dark")], "╭─ ψ sb/dark-… ─ ↑ #412 ─", "{}", show(&r));
     let wide = panel_w(400);
-    let r = rows(&app, wide, 26);
+    let r = rows(&app, wide, 30);
     let dark = r.iter().position(|l| l.contains("sb/dark")).unwrap();
-    assert_eq!(r[dark].chars().count(), wide as usize + 1);
     assert!(r[dark].starts_with("╭─ ψ sb/dark-mode-everywhere ──") && r[dark].ends_with("─ ↑ #412 ─"), "{}", show(&r));
 }
 
-/// Rule 6: a box never splits across the scroll: it goes under `+ n
-/// more` whole (counted by its agents); a selected agent in a box
-/// brings its whole box into view.
+/// A box never splits across the scroll: it goes under `+ n more` whole;
+/// a selected agent in a box brings its whole box into view.
 #[test]
 fn a_box_never_splits() {
     let mut app = mock();
-    // 2 title rows + 10 body rows: main, sad-404, blank, dark-mode's box
-    // (3 rows), blank, login-fix's box (2 rows), then the cut
-    let r = rows(&app, panel_w(150), 12);
-    assert!(r.iter().any(|l| l.contains("sb/login-fix")) || r.iter().any(|l| l.contains("+ ")), "{}", show(&r));
-    for name in ["sb/dark-mode", "sb/login-fix", "sb/emoji-csv"] {
-        if let Some(y) = r.iter().position(|l| l.contains(name)) {
-            // its last row is on screen
-            let close = r[y..].iter().position(|l| l.starts_with('╰'));
-            assert!(close.is_some(), "{name} split:\n{}", show(&r));
-        }
-    }
-    let more = r.iter().find(|l| l.contains("+ ")).unwrap_or_else(|| panic!("{}", show(&r)));
-    assert!(more.contains("more"), "{more}");
-    // the selection on emoji-csv: its box whole on screen
-    app.sb.selected = Some(5);
-    let r = rows(&app, panel_w(150), 12);
-    let y = r.iter().position(|l| l.contains("sb/emoji-csv")).unwrap_or_else(|| panic!("{}", show(&r)));
-    assert!(r[y + 1].starts_with("╰ 5"), "{}", show(&r));
-    for name in ["sb/dark-mode", "sb/login-fix"] {
-        if let Some(y) = r.iter().position(|l| l.contains(name)) {
-            assert!(r[y..].iter().any(|l| l.starts_with('╰')), "{name} split:\n{}", show(&r));
-        }
-    }
-    // no box row ever shows without its border above it
     for h in 6..24 {
-        for sel in [None, Some(0), Some(3), Some(5)] {
+        for sel in [None, Some(0), Some(4), Some(7), Some(8)] {
             app.sb.selected = sel;
             let r = rows(&app, panel_w(150), h);
             let mut open = false;
@@ -269,38 +332,44 @@ fn a_box_never_splits() {
                     }
                 }
             }
+            if let Some(y) = r.iter().position(|l| l.starts_with('╭')) {
+                assert!(r[y..].iter().any(|l| l.starts_with('╰')), "h {h} sel {sel:?}: split\n{}", show(&r));
+            }
         }
     }
+    // the selection on i18n: its box whole on screen
+    app.sb.selected = Some(8);
+    let r = rows(&app, panel_w(150), 12);
+    let y = r.iter().position(|l| l.contains("sb/dark-mode")).unwrap_or_else(|| panic!("{}", show(&r)));
+    assert!(r[y + 2].starts_with("╰ 4"), "{}", show(&r));
 }
 
-/// `NO_COLOR`: the failing ↑ and the words `checks fail` are bold (no
-/// red to say it); `BISE_ASCII=1`: ↑ is `P`, the box `+ - |`, never `^`.
+/// `NO_COLOR`: the red and the accent ↑ are bold, the others plain,
+/// `checks fail` bold; `BISE_ASCII=1`: ↑ is `P`, never `^`, ψ and … the
+/// table's fallbacks.
 #[test]
 fn no_color_and_ascii() {
-    let mut app = mock();
-    hold(&mut app);
-    let failing = app.sb.places[1].live_pr().unwrap().clone();
-    let words = |p: &Pr| p.words(Style::default().fg(dim()));
+    let app = mock();
+    let mark = |k: usize, asks: bool| app.sb.places[k].row_mark(asks);
     crate::theme::set_ascii_for_tests(true);
+    let ascii: Vec<String> = [mark(1, false), mark(2, false), mark(4, false)].iter().map(|s| s.content.to_string()).collect();
     let border: String = app.sb.places[0].border(31, true).spans.iter().map(|s| s.content.to_string()).collect();
     crate::theme::set_ascii_for_tests(false);
+    assert_eq!(ascii[0], "P");
+    assert!(ascii[1].is_ascii() && !ascii[1].is_empty() && ascii[2].is_ascii() && !ascii[2].is_empty(), "{ascii:?}");
     assert!(border.contains("P #412") && !border.contains('^') && !border.contains('↑'), "{border}");
-    // the legend row
-    let row = crate::theme::LEGEND.iter().find(|s| s.glyph == G_PR).unwrap();
-    assert_eq!(row.ascii, "P");
-    assert!(row.meaning.contains("pull request"));
-    // NO_COLOR: bold, not red
     let was = std::env::var_os("NO_COLOR");
     std::env::set_var("NO_COLOR", "1");
-    let bold = failing.mark_style().add_modifier.contains(Modifier::BOLD);
-    let w = words(&failing);
+    let bold = |s: Span| s.style.add_modifier.contains(Modifier::BOLD);
+    let (fail, asks, draft, open) = (bold(mark(1, false)), bold(mark(5, true)), bold(mark(3, false)), bold(mark(5, false)));
+    let words = app.sb.places[1].words_line(Some("login-fix"), 40).unwrap();
     match was {
         Some(v) => std::env::set_var("NO_COLOR", v),
         None => std::env::remove_var("NO_COLOR"),
     }
-    assert!(bold);
-    let fail = w.iter().find(|s| s.content == "checks fail").unwrap();
-    assert!(fail.style.add_modifier.contains(Modifier::BOLD) && fail.style.fg != Some(error()));
+    assert!(fail && asks && !draft && !open);
+    let cf = words.spans.iter().find(|s| s.content == "checks fail").unwrap();
+    assert!(cf.style.add_modifier.contains(Modifier::BOLD) && cf.style.fg != Some(error()));
 }
 
 /// The divider of an agent in a worktree (pr-design §4): `ψ branch with
