@@ -113,7 +113,36 @@ LLM).
 
 ## 5. Visual identity
 
-**Art direction: "terminal brut, with the soul of the bise."** Raw terminal
+**Two places, two looks: the site is paper, the product is the terminal.**
+The user picked "paper" for every brand surface (bise.dev, the book, the
+design system, the README images, og.png and the X header); the product
+keeps its own look, below, unchanged.
+
+**The site: "paper"** (direction B + the "figure" screens; reference
+`site/content/landing-paper.html`, tokens in `site/book/paper.css` and
+`docs/brand/readme/ink.py`).
+- Paper `#f2ede2` with a light grain; ink `#1d1a17`, dim `#5a5349`, kick
+  `#8a8174`; the pen `#c8264a` is the one accent; the blue pencil `#3446a8`
+  is for doodles and tallies. Dark paper: `#171513`, ink `#ece6da`, pen
+  `#f4a6b0`, blue `#9aa8ff`. Highlighter: `#f4a6b0` at 60% (dark 28%).
+- Type: Newsreader for text and titles (600, tight tracking); Caveat for
+  the pen only (the `:*`, group labels, short notes in the margin);
+  JetBrains Mono only inside screens, for code and commands. Where no web
+  font loads (GitHub SVGs, og.png), the display words are outlined to paths.
+- The kiss in Caveat: the `*` comes down level with the colon (a mouth).
+- Pen marks drawn in SVG that draw themselves once: underline, ring, arrow,
+  tally, highlighter. One or two per screen.
+- The doodle: the north wind as a colored-pencil cloud (blue pencil,
+  hatched, pink cheeks), blowing next to the name (the gusts start at its
+  right edge, never across its face), asleep at the end of a page.
+- Screens on the site are figures: a card a bit lighter than the paper
+  (`#faf7f0`, dark `#1f1c19`), a pencil frame, a flat offset shadow kept very
+  light (`3px 3px 0 #1d1a170c`), the TUI's own colors inside (light theme on
+  paper, dark theme on dark paper), an italic caption under it ("fig. 1 · a
+  bise session, playing live"). No tape, no blurry shadows.
+- Lowercase everywhere, no final period on titles, no § before them.
+
+**The product: "terminal brut, with the soul of the bise."** Raw terminal
 credibility (monospace, calm, the product is the visual) plus one warm human
 touch (the pale pink accent, the `:*`, a heart for "done").
 
@@ -152,10 +181,13 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 - **Syntax colors** (scripts, diffs): soft versions of the usual palette. Dark:
   keyword `#d7a6f0`, string `#b9d99a`, comment `#857e74`, number `#f0b27a`,
   call `#8fc4f0`. **⚠** Light syntax colors: to pick (issue BISE-01).
-- **Marketing type:** JetBrains Mono (free) for screenshots and the site. In
+- **Marketing type:** the site is paper (Newsreader, Caveat, above);
+  JetBrains Mono (free) for screenshots and everything inside a screen. In
   the terminal the font is the user's.
-- **Motion:** only the working pulse `∿`, the blinking cursor, the typed
-  welcome, the `:*` pop. Nothing bounces, nothing slides.
+- **Motion:** in the product, only the working pulse `∿`, the blinking
+  cursor, the typed welcome, the `:*` pop. Nothing bounces, nothing slides.
+  On the site: the pen marks draw once when they come in, the cloud bobs
+  and blows, a few seeds drift.
 
 ## 6. Symbol language
 

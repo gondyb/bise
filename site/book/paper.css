@@ -1,0 +1,131 @@
+/* the brand book on paper (the 'paper' art direction, site/content/landing-paper.html).
+   the site is paper: Newsreader, a pen, colored pencils. the product is the terminal: every screen
+   mock keeps the TUI's own palette and monospace, laid on the page as a figure (a lighter card,
+   a pencil frame, a flat offset shadow). light = paper, dark = dark paper. load after the page's
+   own <style>, with paper.js (the pencil filters, the kiss, the marks that draw themselves). */
+
+html[data-theme="light"] {
+  --bg:#f2ede2; --bg2:#ebe4d6; --text:#1d1a17; --dim:#5a5349; --faint:#8a8174; --line:#d9cfbd; --rule:#cfc5b4;
+  --acc:#c8264a; --tint:#f4a6b03d; --raised:#ebe4d6; --chip:#e3dac8;
+  --pen:#c8264a; --blue:#3446a8; --kick:#8a8174; --card:#faf7f0; --cardfoot:#f3eee4; --frame:#1d1a17a8; --drop:#1d1a170c; --hl:#f4a6b099;
+  --grain:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 .35 0 0 0 0 .3 0 0 0 0 .25 0 0 0 .08 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+}
+html[data-theme="dark"] {
+  --bg:#171513; --bg2:#1e1b18; --text:#ece6da; --dim:#b8b0a3; --faint:#8a8276; --line:#38332e; --rule:#4a4540;
+  --acc:#f4a6b0; --tint:#f4a6b02e; --raised:#1e1b18; --chip:#262220;
+  --pen:#f4a6b0; --blue:#9aa8ff; --kick:#8a8276; --card:#1f1c19; --cardfoot:#24201d; --frame:#ece6da80; --drop:#00000038; --hl:#f4a6b047;
+  --grain:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .9 0 0 0 .05 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+}
+
+/* ---- the page: paper and ink ---- */
+body { background:var(--bg) var(--grain); font-family:Newsreader, Georgia, serif; font-size:19px; line-height:1.6; }
+h2, .hero .big, h1.title { font-family:Newsreader, Georgia, serif; font-weight:600; letter-spacing:-.025em; }
+h2 { font-size:clamp(30px, 3.6vw, 44px); line-height:1.1; }
+h3 { font-family:Newsreader, Georgia, serif; font-weight:600; font-size:22px; letter-spacing:-.01em; }
+section > h1 { font-family:Newsreader, Georgia, serif; font-variant:small-caps; letter-spacing:.14em; font-size:16px; color:var(--kick); }
+p, ul.list, td { max-width:68ch; }
+.lead { font-size:22px; }
+table { font-size:17px; }
+th { font-variant:small-caps; letter-spacing:.08em; color:var(--kick); }
+section { border-bottom:0; }
+section + section, .hero + section { background-image:linear-gradient(90deg, transparent, var(--line) 12%, var(--line) 88%, transparent); background-size:100% 1px; background-repeat:no-repeat; }
+ul.list li::before { color:var(--pen); }
+a { color:var(--pen); } a:hover { text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px; }
+
+/* code, keys, glyphs and screens stay in the terminal's monospace */
+code, .k, kbd, pre, td.g, .glyphs b, .sw .m, .term, .attbox, iframe, figure.ex, .screen, .mono { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; }
+code, .k { font-size:.8em; background:transparent; border-bottom:1px dashed var(--rule); border-radius:0; padding:0 2px; }
+
+/* the side menu: the logo with its kiss, group labels written with the pen */
+nav.side { border-right:0; background:linear-gradient(var(--line), var(--line)) right / 1px 100% no-repeat; font-size:16px; }
+nav.side .logo { font-family:Newsreader, Georgia, serif; font-weight:600; font-size:24px; letter-spacing:-.02em; }
+nav.side .sub { font-style:italic; }
+nav.side .grp { font-family:Caveat, cursive; font-size:22px; color:var(--pen); margin:18px 0 0; }
+nav.side a.on::before { content:"› "; color:var(--pen); }
+.toggle button { font-family:Newsreader, Georgia, serif; font-style:italic; font-size:15px; border-radius:2px; }
+.toggle button.on { color:var(--text); border-color:transparent; background:linear-gradient(100deg, transparent 0, var(--hl) 4px, var(--hl) calc(100% - 6px), transparent 100%); }
+
+/* the kiss in Caveat: the * comes down level with the colon, it's a mouth (paper.js splits it) */
+.kiss-c { font-family:Caveat, cursive; font-weight:700; letter-spacing:0; color:var(--pen); }
+.kiss-c .kc, .kiss-c .ks { display:inline-block; } .kiss-c .ks { position:relative; top:.3em; margin-left:-.02em; }
+
+/* hero */
+.hero .big { letter-spacing:-.045em; }
+.hero .big .kiss { font-size:.9em; }
+.hero .t1 { font-size:clamp(26px, 3.2vw, 40px); letter-spacing:-.015em; }
+.hero .t2 { font-style:italic; font-size:21px; }
+.hero .def { font-size:19px; }
+.hero .scroll { font-style:italic; font-size:15px; color:var(--kick); }
+.hero .cursors { font-family:"JetBrains Mono", ui-monospace, monospace; color:var(--kick); opacity:.7; }
+.hero .hcloud { position:absolute; width:min(26vw, 260px); right:8vw; top:14vh; animation:bob 5s ease-in-out infinite; }
+@media (max-width: 900px) { .hero .hcloud { display:none; } }
+
+/* blocks on the page: drawn, not boxed */
+.card, .dodont > div { background:transparent; border:0; position:relative; }
+.card::before, .dodont > div::before { content:""; position:absolute; inset:0; border:1.4px solid var(--rule); border-radius:8px; filter:url(#wobble); pointer-events:none; }
+.dodont .do::before { border-color:var(--pen); }
+.dodont .lbl, .dodont .do .lbl { font-family:Caveat, cursive; font-size:22px; color:var(--kick); } .dodont .do .lbl { color:var(--pen); }
+.manifesto { font-family:Newsreader, Georgia, serif; font-weight:600; letter-spacing:-.015em; border-left:0; padding-left:0; position:relative; }
+.manifesto::before { content:""; position:absolute; left:-2ch; top:.2em; bottom:.2em; width:2px; background:var(--pen); border-radius:2px; filter:url(#wobble); }
+footer { font-style:italic; color:var(--kick); }
+
+/* ---- the screens: figures, with the terminal inside ---- */
+/* the TUI's palette, as it is in the product (crates/tui theme): it doesn't change with the site */
+html[data-theme="dark"] :is(.term, .tui) {
+  --bg:#1f1c19; --bg2:#26221f; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --line:#2a2623;
+  --acc:#f4a6b0; --raised:#24201d; --chip:#2b2723; --tint:#2b1c21; --err:#ff5a52; --ok:#b9d99a; }
+html[data-theme="light"] :is(.term, .tui) {
+  --bg:#faf7f0; --bg2:#efeae1; --text:#1b1917; --dim:#6b645a; --faint:#cfc8bd; --line:#e2dcd2;
+  --acc:#b8416b; --raised:#f3eee4; --chip:#efe9df; --tint:#f6e3e8; --err:#b3261e; --ok:#3f7a2a; }
+.term, html[data-theme="dark"] .term { background:var(--card); color:var(--text); border:0; border-radius:10px; box-shadow:3px 3px 0 var(--drop); position:relative; overflow:visible; }
+.term::before, figure.ex::before, .figure::before { content:""; position:absolute; inset:2px; border:1.6px solid var(--frame); border-radius:10px; filter:url(#wobble); pointer-events:none; z-index:2; }
+.term code, .term .k { font-size:.93em; border:0; background:var(--bg2); border-radius:3px; padding:0 .4ch; }
+.sfoot { background:var(--raised); border-radius:0 0 10px 10px; }
+.sfoot .lbl > span, .attbox .bt, .attbox .bb { background:var(--bg); }
+.term.screen { overflow:hidden; }
+iframe { border:0; border-radius:10px; box-shadow:3px 3px 0 var(--drop); outline:1.6px solid var(--frame); outline-offset:-1px; }
+.figcap, figure.ex figcaption { font-family:Newsreader, Georgia, serif; font-style:italic; font-size:16px; color:var(--kick); text-align:center; }
+.figcap { margin:-10px 0 26px; max-width:100ch; }
+
+/* ---- pen marks: they draw themselves when their block comes in (paper.js adds .in) ---- */
+.draw { fill:none; stroke:var(--pen); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; stroke-dasharray:900; stroke-dashoffset:900; }
+.draw.blue { stroke:var(--blue); }
+.in .draw { animation:pen 1.3s cubic-bezier(.6,.1,.3,1) forwards; animation-delay:calc(.4s + var(--d, 0s)); }
+@keyframes pen { to { stroke-dashoffset:0; } }
+.u { position:relative; white-space:nowrap; } .u .ul { position:absolute; left:-2%; bottom:-.2em; width:104%; height:.42em; overflow:visible; }
+.circ { position:relative; z-index:0; } .circ .ring { position:absolute; z-index:-1; left:-20px; top:-14px; width:calc(100% + 40px); height:calc(100% + 28px); overflow:visible; }
+.hl { background:linear-gradient(100deg, transparent 0, var(--hl) 4px, var(--hl) calc(100% - 6px), transparent 100%); background-size:0 72%; background-position:0 75%; background-repeat:no-repeat; transition:background-size 1.1s .4s ease; padding:0 4px; margin:0 -4px; }
+.in .hl { background-size:100% 72%; }
+.pen { font-family:Caveat, cursive; color:var(--pen); font-weight:500; }
+
+/* colored-pencil doodles */
+.doodle { overflow:visible; display:block; } .doodle .gust path { stroke-dasharray:14 9; animation:gust 1.6s linear infinite; }
+@keyframes gust { to { stroke-dashoffset:-46; } }
+@keyframes bob { 50% { transform:translateY(-8px) rotate(-2deg); } }
+html[data-theme="dark"] .doodle [data-ink="blue"] { stroke:#9aa8ff; } html[data-theme="dark"] .doodle [data-ink="face"] { stroke:#ece6da; }
+html[data-theme="dark"] #hatchB line { stroke:#8d9cf5; }
+
+/* the identity plates (05) */
+.plates { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:26px 34px; max-width:1100px; margin:18px 0 30px; }
+.plate { position:relative; padding:20px 22px 18px; }
+.plate::before { content:""; position:absolute; inset:0; border:1.4px solid var(--rule); border-radius:8px; filter:url(#wobble); pointer-events:none; }
+.plate .cap { font-family:Caveat, cursive; font-size:22px; color:var(--pen); line-height:1; margin-bottom:10px; }
+.plate p { font-size:16px; color:var(--dim); margin:8px 0 0; }
+.chips { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; max-width:1000px; margin:12px 0 22px; }
+.chipc { font-size:14px; }
+.chipc .c { height:62px; border-radius:6px; position:relative; box-shadow:2px 2px 0 var(--drop); }
+.chipc .c::after { content:""; position:absolute; inset:0; border:1.2px solid var(--frame); border-radius:6px; filter:url(#wobble); opacity:.6; }
+.chipc .n { margin-top:6px; } .chipc .h { font-family:"JetBrains Mono", monospace; font-size:12px; color:var(--dim); }
+.typespec { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:22px 34px; max-width:1100px; margin:14px 0 24px; }
+.typespec .s1 { font-family:Newsreader, serif; font-weight:600; font-size:46px; letter-spacing:-.045em; line-height:1.05; }
+.typespec .s2 { font-family:Caveat, cursive; font-size:40px; color:var(--pen); line-height:1.1; }
+.typespec .s3 { font-family:"JetBrains Mono", monospace; font-size:15px; line-height:1.6; }
+.marks { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:26px 30px; max-width:1100px; margin:16px 0 26px; font-size:22px; }
+.marks > div { min-height:72px; display:flex; flex-direction:column; justify-content:flex-end; gap:10px; }
+.marks .lbl { font-size:15px; color:var(--kick); font-style:italic; }
+.marks .arr { width:72px; height:36px; overflow:visible; } .marks .tally { width:150px; height:40px; overflow:visible; }
+.doodles { display:flex; gap:40px; align-items:flex-end; flex-wrap:wrap; margin:14px 0 24px; }
+.doodles figure { text-align:center; } .doodles .doodle { width:220px; }
+.doodles figcaption { font-style:italic; font-size:15px; color:var(--kick); margin-top:4px; }
+.doodles .bob { animation:bob 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .doodle .gust path, .doodles .bob, .hero .hcloud { animation:none; } .draw { stroke-dashoffset:0; animation:none !important; } .hl { background-size:100% 72%; transition:none; } }
