@@ -1536,7 +1536,8 @@ cat > $BG/$i.cmd <<'XQ-3131618372-EOF'
 whoami
 XQ-3131618372-EOF
 if [ $? -ne 0 ]; then echo \"background: could not write /tmp/bend-bg-0/$i.cmd (disk full?)\"; rm -f $BG/$i.in $BG/$i.cmd; rmdir $BG/$i.slot 2>/dev/null; rm -f \"$0\"; exit 1; fi
-( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &
+L=${BEND_MEM_LIMIT_MB:-}; if [ -z \"$L\" ]; then m=$(sysctl -n hw.memsize 2>/dev/null); m=$((${m:-0}/4194304)); if [ $m -eq 0 ] || [ $m -gt 8192 ]; then m=8192; fi; if [ $m -lt 2048 ]; then m=2048; fi; L=$m; fi
+( ulimit -f 102400; set -m; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; set +m; echo $C > $BG/$i.pid; if [ \"$L\" -gt 0 ] 2>/dev/null; then ( while kill -0 -$C 2>/dev/null; do sleep 2; k=$(ps -axo pgid=,pid=,rss=,ucomm= 2>/dev/null | awk -v g=$C -v l=$((L*1024)) '$1==g && $3>l {print \"pid \" $2 \" (\" $4 \") at \" int($3/1024) \" MB\"; exit}'); if [ -n \"$k\" ]; then kill -9 -$C 2>/dev/null; if { [ -d $BG/$i.slot ] && [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; } || { [ ! -d $BG/$i.slot ] && [ -e $BG/$i.rc ]; }; then echo \"[bash: killed $k of RAM, over the limit of $L MB per process (BEND_MEM_LIMIT_MB, 0 = no limit). A process that keeps growing is a leak or a command that never ends: e.g. its output piped into grep -m1 or head, or a CLI left running in the background]\" >> $BG/$i.out; fi; break; fi; done ) >/dev/null 2>&1 & fi; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &
 r=$!
 e=0
 while kill -0 $r 2>/dev/null; do
@@ -1726,22 +1727,41 @@ law bg_wrapper_fifo_rdrw:
 law bg_wrapper_runner_waits_and_records:
   {Bool.and(
      String.contains(Sh.bg_wrap("x", "/d", 5),
-       "C=$!; echo $C > $BG/$i.pid; wait $C; R=$?"),
-     String.contains(Sh.bg_wrap("x", "/d", 5), "echo $R > $BG/$i.rc"))
+       "C=$!; set +m; echo $C > $BG/$i.pid; "),
+   Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), " & fi; wait $C; R=$?"),
+     String.contains(Sh.bg_wrap("x", "/d", 5), "echo $R > $BG/$i.rc")))
     == True{} : Bool}
 
 # LAW: output goes to a FILE, never a pipe — the orphan-holding-pipe
-# bug class (minute-long hangs) is structurally gone.
+# bug class (minute-long hangs) is structurally gone. The one pipe of
+# the wrapper is the memory watchdog's own ps | awk, read by $( ) inside
+# the watchdog: no command output goes through it.
 law bg_wrapper_output_is_a_file:
-  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "> $BG/$i.out 2>&1"),
-     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), " | ")))
+  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1"),
+   Bool.and(String.contains(Sh.bg_mem_watch(), "k=$(ps -axo pgid=,pid=,rss=,ucomm= 2>/dev/null | awk "),
+     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), ".cmd ) |"))))
     == True{} : Bool}
 
-# LAW: the wrapper NEVER kills the command — its only kill is the -0
-# liveness probe; ending a background command is the agent's decision.
+# LAW: the wrapper NEVER kills the command — ending a background
+# command is the agent's decision. One exception, for the machine: the
+# memory watchdog kills the command's process group (kill -9 -$C) once
+# one of its processes is over the limit; no other kill -9 exists.
 law bg_wrapper_never_kills:
   {Bool.and(Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "kill $c")),
-     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "kill -9")))
+     Bool.and(Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "kill -9 $")),
+       String.contains(Sh.bg_mem_watch(), "$3>l {print")))
+    == True{} : Bool}
+
+# LAW: every command runs in its own process group under the memory
+# watchdog (the vercel deploys of 2026-10-01: 32 + 17 GB of node left
+# running, the Mac out of memory). The group survives an orphaned child,
+# so `( cmd & )` and a pipe whose reader quit are watched too; the watch
+# lasts while any process of the group lives; the limit has an override.
+# (bg_wrapper_script pins both lines in the wrapper, byte for byte)
+law bg_wrapper_watches_memory:
+  {Bool.and(String.contains(Sh.bg_mem_watch(), "while kill -0 -$C"),
+   Bool.and(String.contains(Sh.bg_mem_watch(), "kill -9 -$C"),
+     String.contains(Sh.bg_mem_limit(), "L=${BEND_MEM_LIMIT_MB:-}")))
     == True{} : Bool}
 
 # LAW: a command that finishes inside the window leaves no trace —
@@ -1824,7 +1844,7 @@ unset BEND_SESSION_FILE BEND_CONTEXT_FILE BEND_WIRE_LOG BEND_REPL_PORT "),
 # 50MiB) — an output-looping background command dies at the cap
 # instead of filling the disk (once: a 6.4GB .out).
 law bg_wrapper_output_capped:
-  {String.contains(Sh.bg_wrap("x", "/d", 5), "( ulimit -f 102400; ( ")
+  {String.contains(Sh.bg_wrap("x", "/d", 5), "( ulimit -f 102400; set -m; ( ")
     == True{} : Bool}
 
 # LAW: the runner checks it still OWNS the slot before writing the rc

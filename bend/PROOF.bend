@@ -484,6 +484,9 @@ def Laws.bg_wrapper_output_is_a_file():
 def Laws.bg_wrapper_never_kills():
   {==}
 
+def Laws.bg_wrapper_watches_memory():
+  {==}
+
 def Laws.bg_wrapper_cleans_slot():
   {==}
 

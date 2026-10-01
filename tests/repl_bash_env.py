@@ -10,7 +10,11 @@ A) A real repl-live on the scripted fake provider (fake_provider.py)
    ulimit, a 100 MiB result that killed the REPL ("bend: memory fault").
    Now 3 gets a fresh slot and reads "job-done". Then a 3 MB output
    comes back cut at 1 MiB, and the command sees none of the REPL's
-   session vars (SB_AGENT stays: sb needs it).
+   session vars (SB_AGENT stays: sb needs it). Then the memory watchdog
+   (2026-10-01: two `vercel deploy` runs left growing, 32 + 17 GB of node,
+   the Mac out of memory): with BEND_MEM_LIMIT_MB=100, a command that
+   grows to 300 MB is killed and says why, and so is an orphaned child
+   `( cmd & )` that grows after its command returned.
 B) `bend-harness --headless --scripted` started with an agent's vars
    (BEND_WIRE_LOG, BEND_CONTEXT_FILE, SB_*) writes nothing into that
    agent's wire log (once: a scripted REPL run from an agent's shell
@@ -29,6 +33,10 @@ PRIVATE = ("BEND_SESSION_FILE", "BEND_CONTEXT_FILE", "BEND_WIRE_LOG", "BEND_REPL
            # the calling agent's tmp/bg and run/ (tools_env::temp_env): its
            # bg dir won over BEND_BG_ROOT, the slots were the agent's
            "BEND_BG_DIR", "BEND_AGENT_RUN")
+
+
+# a process that holds 300 MB (touched pages), then sleeps 30 s
+HOG = "python3 -c 'import time; m=\"%s\"; a=[b\"x\"*(25<<20) for k in range(12)]; time.sleep(30)'"
 
 
 def clean_env(home):
@@ -79,6 +87,8 @@ def part_a(tmp):
         "BEND_BG_ROOT": bg, "BEND_BG_AFTER": "6", "BEND_REPL_PORT": str(port),
         "BEND_SESSION_FILE": session, "BEND_WIRE_LOG": os.path.join(tmp, "wire.log"),
         "SB_AGENT": "probe",
+        # the memory watchdog's limit, per process (the hogs below: 300 MB)
+        "BEND_MEM_LIMIT_MB": "100",
     })
     log, err = os.path.join(tmp, "repl.log"), os.path.join(tmp, "repl.err")
     repl = subprocess.Popen([os.path.join(ROOT, "repl-live")], cwd=ROOT, env=env,
@@ -92,7 +102,12 @@ def part_a(tmp):
         out0 = os.path.join(bg, "bend-bg-%d" % port, "0.out")
         cmds = ["sleep 8; echo job-done", "sleep 4", "echo before; cat " + out0,
                 "yes aaaaaaaaa | head -c 3000000",
-                'echo "env:[${BEND_SESSION_FILE-}][${BEND_WIRE_LOG-}][${BEND_REPL_PORT-}][${SB_AGENT-}]"']
+                'echo "env:[${BEND_SESSION_FILE-}][${BEND_WIRE_LOG-}][${BEND_REPL_PORT-}][${SB_AGENT-}]"',
+                # 300 MB in ~1 s, then it would wait 30 s: the watchdog kills it
+                HOG % "bise-memhog-fg",
+                # the same, orphaned: the command returns at once, the hog grows after
+                "( " + HOG % "bise-memhog-orphan" + " & ); echo spawned",
+                "sleep 5; pgrep -f bise-memhog || echo no-hog-left"]
         sock = socket.create_connection(("127.0.0.1", port), timeout=120)
         sock.sendall(("run " + " ".join("[[bash: %s]]" % c for c in cmds) + "\n").encode())
         f = sock.makefile("rb")
@@ -108,6 +123,9 @@ def part_a(tmp):
         if len(res) != len(cmds):
             sys.exit("FAIL %d tool results for %d commands: %r" % (len(res), len(cmds), [r[:80] for r in res]))
         checks = [
+            ("a command over the memory limit is killed and says so",
+             "[bash: killed pid " in res[5] and "over the limit of 100 MB per process" in res[5]),
+            ("an orphaned child over the limit is killed too", "spawned" in res[6] and "no-hog-left" in res[7] and "[bash: killed" not in res[7]),
             ("the job hands off to slot 0", "id 0 (dir " in res[0]),
             ("a finished job's out is read once, not recycled",
              res[2].startswith("tool bash ok: before\njob-done") and len(res[2]) < 100),

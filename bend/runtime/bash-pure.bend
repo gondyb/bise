@@ -367,6 +367,27 @@ def bg_cat_out(+bg: String) -> String:
           String.append(" follow. The rest is lost: redirect a big output to a file and read it in parts]\"; head -c ",
             String.append(bg_out_max(), " $BG/$i.out; echo; else cat $BG/$i.out 2>/dev/null; fi"))))))
 
+# ---- no command can eat the machine's memory ----
+# 2026-10-01: two `vercel deploy` runs an agent piped into `grep -m1`
+# printed their URL, then never ended and grew ~100 MB/s: 32 and 17 GB
+# of node in 6 minutes, the Mac out of memory, its disk full of swap,
+# a reboot. The command runs in a process group of its own (set -m: the
+# group outlives an orphaned child, `( cmd & )` included), and a
+# watchdog beside it reads the group's resident memory every 2 s while
+# any of it lives. A process over the limit gets the whole group killed
+# and the .out says which one, how big, and why: the command's own .out
+# only (the runner still owns the slot, or the slot ended with its rc;
+# an orphan of a finished sync command dies silently, never into the
+# next command's output).
+# The limit, per process: BEND_MEM_LIMIT_MB (0 = none), else a quarter
+# of the RAM between 2 and 8 GB (8 GB when the RAM is unknown).
+def bg_mem_limit() -> String:
+  "L=${BEND_MEM_LIMIT_MB:-}; if [ -z \"$L\" ]; then m=$(sysctl -n hw.memsize 2>/dev/null); m=$((${m:-0}/4194304)); if [ $m -eq 0 ] || [ $m -gt 8192 ]; then m=8192; fi; if [ $m -lt 2048 ]; then m=2048; fi; L=$m; fi"
+
+# started in the runner right after the command ($C leads its group)
+def bg_mem_watch() -> String:
+  "if [ \"$L\" -gt 0 ] 2>/dev/null; then ( while kill -0 -$C 2>/dev/null; do sleep 2; k=$(ps -axo pgid=,pid=,rss=,ucomm= 2>/dev/null | awk -v g=$C -v l=$((L*1024)) '$1==g && $3>l {print \"pid \" $2 \" (\" $4 \") at \" int($3/1024) \" MB\"; exit}'); if [ -n \"$k\" ]; then kill -9 -$C 2>/dev/null; if { [ -d $BG/$i.slot ] && [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; } || { [ ! -d $BG/$i.slot ] && [ -e $BG/$i.rc ]; }; then echo \"[bash: killed $k of RAM, over the limit of $L MB per process (BEND_MEM_LIMIT_MB, 0 = no limit). A process that keeps growing is a leak or a command that never ends: e.g. its output piped into grep -m1 or head, or a CLI left running in the background]\" >> $BG/$i.out; fi; break; fi; done ) >/dev/null 2>&1 & fi"
+
 # ---- the wrapper: one line per generated shell statement ----
 def bg_wrap.seg(+a: String, +b: String) -> String:
   String.append(a, String.append("\n", b))
@@ -399,8 +420,10 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   # inline command would swallow the wrapper own following lines
   # (polling, handoff, result print) as its body - the wrapper then
   # exits before printing anything and the tool returns empty.
-  bg_wrap.seg(String.append("( ulimit -f 102400; ( /bin/sh $BG/$i.cmd", String.append("",
-      " ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &")),
+  bg_wrap.seg(bg_mem_limit(),
+  bg_wrap.seg(String.append("( ulimit -f 102400; set -m; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; set +m; echo $C > $BG/$i.pid; ",
+      String.append(bg_mem_watch(),
+      "; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &")),
   bg_wrap.seg("r=$!",
   bg_wrap.seg("e=0",
   bg_wrap.seg("while kill -0 $r 2>/dev/null; do",
@@ -431,7 +454,7 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc 2>/dev/null",
   bg_wrap.seg("rmdir $BG/$i.slot 2>/dev/null",
   bg_wrap.seg("rm -f \"$0\"",
-  "exit $s"))))))))))))))))))))))))))))))))))))))))))
+  "exit $s")))))))))))))))))))))))))))))))))))))))))))
 
 # ---- the sandbox (approvals-sandbox, approvals-design.md §6) ----
 # In auto on macOS the hub's allow line carries flags: "sandbox" runs the
