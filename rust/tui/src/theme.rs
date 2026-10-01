@@ -355,6 +355,7 @@ pub(crate) const G_RESTART_FAILED: &str = "↻"; // error
 pub(crate) const G_BUILDING: &str = "Δ"; // a version building or on trial (was ⧗)
 pub(crate) const G_CLOSED: &str = "▸"; // progressive disclosure: closed
 pub(crate) const G_OPEN: &str = "▾"; // progressive disclosure: open
+pub(crate) const G_PR: &str = "↑"; // a pull request, in a worktree's border (pr-design §4); draw it with [`pr_glyph`]
 
 // ---- the legend (the symbols section of /help, book §6) ----
 
@@ -428,6 +429,7 @@ pub(crate) const LEGEND: &[Symbol] = &[
     sym(AGENTS, G_STOPPED, Tone::Dim, "stopped"),
     sym(AGENTS, G_UNREAD, Tone::Accent, "unread activity in that agent"),
     sym(AGENTS, G_WORKTREE, Tone::Dim, "has its own worktree (its own copy of the files)"),
+    Symbol { group: AGENTS, glyph: G_PR, tone: Tone::Dim, ascii: "P", meaning: "a pull request (dim open, faint draft, red checks fail)" },
     sym(AGENTS, "opus·hi", Tone::Dim, "model · reasoning (dim: not the same as main's)"),
     sym(AGENTS, G_OVERLAP, Tone::Text, "two agents changed the same file"),
     sym(AGENTS, G_RESTART_FAILED, Tone::Error, "a restart failed"),
@@ -600,6 +602,17 @@ pub(crate) fn glyph(g: &'static str) -> &'static str {
         return g;
     }
     ASCII.iter().find(|(u, _)| *u == g).map_or(g, |(_, a)| *a)
+}
+
+/// The PR glyph: `↑`, `P` under `BISE_ASCII=1`. Not `glyph(G_PR)`: the
+/// table's `↑` is the key hints' arrow (`^`), and every ASCII form of a
+/// mark is its own (`#` is `▣`'s, `^` is `▲`'s; pr-design §4).
+pub(crate) fn pr_glyph() -> &'static str {
+    if ascii_mode() {
+        "P"
+    } else {
+        G_PR
+    }
 }
 
 /// The done glyph: `✓` (accent), `*` under `BISE_ASCII=1`. Not
@@ -991,7 +1004,7 @@ mod tests {
             ("G_SENDING", G_SENDING), ("G_RECEIVED", G_RECEIVED), ("G_READ", G_READ),
             ("G_UNREAD", G_UNREAD), ("G_WORKTREE", G_WORKTREE), ("G_OVERLAP", G_OVERLAP),
             ("G_RESTART_FAILED", G_RESTART_FAILED), ("G_BUILDING", G_BUILDING),
-            ("G_CLOSED", G_CLOSED), ("G_OPEN", G_OPEN),
+            ("G_CLOSED", G_CLOSED), ("G_OPEN", G_OPEN), ("G_PR", G_PR),
             ("G_ENVELOPE", crate::render::G_ENVELOPE), ("G_NOTE", crate::render::G_NOTE),
         ];
         // the declared ones: a `G_…` constant of type `&str` in any source file

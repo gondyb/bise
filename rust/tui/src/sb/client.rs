@@ -101,6 +101,8 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         focus: "main".to_string(),
         views: HashMap::new(),
         agents: Vec::new(),
+        places: Vec::new(),
+        flow: String::new(),
         cards: Vec::new(),
         card: CardView::default(),
         selected: None,
