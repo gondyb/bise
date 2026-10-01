@@ -2,7 +2,7 @@
 // End to end: a throwaway Chrome (or Edge: --browser edge) with the
 // extension, the test plays bise's broker over the fake native host (C4)
 // and drives every op and action on the local pages of test/pages/.
-// Run: node computer-use/extension/test/e2e.mjs [--browser chrome|edge]
+// Run: node --max-old-space-size=1024 computer-use/extension/test/e2e.mjs [--browser chrome|edge]
 // Headless, on a temp profile (~1 min): no window shows; it quits the browser at the end.
 // Result: $TMPDIR/cu-e2e-<browser>.json; exit code 1 when a check fails.
 import { writeFileSync } from "node:fs";

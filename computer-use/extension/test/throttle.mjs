@@ -7,7 +7,7 @@
 //   lifecycle  attached + Page.setWebLifecycleState {state: "active"}
 // Then: the poll rate over the last minute, and one click whose result
 // needs a 100 ms timer (does the action work, how long).
-// Run: node computer-use/extension/test/throttle.mjs [minutes]
+// Run: node --max-old-space-size=1024 computer-use/extension/test/throttle.mjs [minutes]
 // Result: $TMPDIR/cu-throttle.json.
 import { writeFileSync } from "node:fs";
 import path from "node:path";
@@ -38,12 +38,20 @@ try {
   await sleep(minutes * 60_000);
   for (const m of modes) {
     const id = Number(target[m].slice(4));
-    const info = await ext.ev(`chrome.scripting.executeScript({target: {tabId: ${id}}, func: () => ({ ticks: window.ticks.slice(), vis: document.visibilityState })}).then(r => r[0].result)`);
-    const last = info.ticks.filter((t) => t > Date.now() - 60_000);
-    const gaps = last.slice(1).map((t, i) => t - last[i]);
+    const tab = await ext.ev(`chrome.tabs.get(${id}).then(t => ({ status: t.status, discarded: t.discarded, frozen: t.frozen }))`);
+    // A frozen tab runs no script: read it once the action woke it up.
+    const read = () => ext.ev(`chrome.scripting.executeScript({target: {tabId: ${id}}, world: "MAIN", func: () => ({ ticks: window.ticks.slice(), vis: document.visibilityState })}).then(r => r[0].result, e => null)`);
+    const t1 = Date.now();
+    let info = await read();
+    const readBeforeAct = !!info;
     const r = await broker.request("throttle-" + m, "act", { target: target[m], action: "click", locator: { role: "button", name: "Start job" }, timeout_ms: 10_000 });
     const res = await broker.request("throttle-" + m, "act", { target: target[m], action: "wait", text: "done", timeout_ms: 70_000 });
+    if (!info) info = (await read()) || { ticks: [], vis: "?" };
+    const last = info.ticks.filter((t) => t > t1 - 60_000 && t <= t1);
+    const gaps = last.slice(1).map((t, i) => t - last[i]);
     out.modes[m] = {
+      tab,
+      readBeforeAct,
       visibilityState: info.vis,
       ticksLastMinute: last.length,
       maxGapMs: gaps.length ? Math.max(...gaps) : null,
