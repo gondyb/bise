@@ -606,10 +606,22 @@ r"""
 {a:⌥1} {a:✓} perf{>}
 {a:⌥2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:ψ}{>}
 {a:⌥3} {a:?} sad-404{|26}{d:18%}{>}
-::tab with a PR
+::tab PRs
 {f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:↑}{>}
-{f:6} {a:✓} login-fix{|26}{d: 9%}{|31}{e:↑}{>}
-::cap with a PR: ↑ takes ψ's column (a PR implies a branch). red only when its checks fail. designed, not built yet.
+{f:6} {g1} login-fix{|21}{d: 5m}{|26}{d: 9%}{|31}{e:↑}{>}
+{f:7} {d:…} release{|26}{d: 8%}{|31}{d:…}{>}
+::tab PRs, ctrl held
+{f:2} {g1} dark-mode{|21}{d: working}{|31}{d:↑}{>}
+    {d:#412 · changes asked · che…}{>}
+{f:6} {g1} login-fix{|21}{d: working}{|31}{e:↑}{>}
+    {d:#415 ·} {e:checks fail}{d:: e2e…}{>}
+::tab a shared worktree
+{f:0} {g1} main {a::*} {d:@ 2}{|21}{d: 1m}{|26}{d:22%}{>}
+{>}
+{r:╭─} {d:ψ sb/dark-mode} {>─} {d:↑} {r:─}
+{r:│}{f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{>}
+{r:╰}{f:4} {g1} i18n {a:•}{|21}{d:42s}{|26}{d:31%}{>}
+::cap the mark: ψ a worktree, no PR yet · ↑ its PR: dim open, faint draft, red checks fail, accent only when an inbox item asks you · … waits to land. two or more agents in one worktree: a box, the mark in its border.
 ::end
 
 ## anatomy
@@ -619,13 +631,15 @@ r"""
 3. **name**, then its marks: main's `:*` and `@ n`, the pink `•` unread.
 4. **turn time**, 3 columns, right-aligned, only while it works.
 5. **context %**, 3 columns, right-aligned.
-6. **ψ** far right when it works in its own worktree.
+6. **the mark**, far right, when it works in its own worktree: `ψ` no PR yet, `↑` its PR, `…` waits to land.
 
 ## rules
 
 - **no state words at rest**: the glyph says them. holding ctrl writes them in the time and % columns.
 - **every column stays in place** even when blank, so the rows line up.
-- a name takes the room its row leaves and is cut with `…` only there.
+- a name takes the room its row leaves and is cut with `…` only there. the mark is never dropped.
+- **a box only when agents share a worktree**: `╭─ ψ branch ── ↑ ─`, the agents behind a `│` rail, the last on `╰`. alone, the agent is a plain row with its mark. order: your folder's rows, the solo-worktree rows, then the boxes, then the inbox.
+- ctrl held, a solo row gets one dim line under it at the name's column: the PR in words (`#415 · checks fail: e2e/login`), the branch last when it isn't the agent's name.
 """, src="book §8 agents panel", k="sidebar agents rows worktree context")
 
 page("components/divider", "divider",

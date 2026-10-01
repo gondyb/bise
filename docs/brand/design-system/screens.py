@@ -52,8 +52,9 @@ def ibox(title, right, rows, E=65):
 you = lambda t: "  {a:│} " + t
 me = lambda t: "  {ab::*} " + t
 cont = lambda t: "     " + t
-row = lambda n, g, name, t="", pct="", lead="  ": f"{lead}{{f:{n}}} {g} {name}" + (f"{{|88}}{{d:{t}}}" if t else "") + (f"{{|93}}{{d:{pct}}}" if pct else "")
-held = lambda n, g, name, word, lead="  ", acc=False: f"{lead}{{f:{n}}} {g} {name}{{|88}}" + (f"{{a:{word}}}" if acc else f"{{d:{word:>8}}}")
+row = lambda n, g, name, t="", pct="", lead="  ", mark="": f"{lead}{{f:{n}}} {g} {name}" + (f"{{|88}}{{d:{t}}}" if t else "") + (f"{{|93}}{{d:{pct}}}" if pct else "") + (f"{{|97}}{mark}" if mark else "")
+held = lambda n, g, name, word, lead="  ", acc=False, mark="": f"{lead}{{f:{n}}} {g} {name}{{|88}}" + (f"{{a:{word}}}" if acc else f"{{d:{word:>8}}}") + (f"{{|97}}{mark}" if mark else "")
+under = lambda t: "      " + t  # held: the line under a solo-worktree row, at the name's column
 top = lambda branch, pr="": "{r:╭─} {d:ψ " + branch + "} {>99─}" + (f" {pr} {{r:─}}" if pr else "{r:──}")
 lid = lambda t: "{r:│}  " + t
 
@@ -126,12 +127,12 @@ screen("main", "the main screen",
 [("rest", frame(FEED + INBOX1, PAN, DIV_W, CTX, comp(DRAFT)), 100),
  ("ctrl held", frame([l.replace("{f:▸ 9 messages between 4 agents}", "{f:▸} {a:ctrl+o} {f:expand}") for l in FEED] + INBOX1_HELD,
                      PAN_HELD, DIV_HELD, CTX_HELD, comp(DRAFT, KEYS_HELD), head=HEAD_HELD, split=False), 100)],
-"100 columns. the panel: your folder's agents as rows, a worktree as a small box (its branch and PR in the border), then the inbox.")
+"100 columns. the panel: your agents as rows; two agents that share a worktree get a small box (its branch and PR in the border); then the inbox.")
 
 # ------------------------------------------------------------------ 2. you ask, main starts agents
 P_START = ["", "  {d:agents}", row(0, G, "main {a::*}", " 2s", " 3%")]
-P_ON = ["", "  {d:agents}", row(0, G, "main {a::*}", " 9s", " 6%"), row(2, G, "sad-404", " 4s", " 2%"), "",
-        top("sb/perf"), row(1, G, "perf", " 4s", " 2%", lead="{r:╰} ")]
+P_ON = ["", "  {d:agents}", row(0, G, "main {a::*}", " 9s", " 6%"), row(2, G, "sad-404", " 4s", " 2%"),
+        row(1, G, "perf", " 4s", " 2%", mark="{d:ψ}")]
 F_ASK = ["", you("signup is slow on mobile, and the 404 is sad {a:✓✓}"), ""]
 screen("start", "you ask, main starts agents",
 "you say it the way you'd say it to a person. main splits the work, starts the agents, picks who needs a worktree, and tells you in one line.",
@@ -160,7 +161,7 @@ screen("router", "you're not the router",
 
 # ------------------------------------------------------------------ 4. the inbox: an approval
 P_AP = ["", "  {d:agents}", row(0, G, "main {a::*}", " 1m", "22%"), row(3, "{a:?}", "sad-404", pct="18%"),
-        row(5, "{a:?}", "release", pct=" 8%"), "", top("sb/dark-mode", "{d:↑}"), row(2, G, "dark-mode", " 3m", "12%", lead="{r:╰} "),
+        row(5, "{a:?}", "release", pct=" 8%"), row(2, G, "dark-mode", " 3m", "12%", mark="{d:↑}"),
         "", "  {d:inbox}", "  {f:1} {a:?} release  {d:$ npm publish…}", "  {f:2} {a:?} sad-404  {d:the dog: a h…}"]
 F_AP = ["", me("perf's fix is in. release is shipping 2.5.0."), "  {f:▸ 6 messages between 3 agents}", ""]
 IT1 = ["%", "% {ab:?} {b:release wants to run}{>62} {d:1 of 2 · 2m}", "%   $ npm publish --access public", "%",
@@ -255,18 +256,17 @@ screen("models", "/models: which model does what",
 PICK, "full screen, in place of the thread. /provider holds the keys; /model is the quick list for the agent in view.")
 
 # ------------------------------------------------------------------ 9. worktrees and PRs
-P_PR = ["", "  {d:agents}", row(0, G, "main {a::*} {d:@ 2}", " 1m", "22%"), row(5, "{d:○}", "release", pct=" 8%"), "",
+P_PR = ["", "  {d:agents}", row(0, G, "main {a::*} {d:@ 2}", " 1m", "22%"), row(5, "{d:○}", "release", pct=" 8%"),
+        row(2, G, "login-fix", " 5m", " 9%", mark="{e:↑}"), row(3, "{a:?}", "sad-404", pct="18%", mark="{a:↑}"),
+        row(6, G, "emoji-csv", " 2m", "14%", mark="{d:ψ}"), "",
         top("sb/dark-mode", "{d:↑}"), row(1, G, "dark-mode", " 3m", "12%", lead="{r:│} "), row(4, G, "i18n {a:•}", "42s", "31%", lead="{r:╰} "), "",
-        top("sb/login-fix", "{e:↑}"), row(2, G, "login-fix", " 5m", " 9%", lead="{r:╰} "), "",
-        top("sb/sad-404", "{a:↑}"), row(3, "{a:?}", "sad-404", pct="18%", lead="{r:╰} "), "",
-        top("sb/emoji-csv"), row(6, G, "emoji-csv", " 2m", "14%", lead="{r:╰} "), "",
         "  {d:inbox}", "  {f:1} {a:?} sad-404  {d:#409 is approv…}"]
-P_PR_HELD = ["", "  {d:agents}", held(0, G, "main {a::*} {d:@ 2}", "working"), held(5, "{d:○}", "release", "idle"), "",
+P_PR_HELD = ["", "  {d:agents}", held(0, G, "main {a::*} {d:@ 2}", "working"), held(5, "{d:○}", "release", "idle"),
+             held(2, G, "login-fix", "working", mark="{e:↑}"), under("{d:#415 ·} {e:checks fail}{d:: e2e…}"),
+             held(3, "{a:?}", "sad-404", "asks you", acc=True, mark="{a:↑}"), under("{d:#409 · approved · checks…}"),
+             held(6, G, "emoji-csv", "working", mark="{d:ψ}"), under("{d:no PR yet · 2 commits}"), "",
              top("sb/dark-mode", "{d:↑ #412}"), lid("{d:changes asked · checks pass}"),
              held(1, G, "dark-mode", "working", lead="{r:│} "), held(4, G, "i18n {a:•}", "working", lead="{r:╰} "), "",
-             top("sb/login-fix", "{e:↑ #415}"), lid("{e:checks fail} {d:· login.spec.ts}"), held(2, G, "login-fix", "working", lead="{r:╰} "), "",
-             top("sb/sad-404", "{a:↑ #409}"), lid("{d:approved · checks pass}"), held(3, "{a:?}", "sad-404", "asks you", lead="{r:╰} ", acc=True), "",
-             top("sb/emoji-csv"), lid("{d:no PR yet · 2 commits}"), held(6, G, "emoji-csv", "working", lead="{r:╰} "), "",
              "  {d:inbox}", "  {a:1} {a:?} sad-404  {d:#409 is approv…}"]
 F_PR = ["", me("dark-mode opened #412: dark mode with tokens.css."), "  {f:▸ 2 messages from GitHub}", "",
         me("alice asked for changes on #412: the toggle's"), cont("contrast, a test, a name. dark-mode is on them."), "",
@@ -278,16 +278,16 @@ IT_M = ibox("inbox · 1 waiting for you", "ctrl+1 open",
             ["%", "% {ab:?} {b:sad-404's PR is ready}{>62} {d:1 of 1 · 1m}", "%   #409 · the sad 404 gets a dog in a hat", "%",
              "%   {d:alice approved it, the checks pass.}", "%   {d:it merges with your gh login, squash.}", "%",
              "%   {a:1} {d:merge it}   {a:2} {d:not yet}", "%"])
-P_MERGED = P_PR[:11] + ["", top("sb/emoji-csv"), row(6, G, "emoji-csv", " 2m", "14%", lead="{r:╰} ")]
+P_MERGED = [l for l in P_PR if "sad-404" not in l and "inbox" not in l][:-1]
 screen("prs", "worktrees and pull requests",
-"agents share your folder; one that needs isolation gets a worktree, and several agents can share one. each worktree is a small box: git lives in its border (ψ, the branch, the PR's ↑), agents live in rows. main says what GitHub said, once, in words.",
+"agents share your folder; one that needs isolation gets a worktree. alone in it, the agent is a row with one mark in the last column: ψ no PR yet, ↑ its PR. when several agents share a worktree, they get a small box: git lives in its border (ψ, the branch, the PR's ↑), agents live in rows. main says what GitHub said, once, in words.",
 [("rest", frame(F_PR + IB_PR, P_PR, DIV_W, CTX, comp("ship the sad dog once it's merged")), 100),
  ("ctrl held", frame(F_PR + IB_PR, P_PR_HELD, DIV_HELD, CTX_HELD, comp("ship the sad dog once it's merged", KEYS_HELD),
                      head="{d:~/acme · lands via PRs ·} {g3} {d:5 working · ↑ 3 PRs · # 1 in the inbox}", split=False), 100),
  ("ready to merge", frame(F_PR + IT_M, P_PR, DIV_ANS("sad-404"), "", COMP_ANSWER), 100),
  ("1: merged", frame(F_PR[:-1] + ["  {a:✓} {d:sad-404's #409 merged · sad-404 archived, worktree removed}"], P_MERGED,
                      "{a:✓} inbox clear", "", comp("ship the sad dog once it's merged", KEYS), head="{d:~/acme}"), 100)],
-"↑ is dim while nothing is yours to do, red when checks fail, pink only when an inbox item asks you (ready to merge). no agent ever merges. being built now (docs/pr-design.md §4.1).")
+"↑ is dim while nothing is yours to do, red when checks fail, pink only when an inbox item asks you (ready to merge). no agent ever merges. merging from the inbox comes next; today you merge on GitHub.")
 
 # ------------------------------------------------------------------ 10. narrow
 screen("narrow", "a narrow terminal",
