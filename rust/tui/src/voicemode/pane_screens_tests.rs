@@ -12,6 +12,7 @@ use crate::sb::bench::test_app;
 use crate::theme::{self, Mode};
 use crate::voicemode::config::VoiceModeConfig;
 use crate::voicemode::fakes::Fakes;
+use crate::voicemode::settings;
 use crate::voicemode::turn::VoiceMode;
 use crate::wire::{Ev, Mark};
 use crate::App;
@@ -94,8 +95,9 @@ fn tab_gives_the_composer_back_the_header_stays() {
 
 // ---- the designer's captures ----
 
-/// A buffer as ANSI (24-bit colors, bold/dim/underline).
-fn ansi(buf: &Buffer) -> String {
+/// A buffer as ANSI (24-bit colors, bold/dim/underline); `color` off:
+/// the attributes only, as a NO_COLOR terminal shows it.
+fn ansi(buf: &Buffer, color: bool) -> String {
     use ratatui::style::Color;
     let mut out = String::new();
     let w = buf.area.width as usize;
@@ -107,10 +109,10 @@ fn ansi(buf: &Buffer) -> String {
                 continue;
             }
             let mut sgr = vec!["0".to_string()];
-            if let Color::Rgb(r, g, b) = c.fg {
+            if let (true, Color::Rgb(r, g, b)) = (color, c.fg) {
                 sgr.push(format!("38;2;{r};{g};{b}"));
             }
-            if let Color::Rgb(r, g, b) = c.bg {
+            if let (true, Color::Rgb(r, g, b)) = (color, c.bg) {
                 sgr.push(format!("48;2;{r};{g};{b}"));
             }
             if c.modifier.contains(Modifier::BOLD) {
@@ -192,10 +194,29 @@ fn voice_mode_captures() {
         for (w, h) in [(150u16, 40u16), (95, 40), (80, 40), (150, 29), (95, 29), (80, 29)] {
             let (mut app, _f) = app_in_voice_mode();
             let (rows, buf) = draw(&mut app, w, h);
+            let buf = &buf;
             let name = format!("screen-{w}x{h}-{fname}");
             std::fs::write(dir.join(format!("{name}.txt")), rows.join("\n") + "\n").unwrap();
-            std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf)).unwrap();
+            std::fs::write(dir.join(format!("{name}.ans")), ansi(buf, !no_color)).unwrap();
             index.push_str(&format!("{name}\n"));
+        }
+        // voice-settings' screens: /voice and the first voice mode's
+        for (sname, open) in [("settings", settings::Open::Settings), ("privacy", settings::Open::Privacy)] {
+            let who = settings::Who { listen: "Mistral".into(), speak: Ok("Mistral".into()), ack: "Mistral".into() };
+            let s = settings::Screen::new(open, VoiceModeConfig::default(), who, true);
+            for (w, h) in [(150u16, 40u16), (95, 40), (80, 40), (80, 29)] {
+                let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+                t.draw(|f| settings::draw_in(f, &s, Instant::now())).unwrap();
+                let buf = t.backend().buffer().clone();
+                let rows: Vec<String> = buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string()).collect();
+                let name = format!("{sname}-{w}x{h}-{fname}");
+                let mut txt = rows.join("\u{a}");
+                txt.push('\u{a}');
+                std::fs::write(dir.join(format!("{name}.txt")), txt).unwrap();
+                std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
+                index.push_str(&name);
+                index.push('\u{a}');
+            }
         }
         // every phase: the pane as drawn in the composer's place
         for (pname, p) in &phases {
@@ -212,7 +233,7 @@ fn voice_mode_captures() {
                 let rows: Vec<String> = buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string()).collect();
                 let name = format!("pane-{pname}-{w}x{}-{fname}", h + 1);
                 std::fs::write(dir.join(format!("{name}.txt")), rows.join("\n") + "\n").unwrap();
-                std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf)).unwrap();
+                std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
                 index.push_str(&format!("{name}\n"));
             }
         }
