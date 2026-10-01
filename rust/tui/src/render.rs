@@ -362,12 +362,13 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             },
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
-        // a gate's card, folded (approvals-design.md §9, designer): the
-        // mark, the line, the note in double quotes; all dim
+        // an inbox item answered, folded (approvals-design.md §9,
+        // designer): the mark (✓ accent, ✗ dim), the line, the note in
+        // double quotes, dim; the same sentence as the box's fold
         Ev::Approval { ok, text, note } => {
-            let mark = if *ok { glyph(G_RECEIVED) } else { glyph(G_FAILED) };
+            let (mark, mark_st) = if *ok { (glyph(G_RECEIVED), Style::default().fg(accent())) } else { (glyph(G_FAILED), dim_st) };
             let t = if note.is_empty() { text.clone() } else { format!("{text} · \"{note}\"") };
-            glyph_line(mark, dim_st, t, dim_st, width)
+            glyph_line(mark, mark_st, t, dim_st, width)
         }
         Ev::Said { glyph, head, dim } => {
             // ✗ a failure (error); ? it needs you, ✓ it worked (accent)

@@ -99,6 +99,8 @@ pub(crate) struct Palette {
     pub card_tint: Color,
     /// the composer pane, raised a little above the ground (BISE-102)
     pub raised: Color,
+    /// an inbox item open in its box: one step above the composer's
+    pub item: Color,
     /// the level-3 message chip (BISE-106)
     pub chip: Color,
     /// the pill of a quote or image chip in the composer (BISE-205)
@@ -129,6 +131,7 @@ pub(crate) const DARK: Palette = Palette {
     selection_bg: rgb(0x33292c),
     card_tint: rgb(0x211d1b),
     raised: rgb(0x1f1c1a),
+    item: rgb(0x26221f),
     chip: rgb(0x231f1d),
     pill: rgb(0x3a2530),
     bg: rgb(0x141211),
@@ -159,6 +162,8 @@ pub(crate) const LIGHT: Palette = Palette {
     selection_bg: rgb(0xfdeef2),
     card_tint: rgb(0xf1eee6),
     raised: rgb(0xf4f0e8),
+    // the deepest sand where the accent still reads at 4.5:1
+    item: rgb(0xf2ede6),
     chip: rgb(0xefe9df),
     pill: rgb(0xf0d3dc),
     bg: rgb(0xfdfbf7),
@@ -253,6 +258,15 @@ pub(crate) fn raised() -> Color {
         Color::Reset
     } else {
         palette().raised
+    }
+}
+/// The tint of an inbox item open in its box (one step above the
+/// composer's). Under `NO_COLOR`, none.
+pub(crate) fn item_tint() -> Color {
+    if raised() == Color::Reset {
+        Color::Reset
+    } else {
+        palette().item
     }
 }
 /// The tint of a level-3 message chip (book §5 `chip`, §9; BISE-106).
@@ -750,7 +764,7 @@ mod tests {
     #[test]
     fn text_reads_on_the_tints() {
         for p in [&DARK, &LIGHT] {
-            for (tint_name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised)] {
+            for (tint_name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised), ("item", p.item)] {
                 for (name, fg) in [("text", p.text), ("dim", p.dim), ("accent", p.accent)] {
                     let r = contrast(fg, tint);
                     assert!(r >= 4.5, "{name} on {tint_name} tint: {r:.2}");
@@ -767,11 +781,13 @@ mod tests {
             let fails = check(p, &[("ground", p.bg)]);
             assert!(fails.is_empty(), "below 4.5:1 on the ground: {fails:?}");
             // a tint must be seen on the ground, and apart from the other one
-            for (name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised)] {
+            for (name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised), ("item", p.item)] {
                 let r = contrast(tint, p.bg);
                 assert!(r >= 1.08, "{name} tint vs ground: {r:.3}");
             }
             assert!(contrast(p.selection_bg, p.card_tint) >= 1.03);
+            // the open inbox item shows on the composer's tint
+            assert!(contrast(p.item, p.raised) >= 1.02, "item vs raised: {:.3}", contrast(p.item, p.raised));
         }
     }
 

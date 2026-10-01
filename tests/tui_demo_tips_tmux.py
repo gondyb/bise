@@ -84,9 +84,9 @@ def main():
         t.keys("Enter")
         sc = t.wait("needs you. ctrl+1 opens", 30)
         print("---- card ----\n" + sc)
-        # ctrl+1 (the kitty form) opens it, a digit picks
+        # ctrl+1 (the kitty form) opens it in place, a digit answers
         t.typed("\x1b[49;5u")
-        t.wait("1-2 pick")
+        t.wait("1-2 answer")
         t.typed("1")
         t.wait_gone("needs you. ctrl+1 opens", 20)
         # 4. a word for dev-api

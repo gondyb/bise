@@ -79,7 +79,8 @@ pub(super) fn needs_you(sb: &Sb, a: &Agent) -> bool {
             || sb
                 .cards
                 .iter()
-                .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "confirm" | "approval")))
+                // answered here: its `?` turns back into its gust at once
+                .any(|c| c.agent == a.name && !sb.answered_here(c.id) && matches!(c.kind.as_str(), "question" | "confirm" | "approval")))
 }
 
 /// A duration in the panel: `40s`, `12m`, `3h`, `2d`.

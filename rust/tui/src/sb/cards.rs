@@ -21,7 +21,7 @@
 //!
 //! A new card never takes the focus: a strip row, or a tab. Answering
 //! moves to the next card, or back to the thread when none are left,
-//! with a dim `✓ perf · you said both` in the history.
+//! with `✓ you answered perf: both` in the history.
 //!
 //! Approvals (docs/approvals.md §7, approvals-plan.md round 2) plug in
 //! as the kind `approval`: its text is the command (or a patch), a blank
@@ -112,12 +112,31 @@ pub(super) enum CardHit {
     Open,
 }
 
-/// The cards as the user sees them: the card view open or not, the card in it, its option highlighted, how far it
-/// is scrolled, the drafts.
+/// The last answer, folded into one line on top of the box for 2 s
+/// (`✓ you allowed t3: npm publish`, `✗ you said no to …: … · "note"`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Fold {
+    pub(super) ok: bool,
+    pub(super) text: String,
+    pub(super) note: String,
+}
+
+/// How long the fold of an answer stays on top of the box, and `✓ inbox
+/// clear` on the divider.
+pub(super) const FOLD_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The cards as the user sees them: an item open or not (in place, or
+/// full screen), the card in it, its option highlighted, how far it is
+/// scrolled, the drafts.
 #[derive(Default)]
 pub(super) struct CardView {
-    /// The card view is up (it takes the history's place).
+    /// An item is open: in its box, where its row was (or full screen).
     pub(super) open: bool,
+    /// ctrl+o: the open item takes the history's place, the others as
+    /// tabs on top.
+    pub(super) full: bool,
+    /// The last answer, folded on top of the box, and when.
+    pub(super) fold: Option<(Fold, std::time::Instant)>,
     /// The card in the view; its draft is in the composer while open.
     pub(super) sel: Option<u64>,
     /// The option highlighted in the view (none on open), and whether
@@ -128,8 +147,8 @@ pub(super) struct CardView {
     /// Set by the last draw: the last scroll offset and the page size.
     pub(super) max_scroll: usize,
     pub(super) page: usize,
-    /// Set by the last draw: the card view (the wheel over it scrolls
-    /// it) and the strip.
+    /// Set by the last draw: the full-screen item (the wheel over it
+    /// scrolls it) and the box.
     pub(super) area: Rect,
     pub(super) strip: Rect,
     /// The drafts of the cards out of view (esc keeps them).
@@ -143,6 +162,11 @@ pub(super) struct CardView {
 }
 
 impl CardView {
+    /// The fold of the last answer, while it shows (2 s).
+    pub(super) fn fresh_fold(&self) -> Option<&Fold> {
+        self.fold.as_ref().filter(|(_, at)| at.elapsed() < FOLD_FOR).map(|(f, _)| f)
+    }
+
     /// Scroll by `d` rows (negative: up), within the card.
     pub(super) fn scroll_by(&mut self, d: isize) {
         self.scroll = if d < 0 {
@@ -210,6 +234,8 @@ pub(super) struct Shape {
     /// each option's digit when not 1, 2, 3… (a gate's card: `no` is
     /// always 3, designer: a thumb that learned 3 = no never allows)
     pub(super) nums: Vec<usize>,
+    /// the summary is a command: the box's row puts `$ ` before it
+    pub(super) cmd: bool,
 }
 
 impl Shape {
@@ -241,6 +267,7 @@ impl Shape {
             words: true,
             keys: Vec::new(),
             nums: Vec::new(),
+            cmd: false,
         }
     }
 }
@@ -307,7 +334,12 @@ fn approval_shape(c: &Card) -> Shape {
     } else {
         let first = lines.first().map_or("", |l| l.trim());
         let summary = if lines.len() > 1 { format!("{first} · {} lines", lines.len()) } else { first.to_string() };
-        (format!("{} wants to run", c.agent), format!("{} wants to run", c.agent), summary, crate::code::highlight_bash(head))
+        // the bash mark in accent before the command, like a gate's card
+        let mut rows = crate::code::highlight_bash(head);
+        if let Some(first) = rows.first_mut() {
+            first.insert(0, Span::styled("$ ", Style::default().fg(theme::accent())));
+        }
+        (format!("{} wants to run", c.agent), format!("{} wants to run", c.agent), summary, rows)
     };
     let mut parts = vec![Part::Code(code)];
     if !reason.is_empty() {
@@ -316,7 +348,7 @@ fn approval_shape(c: &Card) -> Shape {
     if !c.note.is_empty() {
         parts.push(Part::Note(c.note.clone()));
     }
-    Shape::plain(
+    let mut s = Shape::plain(
         title,
         who,
         summary,
@@ -324,7 +356,9 @@ fn approval_shape(c: &Card) -> Shape {
         ALLOW.iter().map(|s| s.to_string()).collect(),
         ALLOW_SHORT.iter().map(|s| s.to_string()).collect(),
         Enter::Deny,
-    )
+    );
+    s.cmd = !patch;
+    s
 }
 
 /// A gate's card (approvals-design.md §9), as the hub writes it: the
@@ -401,6 +435,7 @@ fn confirm_shape(c: &Card) -> Shape {
     let hard = always.is_empty();
     let mut s = Shape::plain(title, who, summary, parts, options, short, Enter::Deny);
     s.note = String::new();
+    s.cmd = bash;
     // `no` is always 3 (designer): a hard rule has no 2
     if hard {
         s.nums = vec![1, 3];
@@ -506,6 +541,12 @@ impl Sb {
         v
     }
 
+    /// Card `id` was answered or closed here (the hub's snapshot still
+    /// has it): its agent no longer waits on you.
+    pub(super) fn answered_here(&self, id: u64) -> bool {
+        self.card.answered.contains(&id)
+    }
+
     fn card_ids(&self) -> Vec<u64> {
         self.sorted_cards().iter().map(|c| c.id).collect()
     }
@@ -520,13 +561,8 @@ impl Sb {
             .or_else(|| v.first().copied())
     }
 
-    fn card_by_id(&self, id: u64) -> Option<&Card> {
+    pub(super) fn card_by_id(&self, id: u64) -> Option<&Card> {
         self.cards.iter().find(|c| c.id == id)
-    }
-
-    /// The panel number of `agent` (⌥N), if it has one.
-    pub(super) fn number_of(&self, agent: &str) -> Option<usize> {
-        (0..10).find(|n| self.agent_numbered(*n).as_deref() == Some(agent))
     }
 }
 
@@ -561,7 +597,7 @@ pub(super) fn glyph_color(kind: &str) -> Color {
 /// A card's title, after its glyph (copy deck §17: `{name} needs you`).
 fn kind_title(kind: &str, agent: &str) -> String {
     match kind {
-        "question" => format!("{agent} needs you"),
+        "question" => format!("{agent} asks"),
         "blocked" => format!("{agent} is blocked"),
         "failed" => format!("{agent} failed"),
         "restart" => "restart failed".into(),
@@ -579,20 +615,22 @@ fn no_words(kind: &str) -> bool {
 
 // ---- the actions ----
 
-/// Open the card view on card `id` (none, or gone: the top card). The
-/// thread's draft waits for the way back.
+/// Open card `id` in place, in its box (none, or gone: the top card).
+/// The thread's draft steps aside (kept, its cursor too) until esc.
 pub(super) fn open_view(app: &mut App, id: Option<u64>) {
     let ids = app.sb.card_ids();
     let Some(id) = id.filter(|i| ids.contains(i)).or_else(|| ids.first().copied()) else { return };
     if !app.sb.card.open {
         app.sb.card.thread = Some(std::mem::take(&mut app.ed));
         app.sb.card.open = true;
+        app.sb.card.full = false;
         app.sb.card.sel = None;
     }
     show(app, id);
 }
 
-/// Back to the thread: the card's draft is kept, the thread's comes back.
+/// Back to your message: the item folds back to its row (its draft
+/// kept), the thread's draft comes back.
 pub(super) fn close_view(app: &mut App) {
     if !app.sb.card.open {
         return;
@@ -601,6 +639,8 @@ pub(super) fn close_view(app: &mut App) {
     let cv = &mut app.sb.card;
     app.ed = cv.thread.take().unwrap_or_default();
     cv.open = false;
+    cv.full = false;
+    cv.fold = None;
     cv.scroll = 0;
 }
 
@@ -632,19 +672,20 @@ fn show(app: &mut App, id: u64) {
     cv.max_scroll = 0;
 }
 
-/// ctrl+n / ctrl+p: the next or previous card, around.
-fn step(app: &mut App, d: isize) {
+/// ↑↓ (no wrap) and ctrl+n / ctrl+p (around): the next or previous
+/// item.
+fn step(app: &mut App, d: isize, wrap: bool) {
     let ids = app.sb.card_ids();
     if ids.is_empty() {
         return;
     }
     let i = app.sb.card.sel.and_then(|s| ids.iter().position(|x| *x == s)).unwrap_or(0) as isize;
-    let j = (i + d).rem_euclid(ids.len() as isize) as usize;
+    let j = if wrap { (i + d).rem_euclid(ids.len() as isize) } else { (i + d).clamp(0, ids.len() as isize - 1) } as usize;
     show(app, ids[j]);
 }
 
-/// Answer card `id` with `reply`; the history says `✓ agent · you said
-/// {said}`; the view moves on.
+/// Answer card `id` with `reply`; the history says the box's fold line
+/// (`✓ you answered perf: both`); the view moves on.
 fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
     // the TUI's own cards: answered here, their own result row
     if super::setup::is_local(id) {
@@ -654,14 +695,50 @@ fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
         }
         return;
     }
-    let Some((agent, kind)) = app.sb.card_by_id(id).map(|c| (c.agent.clone(), c.kind.clone())) else { return };
+    let Some(c) = app.sb.card_by_id(id).cloned() else { return };
     app.sb.send_input(format!("/answer {} {}", id, reply));
-    // a gate's card folds with the hub's own line (`✓ you allowed …`)
-    if kind != "confirm" {
-        let line = format!("{} {} · you said {}", theme::done_glyph(), agent, said);
-        push_event(&mut app.events, &mut app.cache, Ev::Info(line));
+    // the thread says the box's fold line (designer: one sentence); a
+    // gate's card folds with the hub's own (`✓ you allowed …`)
+    let fold = fold_of(&c, reply, said);
+    if c.kind != "confirm" {
+        push_event(&mut app.events, &mut app.cache, Ev::Approval { ok: fold.ok, text: fold.text.clone(), note: fold.note.clone() });
     }
+    let open = app.sb.card.open && app.sb.card.sel == Some(id);
     retire(app, id);
+    if !open {
+        return;
+    }
+    // the next item opened: the answer folds on top of the box for 2 s;
+    // the last one: the box goes, the divider says `✓ inbox clear`
+    if app.sb.card.open {
+        app.sb.card.fold = Some((fold, std::time::Instant::now()));
+    } else {
+        app.flash = Some(("inbox clear".into(), std::time::Instant::now()));
+    }
+}
+
+/// The one line an answer folds into (the hub's words for a gate's
+/// card, approvals-design.md §9): `you allowed t3: npm publish`, `you
+/// said no to t3: npm publish` and the note, `you answered sad-404:
+/// both`.
+pub(super) fn fold_of(c: &Card, reply: &str, said: &str) -> Fold {
+    let gate = matches!(c.kind.as_str(), "confirm" | "approval");
+    if !gate {
+        return Fold { ok: true, text: format!("you answered {}: {}", c.agent, said), note: String::new() };
+    }
+    let what = shape(c).summary;
+    let no = reply == "no" || reply == "deny" || reply.starts_with("deny: ");
+    if no {
+        let note = reply.strip_prefix("deny: ").unwrap_or("").to_string();
+        return Fold { ok: false, text: format!("you said no to {}: {}", c.agent, what), note };
+    }
+    let outside = c.text.lines().next().is_some_and(|h| h.ends_with("outside the sandbox"));
+    let text = if outside {
+        format!("you let {} run it outside the sandbox: {}", c.agent, what)
+    } else {
+        format!("you allowed {}: {}", c.agent, what)
+    };
+    Fold { ok: true, text, note: String::new() }
 }
 
 /// Card `id` is answered or closed: hidden until the hub drops it; the
@@ -803,8 +880,9 @@ pub(crate) fn proves_ctrl_digits(k: &crossterm::event::KeyEvent) -> bool {
     matches!(ctrl_digit(k), Some(1 | 2 | 3 | 8 | 9))
 }
 
-/// Inbox row `n` (1 = the most blocking, the strip's numbers) in the
-/// card view; past the last row: nothing. `true` when it opened.
+/// Inbox row `n` (1 = the most blocking, the box's numbers) opens in
+/// place; with an item open, it jumps there (full screen stays full
+/// screen); past the last row: nothing. `true` when it opened.
 pub(super) fn open_row(app: &mut App, n: usize) -> bool {
     let rows = super::card_draw::strip_ids(&app.sb);
     let Some(&id) = n.checked_sub(1).and_then(|i| rows.get(i)) else { return false };
@@ -816,8 +894,24 @@ pub(super) fn open_row(app: &mut App, n: usize) -> bool {
     true
 }
 
+/// ←→: highlight the option before or after, no wrap: the first →
+/// lands on option 1, the first ← on the last.
+fn choose(app: &mut App, right: bool, n: usize) {
+    if n == 0 {
+        return;
+    }
+    let cv = &mut app.sb.card;
+    cv.opt = Some(match cv.opt.map(|i| i.min(n - 1)) {
+        None if right => 0,
+        None => n - 1,
+        Some(i) if right => (i + 1).min(n - 1),
+        Some(i) => i.saturating_sub(1),
+    });
+    cv.reveal = true;
+}
+
 /// The card keys; `true` when handled. From the thread only ctrl+1-9
-/// (open inbox row N, BISE-302); the rest in the card view.
+/// (open inbox row N in place, BISE-302); the rest with an item open.
 pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
     if let Some(n) = ctrl_digit(k) {
         return open_row(app, n);
@@ -828,12 +922,22 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
     let empty = app.ed.text.is_empty();
     let sel = app.sb.current_card().map(|c| c.id);
     let n = app.sb.current_card().map_or(0, |c| shape(c).options.len());
-    // the arrows are the inbox's on an empty composer, else your text's
+    let full = app.sb.card.full;
+    // the arrows are the inbox's on an empty composer, else your text's;
+    // ctrl+arrows are silent aliases (macOS keeps them for Spaces)
     let arrows = empty && !popup_open;
+    let arrow_mods = k.modifiers == KeyModifiers::NONE || k.modifiers == KeyModifiers::CONTROL;
     match (k.code, k.modifiers) {
         (KeyCode::Esc, _) if !popup_open => close_view(app),
-        (KeyCode::Char('n'), KeyModifiers::CONTROL) => step(app, 1),
-        (KeyCode::Char('p'), KeyModifiers::CONTROL) => step(app, -1),
+        // full screen and back in place
+        (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
+            let cv = &mut app.sb.card;
+            cv.full = !cv.full;
+            cv.scroll = 0;
+            cv.reveal = cv.opt.is_some();
+        }
+        (KeyCode::Char('n'), KeyModifiers::CONTROL) => step(app, 1, true),
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => step(app, -1, true),
         (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
             if let Some(id) = sel {
                 close_card(app, id);
@@ -851,33 +955,20 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) if empty => {
             return sel.is_some_and(|id| pick_digit(app, id, c as usize - '0' as usize));
         }
-        (KeyCode::PageUp, _) if !popup_open => {
+        // full screen scrolls; in place the thread's pgup/pgdn stay
+        (KeyCode::PageUp, _) if full && !popup_open => {
             let page = app.sb.card.page.max(1) as isize;
             app.sb.card.scroll_by(-page);
         }
-        (KeyCode::PageDown, _) if !popup_open => {
+        (KeyCode::PageDown, _) if full && !popup_open => {
             let page = app.sb.card.page.max(1) as isize;
             app.sb.card.scroll_by(page);
         }
-        // ↑↓ choose an option, no wrap: the first ↓ lands on option 1,
-        // the first ↑ on the last (no option: nothing, never the thread's
-        // history recalled into a card)
-        (KeyCode::Up | KeyCode::Down, KeyModifiers::NONE) if arrows => {
-            if n > 0 {
-                let cv = &mut app.sb.card;
-                let down = k.code == KeyCode::Down;
-                cv.opt = Some(match cv.opt.map(|i| i.min(n - 1)) {
-                    None if down => 0,
-                    None => n - 1,
-                    Some(i) if down => (i + 1).min(n - 1),
-                    Some(i) => i.saturating_sub(1),
-                });
-                cv.reveal = true;
-            }
-        }
-        // ←→ the other cards
-        (KeyCode::Left, KeyModifiers::NONE) if arrows => step(app, -1),
-        (KeyCode::Right, KeyModifiers::NONE) if arrows => step(app, 1),
+        // ↑↓ the previous / next item, stacked like the rows (no wrap;
+        // never the thread's history recalled into an answer)
+        (KeyCode::Up | KeyCode::Down, _) if arrows && arrow_mods => step(app, if k.code == KeyCode::Down { 1 } else { -1 }, false),
+        // ←→ walk the options, on one line like them
+        (KeyCode::Left | KeyCode::Right, _) if arrows && arrow_mods => choose(app, k.code == KeyCode::Right, n),
         // no queue for an answer
         (KeyCode::Tab, _) if !popup_open => {}
         _ => return false,
@@ -885,14 +976,14 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
     true
 }
 
-/// The mouse on the strip or the card view; `true` when handled.
+/// The mouse on the box or the full-screen item; `true` when handled.
 pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
     use crossterm::event::{MouseButton, MouseEventKind};
     let cv = &app.sb.card;
     let a = cv.area;
     let over = |r: Rect| m.column >= r.x && m.column < r.right() && m.row >= r.y && m.row < r.bottom();
     match m.kind {
-        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if cv.open && over(a) => {
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if cv.open && cv.full && over(a) => {
             let d = if m.kind == MouseEventKind::ScrollUp { -3 } else { 3 };
             app.sb.card.scroll_by(d);
             true

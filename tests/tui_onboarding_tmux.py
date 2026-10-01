@@ -166,8 +166,8 @@ def main():
         sc = t.wait("this is your inbox.")
         assert "2 not now" not in sc and "what's on your mind?" in sc, sc
         shot("7-setup-card", sc)
-        t.typed("\x1b[49;5u")             # ctrl+1 (the kitty form) opens it (BISE-302)
-        sc = t.wait("1-2 pick")
+        t.typed("\x1b[49;5u")             # ctrl+1 (the kitty form) opens it in place (BISE-302)
+        sc = t.wait("1-2 answer")
         assert "checking changes nothing." in sc, sc
         t.keys("2")                         # not now: one dim row, never asked again
         sc = t.wait("– not now · type /setup whenever you want")

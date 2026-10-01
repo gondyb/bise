@@ -44,10 +44,10 @@ def main():
         t.typed("\x1b[49;5u")             # ctrl+1, the kitty form (BISE-302)
         t.wait("your answer")
         t.typed("yes friday")
-        t.wait("⏎ send as your answer")
+        t.wait("⏎ sends your answer")
         t.keys("Enter")
         t.wait_gone("waiting for you", 20)
-        t.wait("you said yes friday")
+        t.wait("✓ you answered main: yes friday")
         time.sleep(0.3)
         print("PASS tui inbox split")
 

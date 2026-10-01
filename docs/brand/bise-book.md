@@ -628,73 +628,110 @@ questions wait for main, a dim `?` on a blocked task's row (the accent
 journal's items of the other kinds (done, blocked, failed, overlap) close
 at the hub's start, "moved to main's inbox".
 
-Three levels:
+The inbox's box and its keys (designer's round 2, variant A, approved by
+the user: « franchement, c'est parfait »; mock `inbox-redesign.html`). One
+rule: **the inbox never blocks the thread or a normal message.** An item
+opens where it is, a digit answers it and the next one opens, esc gives
+your draft back, the thread stays in sight the whole time.
 
-- **The quick look: the strip.** Right above the divider (1 blank row
-  above it from 24 rows), while something waits: a faint top row
-  `inbox · 3 waiting for you`, on the right what opens a row (BISE-302):
-  `ctrl+1 open` with one row, `ctrl+1-2 open` with 2, `ctrl+1-3 open`
-  with 3 or more (the key in text color, the label dim; without
-  ctrl+digits `click to open` or `/inbox opens it`), then one row per
-  item, most blocking first (approvals, questions, the rest), numbered:
-  ` 1 ? perf · the hero image is 4.2 MB…` and its faint end (the number
-  faint, the glyph in its color; no other key on the row, the top row on
-  the raised tint). Holding ctrl (the kitty protocol's flag 8): the
-  numbers turn accent (bold under NO_COLOR), nothing moves. A command
-  shows its first line and `n lines`; a patch its first file and
-  `+2 files · +42 −7`; more than 3 items: `+ n more`; approvals that open
-  together (5 s): one row, `? 3 agents want to run`. Under 24 rows: one
-  row, ` 1 ` and the top item and `+ n`. Mouse: a click on a row opens it
-  in the view, on the label or `+ n more` the top item. The thread's key
-  bar ends with `ctrl+1 inbox` (BISE-303; `/inbox` without
-  ctrl+digits); `↑` on an empty composer still recalls your history.
-- **The item view** (`ctrl+1-9`, a click on a strip row or in the
-  panel's inbox section, `/inbox`): it takes the history's place; the panel, the
-  divider and the composer stay. The tabs on top (`? release  ? perf
-  ? dark-mode`, the current one on the raised tint, `[ ]` under NO_COLOR;
-  `←→` faint on the right); the item: an accent bar `┃` (ASCII `|`) and
-  its gap, `? perf needs you` bold accent with `2 of 3 · 6m · ⌥1 perf` dim
-  on the right, the whole text at the reading width (88), the options one
-  per row after a 2-column gutter (digit in accent). An approval: the
-  command or patch in the code colors on the raised tint, the reason dim,
-  `allow once / always here / deny`. Longer than the area: it scrolls with
-  the wheel and `pgup` / `pgdn` (not `↑↓`), `▾ 12 more lines · pgdn` dim
-  on its last row. The divider reads `you → ? perf · your answer`: the
-  composer answers this item, never main.
-- **Keys in the item view.** No option is highlighted when it opens: a
-  reflex `⏎` never answers. On an empty composer the first `↓` highlights
-  option 1, the first `↑` the last, then `↑↓` move (no wrap); the
-  highlighted option is raised with an accent `▸` in its gutter (ASCII
-  `>`, NO_COLOR reverse video) and the view scrolls to keep it shown. `⏎`
-  on an empty composer picks it (nothing highlighted: nothing; a done or
-  overlap item: `⏎` acknowledges it). `1-9` pick at once (empty composer
-  only). `←` / `→` (empty composer), `ctrl+n` / `ctrl+p` (always): the
-  previous / next item. Typing: the composer answers, the arrows move in
-  your draft, the options dim (the highlight hidden, remembered); `⏎`
-  sends the text as the answer (an approval: denies, the text as a note);
-  empty the composer and the arrows are the options' again. `ctrl+x`
-  closes without answering; `esc` back to the thread (not the strip),
-  draft kept. `ctrl+N` shows item N. Each item keeps its draft; the
-  thread's draft waits for the way back. `⌥0-9` goes to an agent (the
-  view closes); `ctrl+f` is find.
-- **Key bars of the view:** nothing highlighted `↑↓ choose · 1-2 pick ·
-  ←→ other items · type to answer in your words · esc back`; an approval
-  `↑↓ choose · 1-3 pick · type a note to deny · ←→ other items · esc
-  back`; an option highlighted `↑↓ choose · ⏎ pick “both” · ←→ other
-  items · esc back` (the option cut with `…` at 32 columns); text typed
-  `⏎ send as your answer · ctrl+n next item · esc back, draft kept` (an
-  approval: `⏎ deny with your note`; the last item: `ctrl+p previous
-  item`); no options: `⏎ got it` (done, overlap). Narrow: the pairs drop
-  from the right, `↑↓ choose` and `⏎ …` last.
-- **Removed:** `ctrl+g` and the inbox selected (BISE-302: `ctrl+1-9`
-  and a click open an item at once); before, `ctrl+g` opening an item
-  directly (BISE-248: it selected the inbox, `⏎` opened), `↑↓` scrolling an item (`pgup` / `pgdn` and the wheel do);
-  earlier (BISE-236): `ctrl+f` full screen, `alt+r`, `ctrl+a` on an empty
-  composer, `ctrl+x` / `ctrl+n` / `ctrl+p` from the thread, the divider's
-  `? n cards · ctrl+g`.
-- A new item never takes the focus: a strip row, or a tab. Answering moves
-  to the next item, or back to the thread when none are left, with a dim
-  `✓ perf · you said both` in the history.
+- **The box.** Right above the divider (1 blank row above it from 24
+  rows), while something waits; none when nothing does. Its own block: a
+  rounded border in the line color, from the gutter (a column left of the
+  composer's bar, 2 from the frame at least) to the panel, on the ground
+  (no tint). Its title in the top border, faint: `╭─ inbox · 4 waiting
+  for you ───── ctrl+1-3 open ─╮` (`inbox · 2 waiting` when short); the
+  right part says what opens a row (BISE-302): `ctrl+1 open` with one
+  row, `ctrl+1-2 open`, `ctrl+1-3 open` (the key in text color, its
+  words dim; without ctrl+digits `click to open` or `/inbox opens it`).
+  Inside, a row per item, most blocking first (approvals, questions, the
+  rest): `1 ? t3 · $ npm publish --access public   2m`: the number faint
+  (accent while ctrl is held, bold under NO_COLOR), the glyph in its
+  color, who (the agent), ` · ` dim, what (an approval's `$` in accent
+  and its command's first line, a question's first line, a patch's first
+  file and `+2 files · +42 −7`) in text color, the age faint on the right.
+  At most 3 rows, then `+ n more · ? release · …` faint (a click opens the
+  first of them). Approvals that open together (5 s) share a row (`3
+  agents`). Under 24 rows: one row, `+ n` before its age. A click on a row
+  opens it, on the title the top item.
+- **Open in place.** `ctrl+N` or a click on a row opens that item inside
+  the box, where its row stood; the other items stay rows above and below
+  it (an item past the third takes the third's place), the thread above
+  the box. The open item is on the item tint (one step above the
+  composer's: `#26221f`, light `#f2ede6`; none under NO_COLOR) with the
+  accent `┃` (ASCII `|`) on every row, a blank bar row at the top and the
+  bottom: its head `? t3 wants to run` (the title bold) with `1 of 4 · 2m`
+  dim on the right (a question: `? sad-404 asks`); what it asks (the
+  command in the code colors, a question's text); a blank line; dim, why
+  it asks, the hub's remark and where the agent is (`t3 is shipping 2.5.0
+  · its last step: ✓ npm run build · 12s`: its role and its last finished
+  tool row while its feed is loaded; left out when unknown, and for
+  main, whose question is its own `sb card`); a blank
+  line; the options on one line (`1 allow   2 always allow npm publish *
+  here   3 no`, digits accent, labels dim; one per line when they don't
+  fit); the hint, faint: `or type why not, ⏎ says no` (an approval), `or
+  type your answer, ⏎ sends it` (a question). It takes at most half the
+  feed area: past that its first lines, then `… n more lines · ctrl+o
+  full screen`. Opening puts the composer's draft aside (kept, its
+  cursor too); the divider reads `you → ? t3 · your answer`; esc closes
+  the item back to its row and brings the draft back.
+- **Keys with an item open.** `1-9` pick an option (empty composer only;
+  once you type, digits are text). `←→` highlight an option (no wrap; the
+  first `→` is option 1, the first `←` the last; nothing highlighted on
+  open: a reflex `⏎` never answers); the highlighted one is accent on the
+  ground (inverse; reverse video under NO_COLOR). `↑↓` the previous / next
+  item (no wrap). `⏎` picks the highlighted option; with text typed it
+  sends the answer (an approval: a no with the text as the note); nothing
+  highlighted and no text: nothing (a done or overlap item: `⏎`
+  acknowledges it). `ctrl+N` jumps to item N. `ctrl+o` full screen. `esc`
+  back to your message. Typing: the arrows are your text's, the options'
+  digits dim and the highlight hidden (kept). `ctrl+↑↓` and `ctrl+←→` are
+  silent aliases, never shown (macOS keeps them for Mission Control and
+  Spaces); `ctrl+n` / `ctrl+p` (around) and `ctrl+x` (close without
+  answering) stay, unshown. Each item keeps its own draft. `⌥0-9` goes to
+  an agent (the item closes); `ctrl+f` is find.
+- **Key bar with an item open:** `1-3 answer   ←→ choose   ↑↓ other
+  items   ctrl+o full screen   esc back to your message` (a hard rule
+  `1 3 answer`; an option highlighted: `⏎ always allow` first, the
+  option cut at 32 columns; one item: no `↑↓`); text typed `⏎ says no,
+  with your note` (a question `⏎ sends your answer`), `ctrl+o`, `esc`.
+  Under 100 columns: `1-3 answer   ↑↓ other items   esc back`; then the
+  pairs drop from the right, what answers last.
+- **After an answer.** The item folds into one line at the top of the box
+  for 2 s: `✓ you allowed t3: npm publish --access public` (✓ accent, the
+  words dim), `✗ you said no to api-v2: git push … · "use a branch"` (all
+  dim), `✓ you answered sad-404: both`; the next item opens by itself, so 1,
+  1, 3, 1 clears four. The agent's `?` in the panel turns back into its
+  gust at once. The same line lands in the thread (a gate's from the hub,
+  the others the same sentence, no leading `·`). The last one answered: the box
+  goes, your draft comes back, the divider says `✓ inbox clear` for 2 s
+  (✓ accent, the words in text color, like `✓ copied`).
+- **Full screen** (`ctrl+o` on an open item; the old item view): the item
+  takes the history's place, the others as tabs on top: `1 ? t3   2 ?
+  api-v2   3 ? sad-404` (the box's numbers; the current one accent, `[ ]`
+  under NO_COLOR, the others dim; `↑↓` faint on the right); its head, the
+  whole text at the reading width (88), the options and the hint. `pgup`
+  / `pgdn` and the wheel scroll (`▾ 12 more lines · pgdn` on its last
+  row); a highlighted option scrolls into view. `ctrl+o` again puts it
+  back in place, `esc` back to your message. Key bar `1-3 answer   ↑↓
+  other items   pgup pgdn scroll   ctrl+o back in place   esc back to
+  your message`.
+- **Kinds' options:** an approval `1 allow / 2 always allow … here / 3
+  no`; a hard rule `1 allow / 3 no` (no 2: 3 is no everywhere); a sandbox
+  rerun `1 run it again without the sandbox / 2 always run it outside the
+  sandbox here / 3 no`; a question its choices, or free text; ready to
+  merge (when PRs land) `1 merge it / 2 not yet`. Reports, done and FYI
+  stay out of the inbox: they are main's thread.
+- **80 columns:** the same box from column 2, the options one per line
+  when they don't fit.
+- **Removed:** the strip's raised top row and its label row (the title is
+  in the border now); the item view as the way in (it is full screen,
+  `ctrl+o`); `↑↓` choosing options and `←→` switching items (swapped,
+  round 2); before, `ctrl+g` and the inbox selected (BISE-302: `ctrl+1-9`
+  and a click open an item at once), `ctrl+g` opening an item directly
+  (BISE-248), `↑↓` scrolling an item; earlier (BISE-236): `ctrl+f` full
+  screen, `alt+r`, `ctrl+a` on an empty composer, `ctrl+x` / `ctrl+n` /
+  `ctrl+p` from the thread, the divider's `? n cards · ctrl+g`.
+- A new item never takes the focus: a row in the box.
 - **Kinds** reuse the glyphs: `?` approval, question and blocked (accent),
   `✗` failed, `↻` restart failed (error), `–` drop confirmation, `⇄`
   overlap, `✓` done.

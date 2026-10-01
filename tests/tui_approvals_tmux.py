@@ -31,7 +31,7 @@ COLS, ROWS = 140, 40
 
 
 def open_card(t, who):
-    """ctrl+1 (the kitty form, BISE-302): the top inbox item in its view"""
+    """ctrl+1 (the kitty form, BISE-302): the top inbox item, open in place"""
     t.typed("\x1b[49;5u")
     t.wait("type why not, ⏎ says no")
 
@@ -112,7 +112,7 @@ def session(E, env, home, bise, shot):
         t.typed("[[bash: git push origin main --force]]")
         t.keys("Enter")
         sc = t.wait("waiting for you")
-        t.wait("main wants to run")
+        t.wait("? main · $ git push origin main --force")
         sc = t.screen()
         shot(t, "tool-row-and-strip", sc)
         open_card(t, "main")
@@ -130,11 +130,11 @@ def session(E, env, home, bise, shot):
         # a network call: it asks even when the sandbox contains the rest
         t.typed("/new t1: {{bash: curl -s -m 1 http://127.0.0.1:9/}}")
         t.keys("Enter")
-        sc = t.wait("t1 wants to run", timeout=60)
+        sc = t.wait("? t1 · $ curl -s -m 1 http://127.0.0.1:9/", timeout=60)
         shot(t, "card-in-main-view", sc)
         t.keys("M-1")
         sc = t.wait("waiting for you")
-        assert "t1 wants to run" in sc, sc
+        assert "? t1 · $ curl" in sc, sc
         shot(t, "card-in-task-view", sc)
         open_card(t, "t1")
         sc = t.wait("2 always allow ")
@@ -147,7 +147,7 @@ def session(E, env, home, bise, shot):
         t.keys("M-0")
         t.typed("/new t2: {{bash: curl -s -m 1 http://127.0.0.1:9/x}}")
         t.keys("Enter")
-        t.wait("t2 wants to run", timeout=60)
+        t.wait("? t2 · $ curl", timeout=60)
         open_card(t, "t2")
         t.wait("2 always allow ")
         t.keys("2")
@@ -184,7 +184,7 @@ def session(E, env, home, bise, shot):
             return
         t.typed("/new t3: {{bash: echo hi > ~/Desktop/x.txt}}")
         t.keys("Enter")
-        t.wait("t3 wants to run it outside the sandbox", timeout=60)
+        t.wait("? t3 · $ echo hi > ~/Desktop/x.txt", timeout=60)
         open_card(t, "t3")
         sc = t.wait("type why not, ⏎ says no")
         assert "1 run it again without the sandbox" in sc, sc

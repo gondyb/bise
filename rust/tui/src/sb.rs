@@ -22,7 +22,7 @@ mod cards;
 pub(super) use cards::{card_choices, card_mouse, proves_ctrl_digits};
 use cards::{Card, CardView};
 mod card_draw;
-pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs, strip_height};
+pub(super) use card_draw::{box_height, card_frame, BoxFit, card_view_open, divider_label as card_divider_label, draw_box, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs};
 mod panel;
 #[cfg(test)]
 mod tour_tests;

@@ -780,7 +780,7 @@ mod zen_tests {
                 let calls = app.sb.calls();
                 app.zen.calls(calls, t);
                 on_key(&mut app, &KeyEvent::new(KeyCode::Char('1'), c));
-                assert!(crate::sb::card_view_open(&app), "{what}: the card view is up");
+                assert!(crate::sb::card_divider_label(&app).is_some(), "{what}: an inbox item is open");
             }
             setup(&mut app);
             event(&mut app, key(KeyCode::Char('h')), t);

@@ -67,10 +67,17 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let queue_h = crate::queue::height(app).min(left(text_rows + strip_h + strip_gap));
     let queue_gap = if queue_h > 0 { rows.pad_top.min(left(text_rows + strip_h + strip_gap + queue_h)) } else { 0 };
     let pane_h = text_rows + strip_h + strip_gap + queue_h + queue_gap;
-    // the cards' strip (cards v2): what the rest leaves, with 1 blank
-    // row above it from 24 rows; none while the card view is open
+    // the inbox's box (designer's round 2 A): what the rest leaves, with
+    // 1 blank row above it from 24 rows, from the gutter (1 column left
+    // of the composer's bar, 2 from the frame at least) to the feed
+    // area's edge;
+    // an open item at most half the feed area; none full screen
     sb::card_frame(app);
-    let card_h = sb::strip_height(app, area.height, left(pane_h + 1));
+    let box_x = cols.x0.saturating_sub(1).max(cols.feed_x.saturating_sub(1));
+    let box_w = (cols.feed_x + cols.feed_w).min(area.width).saturating_sub(box_x);
+    let room = left(pane_h + 1);
+    let fit = sb::BoxFit { screen_h: area.height, room, half: (room + 3) / 2 };
+    let card_h = sb::box_height(app, fit, box_w);
     let card_gap = u16::from(card_h > 0 && area.height >= 24 && left(pane_h + 1 + card_h) > 0);
     // the no-vision line names the model of the agent in view
     attach::set_model(&crate::sb::focus_model(app));
@@ -97,7 +104,6 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the composer pane: from the reading column's x to the right margin
     let pane_end = (cols.margin + cols.pane_w).min(area.width);
     let pane = |r: Rect| Rect { x: area.x + cols.x0, width: pane_end.saturating_sub(cols.x0), ..r };
-    let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
     let short = cols.panel.is_none();
     let words = crate::ctrlhint::words(app);
     // the working count's gust: 5 cells, 3 or 1 as the screen narrows (book §9)
@@ -145,7 +151,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let x = cols.panel.and_then(|p| p.rule).unwrap_or(area.width.saturating_sub(1));
         Rect { x: area.x + x, width: 1, ..feed }
     });
-    // the card view (ctrl+1-9, a click) takes the history's place, in the column
+    // the item full screen (ctrl+o) takes the history's place, in the column
     let view = sb::card_view_open(app);
     if view {
         let r = Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..body };
@@ -302,8 +308,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let history = Rect { x: area.x + cols.feed_x, width: cols.feed_w, y: body.y, height: divider_y.saturating_sub(body.y) };
     app.zen.keep = vec![typed.intersection(area), label_rect, history.intersection(area)];
     if card_h > 0 {
-        sb::draw_strip(app, frame, col(card));
-        app.zen.keep.push(col(card).intersection(area));
+        let r = Rect { x: area.x + box_x, width: box_w, ..card };
+        sb::draw_box(app, frame, r, fit);
+        app.zen.keep.push(r.intersection(area));
     }
     if app.find.is_none() && !sb::palette::is_open(app) {
         draw_popup(app, frame, text);

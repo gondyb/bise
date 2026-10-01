@@ -106,16 +106,15 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     for s in [
         "? can i set bise up for your terminal and this repo?",
         "about a minute",
-        "set up bise",
         &format!("i'll check {n} things: your terminal, "),
-        "the connectors key.",
+        "connectors key.",
         "checking changes nothing.",
-        "  1 yes, check",
+        "1 yes, check   2 not now",
     ] {
         assert!(rows.contains(s), "{s}: {rows}");
     }
     assert!(!rows.contains('▸'), "nothing picked: {rows}");
-    assert!(rows.contains("↑↓ choose   1-2 pick   esc back"), "{rows}");
+    assert!(rows.contains("1-2 answer   ←→ choose   ctrl+o full screen   esc back to your message"), "{rows}");
     // 2: not now
     press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
     assert!(setup_cards(&app).is_empty());
@@ -213,6 +212,10 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     // the ghostty card: the exact diff inside; nothing written before a yes
     let ids: Vec<u64> = app.sb.cards.iter().filter(|c| is_local(c.id)).map(|c| c.id).collect();
     super::super::cards::open_view(&mut app, Some(ids[0]));
+    // in place its first lines; full screen (ctrl+o) all of it, the tabs
+    let rows = draw(&mut app, 120, 40).join("\n");
+    assert!(rows.contains("more lines · ctrl+o full screen"), "{rows}");
+    press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(rows.contains("+keybind = performable:super+v=paste_from_clipboard") && rows.contains("config.bise-backup"), "{rows}");
     for s in [
@@ -224,13 +227,14 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
         "right now Ghostty keeps these keys for itself.",
         "i'd add 4 lines to ~/ghostty/config:",
         "i copy the file to config.bise-backup first.",
-        "  1 yes, add them",
+        "1 yes, add them   2 no",
     ] {
         assert!(rows.contains(s), "{s}: {rows}");
     }
-    press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
+    press(&mut app, KeyCode::Right, KeyModifiers::NONE);
     let bar: String = crate::keybar::line(&app, 200).spans.iter().map(|s| s.content.as_ref()).collect();
-    assert_eq!(bar, "↑↓ choose   ⏎ pick “yes, add them”   ←→ other items   esc back");
+    assert_eq!(bar, "⏎ yes, add them   ←→ choose   ↑↓ other items   ctrl+o full screen   esc back to your message");
     assert_eq!(std::fs::read_to_string(h.join("ghostty/config")).unwrap(), "font-size = 14\n");
     press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
     assert!(std::fs::read_to_string(h.join("ghostty/config")).unwrap().ends_with("keybind = super+a=unbind\n"));
@@ -244,8 +248,10 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     assert!(masked(&app));
     let bar: String = crate::keybar::line(&app, 200).spans.iter().map(|s| s.content.as_ref()).collect();
     assert_eq!(bar, "paste your key   ⏎ save   ctrl+x not now   esc back");
+    press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(rows.contains("it goes in ~/.bise/auth.json") && rows.contains("no key yet? console.mistral.ai"), "{rows}");
+    press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
     app.ed.insert("sk-test-123");
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(!rows.contains("sk-test-123") && rows.contains("•••••••••••"), "{rows}");
