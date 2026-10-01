@@ -1,17 +1,40 @@
-#!/usr/bin/env python3
-"""Builds the README's animated SVGs (dark + light). Run: python3 make.py
-The SVGs are shown on GitHub as <img>: no JS, no web fonts. CSS keyframes only."""
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = ["uharfbuzz>=0.40"]
+# ///
+"""Builds the README's animated SVGs (dark + light), in the paper art direction. Run: uv run make.py
+The SVGs are shown on GitHub as <img>: no JS, no web fonts. CSS keyframes only.
+paper: each image is a sheet of paper (light paper, or dark paper for prefers-color-scheme: dark).
+the screens sit on it as figures (a lighter card, a pencil frame, a flat offset shadow) and keep the
+terminal's own look inside: monospace, the TUI colors. the display words (bise :*, the tagline, the
+captions) are Newsreader and Caveat outlined to paths by ink.py, so they render without web fonts."""
 from html import escape as E
-import os
+import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import ink
+# the screens' own colors, on each paper (site/content/landing-paper.html, the 'figure' screens)
 PAL = {
-  "dark":  dict(bg="#141211", text="#ece6da", dim="#8f887d", faint="#3d3935", wind="#3f3a36", acc="#f4a6b0", raised="#1f1c1a", chip="#2a2522", line="#2c2825"),
-  "light": dict(bg="#f7f4ee", text="#1b1917", dim="#77706a", faint="#d6cfc4", wind="#ddd5c8", acc="#b8416b", raised="#efe9df", chip="#e4ddd2", line="#e2dbcf"),
+  "dark":  dict(mode="dark", bg="#1f1c19", text="#ece6da", dim="#c4bcaf", faint="#6f685f", wind="#38332e", acc="#f4a6b0", raised="#2a2622", foot="#24201d", chip="#2b2723", line="#2e2a26"),
+  "light": dict(mode="light", bg="#faf7f0", text="#1d1a17", dim="#5a5349", faint="#a89d8a", wind="#cfc5b4", acc="#c8264a", raised="#efe8db", foot="#f3eee4", chip="#e3dac8", line="#e6dece"),
 }
 MONO = "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace"
 BASE_CSS = f"text{{font-family:{MONO};}} @media (prefers-reduced-motion: reduce){{*{{animation:none!important}}}}"
 
-def svg(w, h, body, css, label):
+def svg(w, h, body, css, label, c=None, pad=18, caption=None, defs=""):
+    """c given: the body is a screen of w x h, laid on a sheet of paper as a figure (with an optional caption)."""
+    if c is not None:
+        m = c["mode"]; t = ink.PAPER[m]
+        cap_h = 40 if caption else 0
+        W, H = w + 2 * pad + 3, h + 2 * pad + 3 + cap_h
+        cap = ""
+        if caption:
+            d, _ = ink.text_path(caption, "serif-italic", 17, x=W / 2, y=pad + h + 3 + 30, anchor="middle", wght=400, opsz=16)
+            cap = f'<path d="{d}" fill="{t["kick"]}"/>'
+        body = (f'<defs>{ink.paper_defs(m)}<clipPath id="card"><rect width="{w}" height="{h}" rx="10"/></clipPath>{defs}</defs>'
+                f'<rect width="{W}" height="{H}" rx="8" fill="{t["paper"]}"/><rect width="{W}" height="{H}" rx="8" fill="url(#paper)"/>'
+                + ink.figure(m, w, h, f'<g clip-path="url(#card)">{body}</g>', x=pad, y=pad) + cap)
+        w, h = W, H
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="{E(label)}">'
             f'<style>{BASE_CSS}{css}</style>{body}</svg>\n')
 
@@ -33,25 +56,59 @@ class TL:
 
 # ---------- hero ----------
 def hero(c):
+    """a sheet of paper: the name in Newsreader, the kiss in Caveat (its * sits level with the colon:
+    a mouth), the north wind blowing next to it, a highlighter and a pen underline that draw themselves,
+    seeds drifting by."""
+    m = c["mode"]; t = ink.PAPER[m]
     W, H = 960, 340
-    rows, css = [], []
-    pat = ["~    ∿      ·     ~   ", "  ·    ~       ∿    ·  ", "∿     ·   ~        ~   ", "   ~      ·    ∿     · "]
-    for i in range(9):
-        y = 30 + i * 34
-        t = pat[i % 4] * 6
-        speed = 40 + (i * 13) % 30
-        css.append(f"@keyframes w{i}{{from{{transform:translateX(0)}}to{{transform:translateX(-{W}px)}}}}.w{i}{{animation:w{i} {speed}s linear infinite}}")
-        rows.append(f'<text class="w{i}" x="0" y="{y}" fill="{c["wind"]}" font-size="15" textLength="{2*W}" lengthAdjust="spacing" xml:space="preserve">{E(t+t)}</text>')
-    kisses = []
-    for i, (x, y, d) in enumerate([(150, 70, 0), (800, 95, 2.2), (690, 280, 4.1), (230, 262, 5.6), (860, 230, 7.3)]):
-        css.append(f"@keyframes q{i}{{0%,{d/9*100:.1f}%{{opacity:0;transform:translateY(0)}}{(d+0.6)/9*100:.1f}%{{opacity:.9}}{(d+2.2)/9*100:.1f}%,100%{{opacity:0;transform:translateY(-14px)}}}}.q{i}{{opacity:0;animation:q{i} 9s ease-out infinite}}")
-        kisses.append(f'<text class="q{i}" x="{x}" y="{y}" fill="{c["acc"]}" font-size="16">:*</text>')
-    css.append("@keyframes kiss{0%,86%,100%{opacity:1}90%{opacity:.25}94%{opacity:1}}.kiss{animation:kiss 5s infinite}")
-    body = (f'<rect width="{W}" height="{H}" rx="18" fill="{c["bg"]}"/><g>{"".join(rows)}</g>{"".join(kisses)}'
-            f'<rect x="250" y="92" width="460" height="160" rx="14" fill="{c["bg"]}" opacity=".82"/>'
-            f'<text x="480" y="170" text-anchor="middle" font-size="76" font-weight="700" fill="{c["text"]}" xml:space="preserve">bise <tspan class="kiss" fill="{c["acc"]}">:*</tspan></text>'
-            f'<text x="480" y="212" text-anchor="middle" font-size="22" fill="{c["text"]}">a multi-agent harness, made for humans.</text>'
-            f'<text x="480" y="242" text-anchor="middle" font-size="14" fill="{c["dim"]}">meet your team lead. you stay in flow, i run the agents.</text>')
+    tp = ink.text_path
+    css = []
+    # the name: 'bise ' in Newsreader 600, tight; ':' and '*' in Caveat 700, the * lowered
+    NS, KS = 104, 96
+    d_bise, w_bise = tp("bise", "serif", NS, track=-.045, wght=600, opsz=72)
+    w_sp = ink.measure(" ", "serif", NS, wght=600, opsz=72) * .45
+    _, w_col = tp(":", "hand", KS, wght=700); _, w_star = tp("*", "hand", KS, wght=700)
+    w_name = w_bise + w_sp + w_col + w_star - KS * .02
+    x0, yb = (W - w_name) / 2 - 40, 150
+    d_bise, _ = tp("bise", "serif", NS, x=x0, y=yb, track=-.045, wght=600, opsz=72)
+    xk = x0 + w_bise + w_sp
+    d_col, _ = tp(":", "hand", KS, x=xk, y=yb, wght=700)
+    d_star, _ = tp("*", "hand", KS, x=xk + w_col - KS * .02, y=yb + KS * .3, wght=700)
+    # the tagline, with a highlighter on 'made for humans'
+    TS, ty = 34, 220
+    a, b, e = "a multi-agent harness, ", "made for humans", "."
+    wa, wb, we = (ink.measure(s, "serif", TS, track=-.015, wght=400, opsz=36) for s in (a, b, e))
+    tx = (W - wa - wb - we) / 2
+    d_t = "".join(tp(s, "serif", TS, x=x, y=ty, track=-.015, wght=400, opsz=36)[0] for s, x in ((a, tx), (b, tx + wa), (e, tx + wa + wb)))
+    hx, hw = tx + wa - 4, wb + 8
+    # the line under it, in italic, the pen underlines 'you stay in flow'
+    SS, sy = 21, 268
+    p1, p2, p3 = "meet your team lead. ", "you stay in flow", ", i run the agents."
+    w1, w2, w3 = (ink.measure(s, "serif-italic", SS, wght=400, opsz=20) for s in (p1, p2, p3))
+    sx = (W - w1 - w2 - w3) / 2
+    d_s = "".join(tp(s, "serif-italic", SS, x=x, y=sy, wght=400, opsz=20)[0] for s, x in ((p1, sx), (p2, sx + w1), (p3, sx + w1 + w2)))
+    ux0, ux1, uy = sx + w1 - 3, sx + w1 + w2 + 3, sy + 7
+    ul = f"M{ux0:.1f} {uy+1:.1f} C{ux0+w2*.2:.1f} {uy-3:.1f},{ux0+w2*.4:.1f} {uy+3:.1f},{ux0+w2*.6:.1f} {uy:.1f} S{ux1-8:.1f} {uy-2:.1f},{ux1:.1f} {uy:.1f}"
+    css += ["@keyframes hl{from{transform:scaleX(0)}to{transform:scaleX(1)}}.hl{transform-box:fill-box;transform-origin:left;transform:scaleX(0);animation:hl 1.1s .6s ease forwards}",
+            "@keyframes pen{to{stroke-dashoffset:0}}.draw{stroke-dasharray:1;stroke-dashoffset:1;animation:pen 1.2s 1.5s cubic-bezier(.6,.1,.3,1) forwards}",
+            "@keyframes kiss{0%,86%,100%{opacity:1}90%{opacity:.25}94%{opacity:1}}.kiss{animation:kiss 5s infinite}",
+            "@keyframes bob{50%{transform:translateY(-7px) rotate(-2deg)}}.bob{animation:bob 5s ease-in-out infinite;transform-box:fill-box;transform-origin:center}",
+            "@keyframes gust{to{stroke-dashoffset:-46}}.gust path{stroke-dasharray:14 9;animation:gust 1.6s linear infinite}"]
+    # seeds: a few * drift across the page, the wind carries them
+    seeds = []
+    for i, (x, y, dl, dur) in enumerate([(70, 70, 0, 18), (150, 290, -6, 22), (300, 40, -11, 20), (620, 300, -3, 24), (790, 60, -14, 19), (880, 250, -8, 21), (460, 315, -17, 23)]):
+        css.append(f"@keyframes s{i}{{0%{{opacity:0;transform:translate(0,0) rotate(0)}}12%{{opacity:.5}}80%{{opacity:.4}}100%{{opacity:0;transform:translate({160 + i * 23 % 120}px,-{40 + i * 17 % 60}px) rotate(200deg)}}}}"
+                   f".s{i}{{opacity:0;transform-box:fill-box;transform-origin:center;animation:s{i} {dur}s linear {dl}s infinite}}")
+        seeds.append(f'<text class="s{i}" x="{x}" y="{y}" font-size="{13 + i % 3 * 2}" fill="{t["kick"]}">{"·" if i % 4 == 3 else "*"}</text>')
+    cx, cy, cs = xk + w_col + w_star + 4, 34, .86  # the cloud, right of the kiss, a bit above
+    body = (f'<defs>{ink.paper_defs(m)}{ink.cloud_defs(m)}</defs>'
+            f'<rect width="{W}" height="{H}" rx="8" fill="{t["paper"]}"/><rect width="{W}" height="{H}" rx="8" fill="url(#paper)"/>'
+            f'<g>{"".join(seeds)}</g>'
+            f'<path d="{d_bise}" fill="{t["ink"]}"/><g class="kiss" fill="{t["pen"]}"><path d="{d_col}"/><path d="{d_star}"/></g>'
+            f'<g transform="translate({cx:.1f} {cy}) scale({cs})"><g class="bob">{ink.cloud(m)}</g></g>'
+            f'<rect class="hl" x="{hx:.1f}" y="{ty - TS * .62:.1f}" width="{hw:.1f}" height="{TS * .72:.1f}" rx="3" fill="{t["hl"]}"/>'
+            f'<path d="{d_t}" fill="{t["ink"]}"/><path d="{d_s}" fill="{t["dim"]}"/>'
+            f'<path class="draw" pathLength="1" d="{ul}" fill="none" stroke="{t["pen"]}" stroke-width="2.4" stroke-linecap="round"/>')
     return svg(W, H, body, "".join(css), "bise :* a multi-agent harness, made for humans.")
 
 # ---------- demo ----------
@@ -122,7 +179,7 @@ def demo(c):
     css_scroll = f"@keyframes scr{{{''.join(frames)}}}.scr{{animation:scr {T}s linear infinite}}"
     out.append(f'<clipPath id="feedclip"><rect x="0" y="49" width="679" height="{top - 49}"/></clipPath>'
                f'<g clip-path="url(#feedclip)"><g class="scr">{"".join(feed)}</g></g>')
-    out.insert(0, f'<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}" stroke="{c["line"]}"/>'
+    out.insert(0, f'<rect width="{W}" height="{H}" fill="{c["bg"]}"/>'
                f'<text x="24" y="32" font-size="14" fill="{c["text"]}" font-weight="700">bise {acc(":*")}</text>'
                f'<text x="{W-24}" y="32" text-anchor="end" font-size="13" fill="{c["dim"]}">~/acme</text>'
                f'<line x1="0" y1="48" x2="{W}" y2="48" stroke="{c["line"]}"/>'
@@ -137,8 +194,8 @@ def demo(c):
         d = tl.show(t1)
         out.append(f'<rect class="{d}" x="709" y="{yy-15}" width="17" height="20" fill="{c["bg"]}"/><text class="{d}" x="713" y="{yy}" font-size="14" fill="{c["acc"]}">✓</text>')
     # the composer
-    out.append(f'<rect x="1" y="{top}" width="{W-2}" height="{H-top-1}" fill="{c["raised"]}"/>'
-               f'<path d="M1 {top} H{W-1}" stroke="{c["faint"]}"/>'
+    out.append(f'<rect x="0" y="{top}" width="{W}" height="{H-top}" fill="{c["foot"]}"/>'
+               f'<path d="M0 {top} H{W}" stroke="{c["line"]}"/>'
                f'<text x="24" y="{top+26}" font-size="13" fill="{c["dim"]}">you → <tspan fill="{c["acc"]}" font-weight="700">main</tspan></text>'
                f'<text x="24" y="{top+102}" font-size="12" fill="{c["faint"]}">⏎ send · @ agent · ⌥0-9 switch · / commands · ? help</text>')
     for n, (t0, t1) in [(1, (3.5, 6.0)), (2, (6.0, 8.0)), (3, (8.0, 9.7)), (4, (9.7, 11.4)), (5, (11.4, 21.0)),
@@ -154,7 +211,7 @@ def demo(c):
                    f'<g class="{vis}"><text x="24" y="{top+62}" font-size="15" fill="{c["text"]}" clip-path="url(#{cid})">{E(text)}</text></g>')
     css_gust = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
     return svg(W, H, "".join(out), "".join(tl.css) + css_gust + css_scroll,
-               "a bise session: five ideas in a row to main, five agents start, they sync, you change your mind, one card asks you, everything ships.")
+               "a bise session: five ideas in a row to main, five agents start, they sync, you change your mind, one card asks you, everything ships.", c, caption="fig. 1 · a bise session, playing live")
 
 # ---------- demo ----------
 # the same story as the landing's flow demo (site/index.html, run()): five ideas in a row,
@@ -234,7 +291,7 @@ def demo_b(c):
     css_scroll = f"@keyframes scr{{{''.join(frames)}}}.scr{{animation:scr {T}s linear infinite}}"
     out.append(f'<clipPath id="feedclip"><rect x="0" y="49" width="679" height="{top - 49}"/></clipPath>'
                f'<g clip-path="url(#feedclip)"><g class="scr">{"".join(feed)}</g></g>')
-    out.insert(0, f'<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}" stroke="{c["line"]}"/>'
+    out.insert(0, f'<rect width="{W}" height="{H}" fill="{c["bg"]}"/>'
                f'<text x="24" y="32" font-size="14" fill="{c["text"]}" font-weight="700">bise {acc(":*")}</text>'
                f'<text x="{W-24}" y="32" text-anchor="end" font-size="13" fill="{c["dim"]}">~/acme</text>'
                f'<line x1="0" y1="48" x2="{W}" y2="48" stroke="{c["line"]}"/>'
@@ -249,8 +306,8 @@ def demo_b(c):
         d = tl.show(t1)
         out.append(f'<rect class="{d}" x="709" y="{yy-15}" width="17" height="20" fill="{c["bg"]}"/><text class="{d}" x="713" y="{yy}" font-size="14" fill="{c["acc"]}">✓</text>')
     # the composer
-    out.append(f'<rect x="1" y="{top}" width="{W-2}" height="{H-top-1}" fill="{c["raised"]}"/>'
-               f'<path d="M1 {top} H{W-1}" stroke="{c["faint"]}"/>'
+    out.append(f'<rect x="0" y="{top}" width="{W}" height="{H-top}" fill="{c["foot"]}"/>'
+               f'<path d="M0 {top} H{W}" stroke="{c["line"]}"/>'
                f'<text class="{tl.show(0, 13.4, dur=0.1)}" x="24" y="{top+26}" font-size="13" fill="{c["dim"]}">you → <tspan fill="{c["acc"]}" font-weight="700">main</tspan></text>'
                f'<text class="{tl.show(13.4, 16.8, dur=0.1)}" x="24" y="{top+26}" font-size="13" fill="{c["dim"]}">you → <tspan fill="{c["acc"]}" font-weight="700">perf</tspan></text>'
                f'<text class="{tl.show(16.8, dur=0.1)}" x="24" y="{top+26}" font-size="13" fill="{c["dim"]}">you → <tspan fill="{c["acc"]}" font-weight="700">main</tspan></text>'
@@ -268,12 +325,12 @@ def demo_b(c):
                    f'<g class="{vis}"><text x="24" y="{top+62}" font-size="15" fill="{c["text"]}" clip-path="url(#{cid})">{E(text)}</text></g>')
     css_gust = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
     return svg(W, H, "".join(out), "".join(tl.css) + css_gust + css_scroll,
-               "a bise session: four ideas in a row, agents call tools and message each other, you ask one agent directly, one card asks you, everything ships.")
+               "a bise session: four ideas in a row, agents call tools and message each other, you ask one agent directly, one card asks you, everything ships.", c, caption="fig. 1 · a bise session, playing live")
 
 # ---------- team ----------
 def team(c):
     W, H, T = 960, 300, 10
-    tl = TL(T); o = [f'<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}" stroke="{c["line"]}"/>']
+    tl = TL(T); o = [f'<rect width="{W}" height="{H}" fill="{c["bg"]}"/>']
     o.append(f'<text x="60" y="56" font-size="16" font-weight="700" fill="{c["text"]}">you</text>'
              f'<text x="140" y="56" font-size="14" fill="{c["dim"]}">"dark mode please. also the csv export crashes on emoji 😭"</text>'
              f'<path d="M72 68 V104" stroke="{c["faint"]}"/>'
@@ -294,7 +351,7 @@ def team(c):
              f'<text x="612" y="200" font-size="12" fill="{c["dim"]}">✉ <tspan font-weight="700" fill="{c["text"]}">theme</tspan> <tspan fill="{c["faint"]}">→</tspan> toggle</text>'
              f'<text x="624" y="218" font-size="12" fill="{c["dim"]}">the color tokens are in theme.ts</text></g>')
     css = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
-    return svg(W, H, "".join(o), "".join(tl.css) + css, "you talk to main; main splits one idea into four jobs; the agents tell each other what they touch.")
+    return svg(W, H, "".join(o), "".join(tl.css) + css, "you talk to main; main splits one idea into four jobs; the agents tell each other what they touch.", c)
 
 
 # ---------- small feature demos (like the landing's minis) ----------
@@ -303,7 +360,7 @@ CW = 8.45  # width of one 14px mono cell
 class Mini:
     def __init__(s, c, T, H=250, right=""):
         s.c, s.T, s.H, s.W = c, T, H, 680
-        s.tl = TL(T); s.o = [f'<rect width="{s.W}" height="{H}" rx="12" fill="{c["bg"]}" stroke="{c["line"]}"/>']
+        s.tl = TL(T); s.o = [f'<rect width="{s.W}" height="{H}" fill="{c["bg"]}"/>']
         s.fx, s.y = 28, 44
         if right: s.o.append(f'<text x="{s.W-24}" y="30" text-anchor="end" font-size="12" fill="{c["dim"]}">{right}</text>')
     def acc(s, t): return f'<tspan fill="{s.c["acc"]}">{t}</tspan>'
@@ -335,8 +392,7 @@ class Mini:
     def composer(s, spans, typing=()):
         """spans: [(t0, t1, who_html)] for the 'you → x' label; typing: [(t, t2, send, text)]"""
         c, W, H = s.c, s.W, s.H; top = H - 62
-        s.o.append(f'<rect x="1" y="{top}" width="{W-2}" height="{H-top-1}" rx="0" fill="{c["raised"]}"/><path d="M1 {top} H{W-1}" stroke="{c["faint"]}"/>'
-                   f'<rect x="1" y="{H-12}" width="{W-2}" height="11" rx="11" fill="{c["raised"]}"/>')
+        s.o.append(f'<rect x="0" y="{top}" width="{W}" height="{H-top}" fill="{c["foot"]}"/><path d="M0 {top} H{W}" stroke="{c["line"]}"/>')
         for (t0, t1, who) in spans:
             k = s.tl.show(t0, t1, dur=0.12)
             s.o.append(f'<text class="{k}" x="24" y="{top+22}" font-size="12" fill="{c["dim"]}">you → {who}</text>')
@@ -353,7 +409,7 @@ class Mini:
                        f'<g class="{vis}"><text x="24" y="{top+46}" font-size="14" fill="{c["text"]}" clip-path="url(#{cid})">{E(text)}</text></g>')
     def svg(s, label):
         css = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
-        return svg(s.W, s.H, "".join(s.o), "".join(s.tl.css) + css, label)
+        return svg(s.W, s.H, "".join(s.o), "".join(s.tl.css) + css, label, s.c, pad=16)
 
 def f_talk(c):
     m = Mini(c, 11, 250, "∿ = working")
