@@ -204,7 +204,7 @@ const AG = {
   main: { g: '<span class="acc">:*</span>', k: "⌘0", r: "", meta: "opus-5.5 · high" },
   perf: { g: '<span class="brth acc">∿</span>', k: "⌘1", r: "6m · 31%", meta: "sonnet-5 · med" },
   "dark-mode": { g: '<span class="acc">?</span>', k: "⌘2", r: "4m · 12%", meta: "sonnet-5 · med · <span class='acc'>ψ</span> dark-mode" },
-  "sad-404": { g: '<span class="brth acc">∿</span>', k: "⌘3", r: "2m · 9%", meta: "haiku-5 · low" },
+  "cookies": { g: '<span class="brth acc">∿</span>', k: "⌘3", r: "2m · 9%", meta: "haiku-5 · low" },
   "emoji-csv": { g: '<span class="acc">✓</span>', k: "⌘4", r: "done 1m ago", meta: "sonnet-5 · med" },
 };
 const agents = (on = "main", names = Object.keys(AG), extra = "") => `<aside class="agents"><div class="h"><span>agents</span><span class="faint">⌘0-9</span></div>` +
@@ -234,8 +234,8 @@ const FEED = you("signup is slow on mobile. can you look?") +
   env("perf", "main", "the hero image is 4.2 MB. that's 3 s before anything shows on a phone.") +
   env("dark-mode", "perf", "are you touching tokens.css? i need two new grays.") +
   env("perf", "dark-mode", "no, it's yours. i'm only in src/signup.ts.") +
-  you("and the 404 page is sad. make it less sad") +
-  bise("sad-404 is on it. i gave it the brand book.") +
+  you("and the cookie banner hides the buy button on mobile") +
+  bise("cookies is on it. i gave it the brand book.") +
   `<div class="fold">▸ <b>4 commands</b> · perf · profiled signup, found the image</div>` +
   done("perf is done · signup 4.1 s → 0.9 s on a mid-range phone <span class='dim'>· ▸ why</span>");
 
@@ -244,14 +244,14 @@ const add = (id, title, text, html) => SCREENS.push({ id, title, text, html });
 
 // ---------- 1. the main window ----------
 add("main", "the main window", "three columns: your repos, the thread with main, the agents of this repo. the thread keeps the reading column of the terminal (74 characters), centered. the composer is a raised card at the bottom; the inbox sits right above it. hover a row and it lights up; click a ∿ call to open it.",
-  win({ center: center(FEED, strip([R_DARK, R_REL]) + comp("main", 'and give the sad dog a hat<span class="cur"></span>'), ""), right: agents() }));
+  win({ center: center(FEED, strip([R_DARK, R_REL]) + comp("main", 'and the cookie banner hides the buy button<span class="cur"></span>'), ""), right: agents() }));
 
 add("main-light", "the same, light", "the light theme is the book's light palette: paper background, ink text, the deeper rose for the accent. it follows the system (auto) unless you pick one in settings.",
   win({ cls: "light", center: center(FEED, strip([R_DARK, R_REL]) + comp("main", '<span class="cur"></span>'), ""), right: agents() }));
 
 // ---------- 2. the inbox ----------
 add("inbox-select", "the inbox · ⌘I selects", "the rows show no keys until you ask. ⌘I selects the inbox (the terminal opens them with ctrl+1-9 or a click): the selected row shows its keys, 1-9 answer it at once, ⏎ opens it, ↑↓ loop, esc gives you back your message. one item only? ⌘I opens it straight away. a click selects a row; a click on the selected row opens it.",
-  win({ center: center(FEED, strip([R_REL, R_DARK], 0) + comp("main", "and give the sad dog a hat", [["↑↓", "choose"], ["1-3", "answer"], ["⏎", "open"], ["esc", "back"]], "dimmed")), right: agents() }));
+  win({ center: center(FEED, strip([R_REL, R_DARK], 0) + comp("main", "and the cookie banner hides the buy button", [["↑↓", "choose"], ["1-3", "answer"], ["⏎", "open"], ["esc", "back"]], "dimmed")), right: agents() }));
 
 add("inbox-open", "an item, open", "the item opens as a sheet over the thread; the thread stays visible behind it, dimmed. nothing is picked at first, so a reflex ⏎ does nothing: the first ↓ lands on option 1. ←→ go to the other items. type and ⏎ answers in your words. esc: back to the thread, your draft kept.",
   win({ center: center(FEED, strip([R_DARK, R_REL]) + comp("main"), `<div class="scrim"></div><div class="sheet"><div class="tabs"><span class="on">dark-mode</span><span>release wants to run</span></div>
@@ -297,7 +297,7 @@ add("find", "find · ⌘F", "⌘F opens a small find bar over the thread's corne
     env("perf", "main", "the hero image is 4.2 MB. that's 3 s before anything shows on a phone.") +
     `<div class="fold">▸ <b>4 commands</b> · perf · profiled <mark class="cur">signup</mark>, found the image</div>` +
     done("perf is done · <mark>signup</mark> 4.1 s → 0.9 s on a mid-range phone"),
-    comp("main", "and give the sad dog a hat"), `<div class="find"><span class="f">signup<span class="cur"></span></span><span class="dim">2 of 3</span><span class="dim">⏎ older · ⇧⏎ newer · esc</span></div>`), right: agents() }));
+    comp("main", "and the cookie banner hides the buy button"), `<div class="find"><span class="f">signup<span class="cur"></span></span><span class="dim">2 of 3</span><span class="dim">⏎ older · ⇧⏎ newer · esc</span></div>`), right: agents() }));
 
 add("palette", "everything · ⌘K", "the palette is the / commands, the agents and the repos in one list. type to filter. it doesn't replace / in the composer (it still works as in the terminal); it's there for the mouse people and for the day you forget a name.",
   win({ center: center(FEED, comp("main"), `<div class="scrim"></div><div class="pal"><div class="in">mod<span class="cur"></span></div>
@@ -327,7 +327,7 @@ add("first", "first launch", "the gloss, then one thing to do: give it a folder.
 // ---------- 10. menu bar, notifications, dock ----------
 add("away", "when the window is closed", "⌘W closes the window; the agents keep going. the :* in the menu bar lists what's running, what's done and what waits for you, per repo. a notification comes only when something lands in your inbox: in bise's words, with the options as buttons when there are 3 or fewer. ✓ done never notifies; it waits in the menu bar and the thread. the dock badge counts your inbox, nothing else.",
   `<div class="desk"><div class="menubar"><span>🔋</span><span>wed 03:12</span><span class="me">:*</span></div>
-    <div class="drop"><div class="grp">acme</div><div class="it"><span><span class="acc">∿</span> perf · sad-404</span><span class="dim">2 working</span></div><div class="it hl"><span><span class="acc">?</span> dark-mode: which gray?</span><span class="dim">answer…</span></div>
+    <div class="drop"><div class="grp">acme</div><div class="it"><span><span class="acc">∿</span> perf · cookies</span><span class="dim">2 working</span></div><div class="it hl"><span><span class="acc">?</span> dark-mode: which gray?</span><span class="dim">answer…</span></div>
       <div class="grp">blog</div><div class="it"><span><span class="acc">✓</span> publish is done</span><span class="dim">3m</span></div><hr><div class="it"><span>open bise</span><span class="dim">⌘⇧B</span></div><div class="it"><span>pause every agent</span><span class="dim"></span></div><div class="it"><span>quit, agents stop</span><span class="dim">⌘Q</span></div></div>
     <div class="notif" style="top:auto;bottom:90px"><div class="icon">:*</div><div><div class="t">perf needs you · acme</div><div class="b">the hero image is 4.2 MB. compress it, or lazy-load it?</div></div><div class="btns"><span>compress</span><span>both</span><span>open</span></div></div>
     <div class="dock-bar"><span class="app"></span><span class="app"></span><span class="icon">:*<span class="badge">2</span></span><span class="app"></span></div></div>`);
@@ -347,7 +347,7 @@ add("settings", "settings · ⌘,", "what the terminal spreads over /model, /rea
 // ---------- 12. narrow ----------
 add("narrow", "a narrow window", "under ~900 px the sidebar folds into a repo menu in the title bar and the panel into a line above the composer (the terminal's narrow rule). drag the window wider and they come back.",
   `<div class="win small"><div class="tb"><span class="lights"><i></i><i></i><i></i></span><span class="title"><b>acme</b> ▾</span><span class="rt"><span>⌘K</span></span></div><div class="body">` +
-  center(FEED, `<div class="strip"><div class="lab"><span><span class="acc">:*</span> main · <span class="brth acc">∿</span> perf · <span class="acc">?</span> dark-mode · <span class="brth acc">∿</span> sad-404 · <span class="acc">✓</span> 1</span><span>⌘0-9</span></div></div>` + strip([R_DARK]) + comp("main", '<span class="cur"></span>', [["⏎", "send"], ["⌘I", "inbox"], ["/", "commands"]])) + `</div></div>`);
+  center(FEED, `<div class="strip"><div class="lab"><span><span class="acc">:*</span> main · <span class="brth acc">∿</span> perf · <span class="acc">?</span> dark-mode · <span class="brth acc">∿</span> cookies · <span class="acc">✓</span> 1</span><span>⌘0-9</span></div></div>` + strip([R_DARK]) + comp("main", '<span class="cur"></span>', [["⏎", "send"], ["⌘I", "inbox"], ["/", "commands"]])) + `</div></div>`);
 
 // ---------- 13. the icon ----------
 add("icon", "the app icon", "the mark, and nothing else: :* in the accent on the dark ground, a soft squircle. the light one is for the light dock. in the menu bar, :* alone in the text color; in the accent when something waits for you.",

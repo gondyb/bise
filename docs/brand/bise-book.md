@@ -693,7 +693,7 @@ your draft back, the thread stays in sight the whole time.
   composer's: `#26221f`, light `#f2ede6`; none under NO_COLOR) with the
   accent `┃` (ASCII `|`) on every row, a blank bar row at the top and the
   bottom: its head `? t3 wants to run` (the title bold) with `1 of 4 · 2m`
-  dim on the right (a question: `? sad-404 asks`); what it asks (the
+  dim on the right (a question: `? cookies asks`); what it asks (the
   command in the code colors, a question's text); a blank line; dim, why
   it asks, the hub's remark and where the agent is (`t3 is shipping 2.5.0
   · its last step: ✓ npm run build · 12s`: its role and its last finished
@@ -732,7 +732,7 @@ your draft back, the thread stays in sight the whole time.
 - **After an answer.** The item folds into one line at the top of the box
   for 2 s: `✓ you allowed t3: npm publish --access public` (✓ accent, the
   words dim), `✗ you said no to api-v2: git push … · "use a branch"` (all
-  dim), `✓ you answered sad-404: both`; the next item opens by itself, so 1,
+  dim), `✓ you answered cookies: both`; the next item opens by itself, so 1,
   1, 3, 1 clears four. The agent's `?` in the panel turns back into its
   gust at once. The same line lands in the thread (a gate's from the hub,
   the others the same sentence, no leading `·`). The last one answered: the box
@@ -740,7 +740,7 @@ your draft back, the thread stays in sight the whole time.
   (✓ accent, the words in text color, like `✓ copied`).
 - **Full screen** (`ctrl+o` on an open item; the old item view): the item
   takes the history's place, the others as tabs on top: `1 ? t3   2 ?
-  api-v2   3 ? sad-404` (the box's numbers; the current one accent, `[ ]`
+  api-v2   3 ? cookies` (the box's numbers; the current one accent, `[ ]`
   under NO_COLOR, the others dim; `↑↓` faint on the right); its head, the
   whole text at the reading width (88), the options and the hint. `pgup`
   / `pgdn` and the wheel scroll (`▾ 12 more lines · pgdn` on its last

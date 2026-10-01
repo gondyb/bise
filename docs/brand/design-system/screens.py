@@ -70,14 +70,14 @@ KEYS_ITEM = "      {t:1-3} {d:answer}   {t:←→} {d:choose}   {t:↑↓} {d:ot
 comp = lambda text, keys=KEYS_IN: ["  {a:│}", "  {a:│}   " + text + "{a:▌}", "  {a:│}", keys]
 COMP_EMPTY = lambda keys=KEYS: ["  {f:│}", "  {f:│}   {d:what's on your mind?}", "  {f:│}", keys]
 COMP_ANSWER = ["  {a:│}", "  {a:│}   {a:▌}", "  {a:│}", KEYS_ITEM]
-DRAFT = "and give the sad dog a hat"
+DRAFT = "and the cookie banner hides the buy button"
 
 # ------------------------------------------------------------------ the cast
-# 0 main · 1 perf ✓ · 2 dark-mode + 4 i18n share sb/dark-mode · 3 sad-404 asks · 5 release
+# 0 main · 1 perf ✓ · 2 dark-mode + 4 i18n share sb/dark-mode · 3 cookies asks · 5 release
 PAN = ["", "  {d:agents}",
        row(0, G, "main {a::*} {d:@ 2}", " 1m", "22%"),
        row(1, "{a:✓}", "perf"),
-       row(3, "{a:?}", "sad-404", pct="18%"),
+       row(3, "{a:?}", "cookies", pct="18%"),
        row(5, "{d:○}", "release", pct=" 8%"),
        "",
        top("sb/dark-mode", "{d:↑}"),
@@ -85,11 +85,11 @@ PAN = ["", "  {d:agents}",
        row(4, G, "i18n {a:•}", "42s", "31%", lead="{r:╰} "),
        "",
        "  {d:inbox}",
-       "  {f:1} {a:?} sad-404  {d:the dog: a h…}"]
+       "  {f:1} {a:?} cookies  {d:banner: smal…}"]
 PAN_HELD = ["", "  {d:agents}",
             held(0, G, "main {a::*} {d:@ 2}", "working"),
             held(1, "{a:✓}", "perf", "done"),
-            held(3, "{a:?}", "sad-404", "asks you", acc=True),
+            held(3, "{a:?}", "cookies", "asks you", acc=True),
             held(5, "{d:○}", "release", "idle"),
             "",
             top("sb/dark-mode", "{d:↑ #412}"),
@@ -98,12 +98,12 @@ PAN_HELD = ["", "  {d:agents}",
             held(4, G, "i18n {a:•}", "working", lead="{r:╰} "),
             "",
             "  {d:inbox}",
-            "  {a:1} {a:?} sad-404  {d:the dog: a h…}"]
+            "  {a:1} {a:?} cookies  {d:banner: smal…}"]
 
 FEED = ["",
-        you("signup is slow on mobile. and the 404 is sad {a:✓✓}"),
+        you("signup is slow on mobile. and the banner hides buy {a:✓✓}"),
         "",
-        me("on it: perf, dark-mode and sad-404 started."),
+        me("on it: perf, dark-mode and cookies started."),
         "  {f:▸ 9 messages between 4 agents}",
         "",
         "  {ch: ✉ dark-mode → main }",
@@ -113,8 +113,8 @@ FEED = ["",
         "  {d:$} {d:runs the signup benchmark}{>63} {d:✓ 4.2s}",
         "  {a:✓} perf is done {f:·} signup 4.1 s → 0.9 s",
         ""]
-INBOX1 = ibox("inbox · 1 waiting for you", "ctrl+1 open", ["{f:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>62} {f:4m}"])
-INBOX1_HELD = ibox("inbox · 1 waiting for you", "ctrl+1 open", ["{a:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>62} {f:4m}"])
+INBOX1 = ibox("inbox · 1 waiting for you", "ctrl+1 open", ["{f:1} {a:?} cookies {f:·} banner: smaller, or gone?{>62} {f:4m}"])
+INBOX1_HELD = ibox("inbox · 1 waiting for you", "ctrl+1 open", ["{a:1} {a:?} cookies {f:·} banner: smaller, or gone?{>62} {f:4m}"])
 HEAD_HELD = "{d:~/acme ·} {g3} {d:3 working · ✓ 1 done · ↑ 1 PR · # 1 in the inbox}"
 
 S = []  # (id, title, text, [(tab, lines, W)], caption)
@@ -131,43 +131,43 @@ screen("main", "the main screen",
 
 # ------------------------------------------------------------------ 2. you ask, main starts agents
 P_START = ["", "  {d:agents}", row(0, G, "main {a::*}", " 2s", " 3%")]
-P_ON = ["", "  {d:agents}", row(0, G, "main {a::*}", " 9s", " 6%"), row(2, G, "sad-404", " 4s", " 2%"),
+P_ON = ["", "  {d:agents}", row(0, G, "main {a::*}", " 9s", " 6%"), row(2, G, "cookies", " 4s", " 2%"),
         row(1, G, "perf", " 4s", " 2%", mark="{d:ψ}")]
-F_ASK = ["", you("signup is slow on mobile, and the 404 is sad {a:✓✓}"), ""]
+F_ASK = ["", you("signup is slow on mobile, and the banner hides buy {a:✓✓}"), ""]
 screen("start", "you ask, main starts agents",
 "you say it the way you'd say it to a person. main splits the work, starts the agents, picks who needs a worktree, and tells you in one line.",
 [("read", frame(F_ASK, P_START, DIV_W, "{d:4k · 2%}", COMP_EMPTY(), head="{d:~/acme}"), 100),
- ("on it", frame(F_ASK + [me("on it: perf and sad-404 started. perf gets its own"), cont("worktree: it touches the build."),
+ ("on it", frame(F_ASK + [me("on it: perf and cookies started. perf gets its own"), cont("worktree: it touches the build."),
                           "  {f:▸ 4 messages between 3 agents}"], P_ON, DIV_W, "{d:9k · 3%}", COMP_EMPTY(), head="{d:~/acme}"), 100),
- ("you change your mind", frame(F_ASK + [me("on it: perf and sad-404 started. perf gets its own"), cont("worktree: it touches the build."),
-                          "  {f:▸ 4 messages between 3 agents}", "", you("oh and the dog wears a hat {a:✓✓}"), "",
-                          me("told sad-404: a hat.")], P_ON, DIV_W, "{d:11k · 4%}", COMP_EMPTY(), head="{d:~/acme}"), 100)],
+ ("you change your mind", frame(F_ASK + [me("on it: perf and cookies started. perf gets its own"), cont("worktree: it touches the build."),
+                          "  {f:▸ 4 messages between 3 agents}", "", you("oh and keep the banner, smaller {a:✓✓}"), "",
+                          me("told cookies: smaller.")], P_ON, DIV_W, "{d:11k · 4%}", COMP_EMPTY(), head="{d:~/acme}"), 100)],
 "the ✓✓ in accent: main has read it. you never wait for a turn to end to say more.")
 
 # ------------------------------------------------------------------ 3. main answers for you
-F_RT = ["", me("on it: perf, dark-mode and sad-404 started."), "  {f:▸ 9 messages between 4 agents}", "",
+F_RT = ["", me("on it: perf, dark-mode and cookies started."), "  {f:▸ 9 messages between 4 agents}", "",
         "  {ch: ✉ dark-mode → main }", "    {d:which gray for the borders?}",
         me("i answered dark-mode: the gray in tokens.css."), cont("{d:like everywhere else.}"), ""]
-P_RT = [l for l in PAN if "inbox" not in l and "the dog" not in l]
+P_RT = [l for l in PAN if "inbox" not in l and "banner:" not in l]
 screen("router", "you're not the router",
 "agents ask main first. main answers the obvious ones the way you would, and says why in one line. only a real decision reaches you, in the inbox.",
 [("main answers", frame(F_RT, P_RT[:-1], DIV_W, CTX, COMP_EMPTY(), head="{d:~/acme}"), 100),
- ("only you can say", frame(F_RT + ["  {ch: ✉ sad-404 → main }", "    {d:the dog: a hat, or a scarf?}",
+ ("only you can say", frame(F_RT + ["  {ch: ✉ cookies → main }", "    {d:banner: smaller, or gone?}",
                                     me("that one's yours. it's in your inbox."), ""] + INBOX1, PAN, DIV_W, CTX, COMP_EMPTY(KEYS_IN)), 100),
- ("you answered", frame(F_RT + ["  {ch: ✉ sad-404 → main }", "    {d:the dog: a hat, or a scarf?}",
-                                me("that one's yours. it's in your inbox."), "", "  {a:✓} {d:you answered sad-404: a hat}"],
+ ("you answered", frame(F_RT + ["  {ch: ✉ cookies → main }", "    {d:banner: smaller, or gone?}",
+                                me("that one's yours. it's in your inbox."), "", "  {a:✓} {d:you answered cookies: smaller}"],
                         P_RT[:-1], "{a:✓} inbox clear", "", COMP_EMPTY(), head="{d:~/acme}"), 100)],
 "what main told an agent is one line in its thread; the messages themselves are folded, never gone.")
 
 # ------------------------------------------------------------------ 4. the inbox: an approval
-P_AP = ["", "  {d:agents}", row(0, G, "main {a::*}", " 1m", "22%"), row(3, "{a:?}", "sad-404", pct="18%"),
+P_AP = ["", "  {d:agents}", row(0, G, "main {a::*}", " 1m", "22%"), row(3, "{a:?}", "cookies", pct="18%"),
         row(5, "{a:?}", "release", pct=" 8%"), row(2, G, "dark-mode", " 3m", "12%", mark="{d:↑}"),
-        "", "  {d:inbox}", "  {f:1} {a:?} release  {d:$ npm publish…}", "  {f:2} {a:?} sad-404  {d:the dog: a h…}"]
+        "", "  {d:inbox}", "  {f:1} {a:?} release  {d:$ npm publish…}", "  {f:2} {a:?} cookies  {d:banner: smal…}"]
 F_AP = ["", me("perf's fix is in. release is shipping 2.5.0."), "  {f:▸ 6 messages between 3 agents}", ""]
 IT1 = ["%", "% {ab:?} {b:release wants to run}{>62} {d:1 of 2 · 2m}", "%   $ npm publish --access public", "%",
        "%   {d:it publishes the package: everyone can install it.}", "%   {d:release ships 2.5.0 · last step: ✓ npm run build}", "%",
        "%   {a:1} {d:allow}   {a:2} {d:always allow npm publish * here}   {a:3} {d:no}", "%   {f:or type why not, ⏎ says no}", "%"]
-ROW2 = "{f:2} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>62} {f:4m}"
+ROW2 = "{f:2} {a:?} cookies {f:·} banner: smaller, or gone?{>62} {f:4m}"
 DIV_ANS = lambda who: "{d:you →} {a:? " + who + "} {f:·} {d:your answer}"
 screen("inbox", "the inbox: one key answers",
 "an item opens where its row was. one digit answers it, the next one opens by itself, and your draft waits until the inbox is clear.",
@@ -178,15 +178,15 @@ screen("inbox", "the inbox: one key answers",
                            P_AP, DIV_ANS("release"), "", COMP_ANSWER), 100),
  ("1: the next one opens", frame(F_AP + ibox("inbox · 1 waiting for you", "ctrl+1 open",
                     ["{a:✓} {d:you allowed release: npm publish --access public}",
-                     "% {ab:?} {b:sad-404 asks}{>62} {d:1 of 1 · 4m}", "%   the dog: a hat, or a scarf?", "%",
-                     "%   {a:1} {d:a hat}   {a:2} {d:a scarf}", "%   {f:or type your answer, ⏎ sends it}"]),
-                    P_AP, DIV_ANS("sad-404"), "", COMP_ANSWER), 100),
- ("1: inbox clear", frame(F_AP + ["  {a:✓} {d:you allowed release: npm publish --access public}", "  {a:✓} {d:you answered sad-404: a hat}"],
+                     "% {ab:?} {b:cookies asks}{>62} {d:1 of 1 · 4m}", "%   banner: smaller, or gone?", "%",
+                     "%   {a:1} {d:smaller}   {a:2} {d:gone}", "%   {f:or type your answer, ⏎ sends it}"]),
+                    P_AP, DIV_ANS("cookies"), "", COMP_ANSWER), 100),
+ ("1: inbox clear", frame(F_AP + ["  {a:✓} {d:you allowed release: npm publish --access public}", "  {a:✓} {d:you answered cookies: smaller}"],
                           [l for l in P_AP if "inbox" not in l and "…" not in l], "{a:✓} inbox clear", "", comp(DRAFT, KEYS)), 100)],
 "1, then 1: two answers, two keys. after the last one the box goes, your draft comes back, and the divider says ✓ inbox clear for 2 s.")
 
 # ------------------------------------------------------------------ 5. approvals: yolo or auto
-P_AU = [l for l in PAN if "inbox" not in l and "the dog" not in l and "sad-404" not in l][:-1]
+P_AU = [l for l in PAN if "inbox" not in l and "banner:" not in l and "cookies" not in l][:-1]
 TIP = ["{|28}{r:╭─}{>64─}{r:─╮}", "{|28}{r:│} {d:you're in yolo: everything runs.}{|63}{r:│}",
        "{|28}{r:│} {t:⇧⇥} {d:changes it.}{|63}{r:│}", "{|28}{r:╰}{>64─}{r:╯}"]
 F_AU = ["", me("on it: perf and dark-mode started."), "  {f:▸ 6 messages between 3 agents}", ""]
@@ -257,43 +257,43 @@ PICK, "full screen, in place of the thread. /provider holds the keys; /model is 
 
 # ------------------------------------------------------------------ 9. worktrees and PRs
 P_PR = ["", "  {d:agents}", row(0, G, "main {a::*} {d:@ 2}", " 1m", "22%"), row(5, "{d:○}", "release", pct=" 8%"),
-        row(2, G, "login-fix", " 5m", " 9%", mark="{e:↑}"), row(3, "{a:?}", "sad-404", pct="18%", mark="{a:↑}"),
+        row(2, G, "login-fix", " 5m", " 9%", mark="{e:↑}"), row(3, "{a:?}", "cookies", pct="18%", mark="{a:↑}"),
         row(6, G, "emoji-csv", " 2m", "14%", mark="{d:ψ}"), "",
         top("sb/dark-mode", "{d:↑}"), row(1, G, "dark-mode", " 3m", "12%", lead="{r:│} "), row(4, G, "i18n {a:•}", "42s", "31%", lead="{r:╰} "), "",
-        "  {d:inbox}", "  {f:1} {a:?} sad-404  {d:#409 is approv…}"]
+        "  {d:inbox}", "  {f:1} {a:?} cookies  {d:#409 is approv…}"]
 P_PR_HELD = ["", "  {d:agents}", held(0, G, "main {a::*} {d:@ 2}", "working"), held(5, "{d:○}", "release", "idle"),
              held(2, G, "login-fix", "working", mark="{e:↑}"), under("{d:#415 ·} {e:checks fail}{d:: e2e…}"),
-             held(3, "{a:?}", "sad-404", "asks you", acc=True, mark="{a:↑}"), under("{d:#409 · approved · checks…}"),
+             held(3, "{a:?}", "cookies", "asks you", acc=True, mark="{a:↑}"), under("{d:#409 · approved · checks…}"),
              held(6, G, "emoji-csv", "working", mark="{d:ψ}"), under("{d:no PR yet · 2 commits}"), "",
              top("sb/dark-mode", "{d:↑ #412}"), lid("{d:changes asked · checks pass}"),
              held(1, G, "dark-mode", "working", lead="{r:│} "), held(4, G, "i18n {a:•}", "working", lead="{r:╰} "), "",
-             "  {d:inbox}", "  {a:1} {a:?} sad-404  {d:#409 is approv…}"]
+             "  {d:inbox}", "  {a:1} {a:?} cookies  {d:#409 is approv…}"]
 F_PR = ["", me("dark-mode opened #412: dark mode with tokens.css."), "  {f:▸ 2 messages from GitHub}", "",
         me("alice asked for changes on #412: the toggle's"), cont("contrast, a test, a name. dark-mode is on them."), "",
         me("#415's checks fail on the login test"), cont("(e2e/login.spec.ts:42). login-fix is on it."), "",
         "  {a:✓} {d:perf's #401 merged · perf archived, its worktree removed}", ""]
-ROW_M = "{f:1} {a:?} sad-404 {f:·} #409 is approved, checks pass. merge it?{>62} {f:1m}"
+ROW_M = "{f:1} {a:?} cookies {f:·} #409 is approved, checks pass. merge it?{>62} {f:1m}"
 IB_PR = ibox("inbox · 1 waiting for you", "ctrl+1 open", [ROW_M])
 IT_M = ibox("inbox · 1 waiting for you", "ctrl+1 open",
-            ["%", "% {ab:?} {b:sad-404's PR is ready}{>62} {d:1 of 1 · 1m}", "%   #409 · the sad 404 gets a dog in a hat", "%",
+            ["%", "% {ab:?} {b:cookies's PR is ready}{>62} {d:1 of 1 · 1m}", "%   #409 · the cookie banner stops covering buy", "%",
              "%   {d:alice approved it, the checks pass.}", "%   {d:it merges with your gh login, squash.}", "%",
              "%   {a:1} {d:merge it}   {a:2} {d:not yet}", "%"])
-P_MERGED = [l for l in P_PR if "sad-404" not in l and "inbox" not in l][:-1]
+P_MERGED = [l for l in P_PR if "cookies" not in l and "inbox" not in l][:-1]
 screen("prs", "worktrees and pull requests",
 "agents share your folder; one that needs isolation gets a worktree. alone in it, the agent is a row with one mark in the last column: ψ no PR yet, ↑ its PR. when several agents share a worktree, they get a small box: git lives in its border (ψ, the branch, the PR's ↑), agents live in rows. main says what GitHub said, once, in words.",
-[("rest", frame(F_PR + IB_PR, P_PR, DIV_W, CTX, comp("ship the sad dog once it's merged")), 100),
- ("ctrl held", frame(F_PR + IB_PR, P_PR_HELD, DIV_HELD, CTX_HELD, comp("ship the sad dog once it's merged", KEYS_HELD),
+[("rest", frame(F_PR + IB_PR, P_PR, DIV_W, CTX, comp("ship the banner fix once it's merged")), 100),
+ ("ctrl held", frame(F_PR + IB_PR, P_PR_HELD, DIV_HELD, CTX_HELD, comp("ship the banner fix once it's merged", KEYS_HELD),
                      head="{d:~/acme · lands via PRs ·} {g3} {d:5 working · ↑ 3 PRs · # 1 in the inbox}", split=False), 100),
- ("ready to merge", frame(F_PR + IT_M, P_PR, DIV_ANS("sad-404"), "", COMP_ANSWER), 100),
- ("1: merged", frame(F_PR[:-1] + ["  {a:✓} {d:sad-404's #409 merged · sad-404 archived, worktree removed}"], P_MERGED,
-                     "{a:✓} inbox clear", "", comp("ship the sad dog once it's merged", KEYS), head="{d:~/acme}"), 100)],
+ ("ready to merge", frame(F_PR + IT_M, P_PR, DIV_ANS("cookies"), "", COMP_ANSWER), 100),
+ ("1: merged", frame(F_PR[:-1] + ["  {a:✓} {d:cookies's #409 merged · cookies archived, worktree removed}"], P_MERGED,
+                     "{a:✓} inbox clear", "", comp("ship the banner fix once it's merged", KEYS), head="{d:~/acme}"), 100)],
 "↑ is dim while nothing is yours to do, red when checks fail, pink only when an inbox item asks you (ready to merge). no agent ever merges. merging from the inbox comes next; today you merge on GitHub.")
 
 # ------------------------------------------------------------------ 10. narrow
 screen("narrow", "a narrow terminal",
 "under 90 columns the panel goes. the header keeps the short counts, ⌥ + a number still opens an agent, and the inbox keeps its box.",
 [("80 columns", frame(FEED + ibox("inbox · 1 waiting for you", "ctrl+1 open",
-                       ["{f:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>75} {f:4m}"], E=78),
+                       ["{f:1} {a:?} cookies {f:·} banner: smaller, or gone?{>75} {f:4m}"], E=78),
                       [], "{d:you →} {a:main} {f:·} {d:opus·hi} {f:·} {d:yolo} {f:·} {g3}", "{d:58k · 22%}", comp(DRAFT),
                       head="{g1} {d:3 · ? 1 · ✓ 1 · # 1}", W=80, S=None), 80)],
 "short on room, things go in a written order: the long context, the context, the branch, then opus 5.5 · high becomes opus·hi. the mode goes last.")

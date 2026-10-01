@@ -43,7 +43,7 @@ checklist -> #/process/checklist :: twelve questions before a new screen ships
 
 ## the example
 
-every mock tells the same small story, so you can compare them: you asked for three things (*signup is slow on mobile, dark mode, the 404 is sad*). main started three agents: **perf**, **dark-mode** and **sad-404**. perf is done. dark-mode works in its own worktree. sad-404 has a question for you: *the dog: a hat, or a scarf?*
+every mock tells the same small story, so you can compare them: you asked for three things (*signup is slow on mobile, dark mode, the cookie banner hides the buy button*). main started three agents: **perf**, **dark-mode** and **cookies**. perf is done. dark-mode works in its own worktree. cookies has a question for you: *banner: smaller, or gone?*
 """, k="start overview")
 
 page("overview/laws", "the five laws",
@@ -90,48 +90,48 @@ r"""
 ::tab rest
 {r:╭─} {b:bise} {a::*} {|66─}{r:┬}{>─} {d:~/acme · # 1 in the inbox} {r:─╮}
 {r:│}{|66}{r:│}{|99}{r:│}
-{r:│}  {a:│} signup is slow on mobile. and the 404 is sad {a:✓✓}{|66}{r:│}  {d:agents}{|99}{r:│}
+{r:│}  {a:│} signup is slow on mobile. and the banner hides buy {a:✓✓}{|66}{r:│}  {d:agents}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
-{r:│}  {ab::*} on it: perf, dark-mode and sad-404 started.{|66}{r:│}  {f:0} {g1} main {a::*} {d:@ 2}{|88}{d: 1m}{|93}{d:22%}{|99}{r:│}
+{r:│}  {ab::*} on it: perf, dark-mode and cookies started.{|66}{r:│}  {f:0} {g1} main {a::*} {d:@ 2}{|88}{d: 1m}{|93}{d:22%}{|99}{r:│}
 {r:│}  {f:▸ 9 messages between 3 agents}{|66}{r:│}  {f:1} {a:✓} perf{|99}{r:│}
 {r:│}{|66}{r:│}  {f:2} {g1} dark-mode{|88}{d: 3m}{|93}{d:12%}{|97}{d:ψ}{|99}{r:│}
-{r:│}  {ch: ✉ dark-mode → main }{|66}{r:│}  {f:3} {a:?} sad-404{|93}{d:18%}{|99}{r:│}
+{r:│}  {ch: ✉ dark-mode → main }{|66}{r:│}  {f:3} {a:?} cookies{|93}{d:18%}{|99}{r:│}
 {r:│}    {d:which gray for the borders?}{|66}{r:│}  {f:4} {g1} emoji-csv {a:•}{|88}{d:42s}{|93}{d:31%}{|99}{r:│}
 {r:│}  {ab::*} i answered dark-mode: the gray in tokens.css.{|66}{r:│}  {f:5} {d:○} release{|93}{d: 8%}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
 {r:│}  {d:$} {d:runs the signup benchmark}{>63} {d:✓ 4.2s}{|66}{r:│}  {d:inbox}{|99}{r:│}
-{r:│}  {a:✓} perf is done {f:·} signup 4.1 s → 0.9 s{|66}{r:│}  {f:1} {a:?} sad-404  {d:the dog: a h…}{|99}{r:│}
+{r:│}  {a:✓} perf is done {f:·} signup 4.1 s → 0.9 s{|66}{r:│}  {f:1} {a:?} cookies  {d:banner: smal…}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
 {r:│} {r:╭─} {f:inbox · 1 waiting for you} {>65─} {f:ctrl+1 open} {r:─╮}{|66}{r:│}{|99}{r:│}
-{r:│} {r:│} {f:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>62} {f:4m}{|64}{r:│}{|66}{r:│}{|99}{r:│}
+{r:│} {r:│} {f:1} {a:?} cookies {f:·} banner: smaller, or gone?{>62} {f:4m}{|64}{r:│}{|66}{r:│}{|99}{r:│}
 {r:│} {r:╰}{>65─}{r:╯}{|66}{r:│}{|99}{r:│}
 {r:├─} {d:you →} {a:main} {f:·} {d:opus 5.5} {f:·} {d:high} {f:·} {d:yolo} {f:·} {g5} {|66─}{r:┴}{>─} {d:58k · 22%} {r:─┤}
 ^{r:│}  {a:│}{|99}{r:│}
-^{r:│}  {a:│}   and give the sad dog a hat{a:▌}{|99}{r:│}
+^{r:│}  {a:│}   and the cookie banner hides the buy button{a:▌}{|99}{r:│}
 ^{r:│}  {a:│}{|99}{r:│}
 ^{r:│}      {t:@} {d:file}   {t:$} {d:skills}   {t:/} {d:commands}   {t:ctrl+1} {d:inbox}{|99}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab ctrl held
 {r:╭─} {b:bise} {a::*} {>─} {d:~/acme ·} {g3} {d:3 working · ✓ 1 done · # 1 in the inbox} {r:─╮}
 {r:│}{|66}{r:│}{|99}{r:│}
-{r:│}  {a:│} signup is slow on mobile. and the 404 is sad {a:✓✓}{|66}{r:│}  {d:agents}{|99}{r:│}
+{r:│}  {a:│} signup is slow on mobile. and the banner hides buy {a:✓✓}{|66}{r:│}  {d:agents}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
-{r:│}  {ab::*} on it: perf, dark-mode and sad-404 started.{|66}{r:│}  {f:0} {g1} main {a::*} {d:@ 2}{|88}{d: working}{|99}{r:│}
+{r:│}  {ab::*} on it: perf, dark-mode and cookies started.{|66}{r:│}  {f:0} {g1} main {a::*} {d:@ 2}{|88}{d: working}{|99}{r:│}
 {r:│}  {f:▸} {a:ctrl+o} {f:expand}{|66}{r:│}  {f:1} {a:✓} perf{|88}{d:    done}{|99}{r:│}
 {r:│}{|66}{r:│}  {f:2} {g1} dark-mode{|88}{d: working}{|97}{d:ψ}{|99}{r:│}
-{r:│}  {ch: ✉ dark-mode → main }{|66}{r:│}  {f:3} {a:?} sad-404{|88}{a:asks you}{|99}{r:│}
+{r:│}  {ch: ✉ dark-mode → main }{|66}{r:│}  {f:3} {a:?} cookies{|88}{a:asks you}{|99}{r:│}
 {r:│}    {d:which gray for the borders?}{|66}{r:│}  {f:4} {g1} emoji-csv {a:•}{|88}{d: working}{|99}{r:│}
 {r:│}  {ab::*} i answered dark-mode: the gray in tokens.css.{|66}{r:│}  {f:5} {d:○} release{|88}{d:    idle}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
 {r:│}  {d:$} {d:runs the signup benchmark}{>63} {d:✓ 4.2s}{|66}{r:│}  {d:inbox}{|99}{r:│}
-{r:│}  {a:✓} perf is done {f:·} signup 4.1 s → 0.9 s{|66}{r:│}  {a:1} {a:?} sad-404  {d:the dog: a h…}{|99}{r:│}
+{r:│}  {a:✓} perf is done {f:·} signup 4.1 s → 0.9 s{|66}{r:│}  {a:1} {a:?} cookies  {d:banner: smal…}{|99}{r:│}
 {r:│}{|66}{r:│}{|99}{r:│}
 {r:│} {r:╭─} {f:inbox · 1 waiting for you} {>65─} {f:ctrl+1 open} {r:─╮}{|66}{r:│}{|99}{r:│}
-{r:│} {r:│} {a:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>62} {f:4m}{|64}{r:│}{|66}{r:│}{|99}{r:│}
+{r:│} {r:│} {a:1} {a:?} cookies {f:·} banner: smaller, or gone?{>62} {f:4m}{|64}{r:│}{|66}{r:│}{|99}{r:│}
 {r:│} {r:╰}{>65─}{r:╯}{|66}{r:│}{|99}{r:│}
 {r:├─} {d:you →} {a:main} {f:·} {d:opus 5.5} {f:·} {d:high} {f:·} {d:yolo} {f:·} {g5} {d:working · 1m} {|66─}{r:┴}{>─} {d:58k / 262k tokens · 22%} {r:─┤}
 ^{r:│}  {a:│}{|99}{r:│}
-^{r:│}  {a:│}   and give the sad dog a hat{a:▌}{|99}{r:│}
+^{r:│}  {a:│}   and the cookie banner hides the buy button{a:▌}{|99}{r:│}
 ^{r:│}  {a:│}{|99}{r:│}
 ^{r:│}      {t:ctrl+c} {d:interrupt}   {t:ctrl+f} {d:find}   {t:ctrl+1} {d:open an inbox item}   {t:ctrl+s} {d:find agent}{|99}{r:│}
 {r:╰}{>─}{r:╯}
@@ -182,15 +182,15 @@ r"""
 
 ::ex
 ::tab dark
-{a:?} {ab:sad-404 needs you}{>}
-{d:  the dog: a hat, or a scarf?}{>}
+{a:?} {ab:cookies needs you}{>}
+{d:  banner: smaller, or gone?}{>}
 {>}
 {a:✓} {d:perf is done · signup 4.1 s → 0.9 s}{>}
 {e:✗} {e:release failed} {d:· npm publish: 403 forbidden}{>}
 {g1} {d:dark-mode}  {f:working · 3m}{>}
 ::tab NO_COLOR | nocolor
-{a:?} {ab:sad-404 needs you}{>}
-{d:  the dog: a hat, or a scarf?}{>}
+{a:?} {ab:cookies needs you}{>}
+{d:  banner: smaller, or gone?}{>}
 {>}
 {a:✓} {d:perf is done · signup 4.1 s → 0.9 s}{>}
 {e:✗} {e:release failed} {d:· npm publish: 403 forbidden}{>}
@@ -369,15 +369,15 @@ r"""
 
 ::ex
 ::tab dark
-{f:3} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>} {f:4m}
+{f:3} {a:?} cookies {f:·} banner: smaller, or gone?{>} {f:4m}
 {f:2} {g1} dark-mode {d:ψ} {f:·} {d:dims the borders}{>}
 {a:✓} {d:perf is done}{>}
 ::tab NO_COLOR | nocolor
-{f:3} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>} {f:4m}
+{f:3} {a:?} cookies {f:·} banner: smaller, or gone?{>} {f:4m}
 {f:2} {g1} dark-mode {d:ψ} {f:·} {d:dims the borders}{>}
 {a:✓} {d:perf is done}{>}
 ::tab ASCII
-{f:3} {a:?} sad-404 {f:.} the dog: a hat, or a scarf?{>} {f:4m}
+{f:3} {a:?} cookies {f:.} banner: smaller, or gone?{>} {f:4m}
 {f:2} {d:~} dark-mode {d:Y} {f:.} {d:dims the borders}{>}
 {a:*} {d:perf is done}{>}
 ::cap the light theme: use the switch at the top right. every mock on this site follows it.
@@ -433,11 +433,11 @@ page("components/message", "your message",
 r"""
 ::ex
 ::tab sent
-{a:│} signup is slow on mobile. and dark mode. and the 404 is sad {f:·}{>}
+{a:│} signup is slow on mobile. and dark mode. and the banner hides buy {f:·}{>}
 ::tab got it
-{a:│} signup is slow on mobile. and dark mode. and the 404 is sad {d:✓}{>}
+{a:│} signup is slow on mobile. and dark mode. and the banner hides buy {d:✓}{>}
 ::tab read
-{a:│} signup is slow on mobile. and dark mode. and the 404 is sad {a:✓✓}{>}
+{a:│} signup is slow on mobile. and dark mode. and the banner hides buy {a:✓✓}{>}
 ::tab long
 {a:│} here is the full list of things i noticed on the signup page, in{>}
 {a:│} the order i'd fix them:{>}
@@ -462,8 +462,8 @@ page("components/levels", "three levels",
 "everything in the history sits on one of three levels: it needs you, it's for you, or it's between agents.",
 r"""
 ::ex
-{a:┃} {ab:? sad-404 needs you}{>}
-{a:┃} the dog: a hat, or a scarf?{>}
+{a:┃} {ab:? cookies needs you}{>}
+{a:┃} banner: smaller, or gone?{>}
 {>}
 {ab::*} i answered dark-mode: the gray in tokens.css, like everywhere.{>}
 {>}
@@ -587,7 +587,7 @@ r"""
 {f:0} {g1} main {a::*} {d:@ 2}{|21}{d: 1m}{|26}{d:22%}{>}
 {f:1} {a:✓} perf{>}
 {f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:ψ}{>}
-{f:3} {a:?} sad-404{|26}{d:18%}{>}
+{f:3} {a:?} cookies{|26}{d:18%}{>}
 {f:4} {g1} emoji-csv {a:•}{|21}{d:42s}{|26}{d:31%}{>}
 {f:5} {d:○} release{|26}{d: 8%}{>}
 ::tab ctrl held
@@ -596,7 +596,7 @@ r"""
 {f:0} {g1} main {a::*} {d:@ 2}{|21}{d: working}{>}
 {f:1} {a:✓} perf{|21}{d:    done}{>}
 {f:2} {g1} dark-mode{|21}{d: working}{|31}{d:ψ}{>}
-{f:3} {a:?} sad-404{|21}{a:asks you}{>}
+{f:3} {a:?} cookies{|21}{a:asks you}{>}
 {f:4} {g1} emoji-csv {a:•}{|21}{d: working}{>}
 {f:5} {d:○} release{|21}{d:    idle}{>}
 ::tab ⌥ held
@@ -605,7 +605,7 @@ r"""
 {a:⌥0} {g1} main {a::*} {d:@ 2}{|21}{d: 1m}{|26}{d:22%}{>}
 {a:⌥1} {a:✓} perf{>}
 {a:⌥2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:ψ}{>}
-{a:⌥3} {a:?} sad-404{|26}{d:18%}{>}
+{a:⌥3} {a:?} cookies{|26}{d:18%}{>}
 ::tab PRs
 {f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:↑}{>}
 {f:6} {g1} login-fix{|21}{d: 5m}{|26}{d: 9%}{|31}{e:↑}{>}
@@ -670,7 +670,7 @@ r"""
 
 ## rules
 
-- the divider is also where short notes land: `✓ inbox clear`, `✓ copied 9 chars`, an open item's `you → ? sad-404 · your answer`.
+- the divider is also where short notes land: `✓ inbox clear`, `✓ copied 9 chars`, an open item's `you → ? cookies · your answer`.
 - short on room: the long context falls back to the short one, then the context goes, then the branch name, then `opus 5.5 · high` becomes `opus·hi`. the mode goes last. the gust stays.
 """, src="book §8 divider", k="status model effort mode context tokens")
 
@@ -688,7 +688,7 @@ r"""
 ::tab typing
 {r:├─} {d:you →} {a:main} {f:·} {d:opus 5.5} {f:·} {d:high} {f:·} {d:yolo} {>─} {d:18k · 2%} {r:─┤}
 ^{r:│}  {a:│}{>}{r:│}
-^{r:│}  {a:│}   make the 404 page **funnier**, and give the dog a hat{a:▌}{>}{r:│}
+^{r:│}  {a:│}   make the banner **smaller**, and keep it off the buy button{a:▌}{>}{r:│}
 ^{r:│}  {a:│}{>}{r:│}
 ^{r:│}      {t:@} {d:file}   {t:$} {d:skills}   {t:/} {d:commands}{>}{r:│}
 {r:╰}{>─}{r:╯}
@@ -716,7 +716,7 @@ r"""
 ::ex
 ^{r:│}  {r:╭─} {f:attached} {>69─}{r:─╮}{>}{r:│}
 ^{r:│}  {r:│} {a:❝ 1} {d:“la licence du repo,”}{>68}{r:│}{>}{r:│}
-^{r:│}  {r:│} {a:▣ 2} {d:404.png} {f:1440×900}{>68}{r:│}{>}{r:│}
+^{r:│}  {r:│} {a:▣ 2} {d:cart.png} {f:1440×900}{>68}{r:│}{>}{r:│}
 ^{r:│}  {r:╰─} {f:backspace on a chip removes it} {>69─}{r:─╯}{>}{r:│}
 ^{r:│}  {a:│}   tu recommandes quoi pour {a:❝ 1} ? et regarde {a:▣ 2}{a:▌}{>}{r:│}
 ^{r:│}      {t:@} {d:file}   {t:$} {d:skills}   {t:/} {d:commands}{>}{r:│}
@@ -759,25 +759,25 @@ r"""
 ::ex
 ::tab one item
 {r:╭─} {f:inbox · 1 waiting for you} {>─} {f:ctrl+1 open} {r:─╮}
-{r:│} {f:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {f:1} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab four items
 {r:╭─} {f:inbox · 4 waiting for you} {>─} {f:ctrl+1-3 open} {r:─╮}
 {r:│} {f:1} {a:?} t3 {f:·} $ npm publish --access public{>69} {f:2m}{>}{r:│}
 {r:│} {f:2} {a:?} api-v2 {f:·} $ git push origin main{>69} {f:3m}{>}{r:│}
-{r:│} {f:3} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {f:3} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:│} {f:+ 1 more · ↑ #409 ready to merge}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab ctrl held
 {r:╭─} {f:inbox · 4 waiting for you} {>─} {f:ctrl+1-3 open} {r:─╮}
 {r:│} {a:1} {a:?} t3 {f:·} $ npm publish --access public{>69} {f:2m}{>}{r:│}
 {r:│} {a:2} {a:?} api-v2 {f:·} $ git push origin main{>69} {f:3m}{>}{r:│}
-{r:│} {a:3} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {a:3} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:│} {f:+ 1 more · ↑ #409 ready to merge}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab no ctrl+digits
 {r:╭─} {f:inbox · 1 waiting for you} {>─} {f:click to open} {r:─╮}
-{r:│} {f:1} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {f:1} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::end
 
@@ -817,7 +817,7 @@ r"""
 ^^{r:│} {a:┃}   {a:1} {d:allow}   {a:2} {d:always allow npm publish * here}   {a:3} {d:no}{>}{r:│}
 ^^{r:│} {a:┃}   {f:or type why not, ⏎ says no}{>}{r:│}
 ^^{r:│} {a:┃}{>}{r:│}
-{r:│} {f:2} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {f:2} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:╰}{>─}{r:╯}
 {r:├─} {d:you →} {a:? t3} {f:·} {d:your answer} {>─}{r:─┤}
 ::tab option chosen
@@ -827,21 +827,21 @@ r"""
 ^^{r:│} {a:┃}{>}{r:│}
 ^^{r:│} {a:┃}   {hl: 1 allow }  {a:2} {d:always allow npm publish * here}   {a:3} {d:no}{>}{r:│}
 ^^{r:│} {a:┃}   {f:or type why not, ⏎ says no}{>}{r:│}
-{r:│} {f:2} {a:?} sad-404 {f:·} the dog: a hat, or a scarf?{>69} {f:4m}{>}{r:│}
+{r:│} {f:2} {a:?} cookies {f:·} banner: smaller, or gone?{>69} {f:4m}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab right after
 {r:╭─} {f:inbox · 1 waiting for you} {>─} {f:ctrl+1 open} {r:─╮}
 {r:│} {a:✓} {d:you allowed t3: npm publish --access public}{>}{r:│}
-^^{r:│} {a:┃} {ab:?} {b:sad-404 asks}{>} {d:1 of 1 · 4m} {r:│}
-^^{r:│} {a:┃}   the dog: a hat, or a scarf?{>}{r:│}
+^^{r:│} {a:┃} {ab:?} {b:cookies asks}{>} {d:1 of 1 · 4m} {r:│}
+^^{r:│} {a:┃}   banner: smaller, or gone?{>}{r:│}
 ^^{r:│} {a:┃}{>}{r:│}
-^^{r:│} {a:┃}   {a:1} {d:a hat}   {a:2} {d:a scarf}{>}{r:│}
+^^{r:│} {a:┃}   {a:1} {d:smaller}   {a:2} {d:gone}{>}{r:│}
 ^^{r:│} {a:┃}   {f:or type your answer, ⏎ sends it}{>}{r:│}
 {r:╰}{>─}{r:╯}
 ::tab the last one
 {r:├─} {a:✓} inbox clear {>─}{r:─┤}
 ^{r:│}  {a:│}{>}{r:│}
-^{r:│}  {a:│}   and give the sad dog a hat{a:▌}{>}{r:│}
+^{r:│}  {a:│}   and the cookie banner hides the buy button{a:▌}{>}{r:│}
 ::cap after the last answer, the box goes, your draft comes back and the divider says ✓ inbox clear for 2 s.
 ::end
 
@@ -994,10 +994,10 @@ r"""
 ::ex w=34
 ::tab rest
 {f:2} {g1} dark-mode{|21}{d: 3m}{|26}{d:12%}{|31}{d:ψ}{>}
-{f:3} {a:?} sad-404{|26}{d:18%}{>}
+{f:3} {a:?} cookies{|26}{d:18%}{>}
 ::tab ctrl held
 {f:2} {g1} dark-mode{|21}{d: working}{|31}{d:ψ}{>}
-{f:3} {a:?} sad-404{|21}{a:asks you}{>}
+{f:3} {a:?} cookies{|21}{a:asks you}{>}
 ::end
 
 ## the modifiers

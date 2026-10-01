@@ -138,16 +138,16 @@ def demo(c):
     main(3.4, "on it. perf is profiling it on a mid-range phone.")
     say(4.0, 5.2, 5.4, "oh and dark mode. people keep asking")
     main(5.9, "dark-mode started. settings page first, then the rest.")
-    say(6.3, 7.3, 7.5, "and the 404 page is so sad. make it less sad")
-    main(7.9, "cheering it up. sad-404 started.")
+    say(6.3, 7.3, 7.5, "and the cookie banner hides the buy button on mobile")
+    main(7.9, "freeing the button. cookies started.")
     say(8.2, 9.0, 9.2, "wait also the csv export crashes on emoji 😭")
     main(9.6, "emoji-csv is on it. it's always unicode.")
     say(9.9, 10.6, 10.8, "OK LAST ONE. release notes for all of this")
     main(11.3, "release waits for the others, then writes them. go get a coffee.")
     line(12.8, "▸ 9 messages between 5 agents", gap=14, color="dim", size=13)
     main(13.6, "dark-mode asked which gray. i said the one in tokens.css.")
-    say(14.4, 15.8, 16.0, "actually keep the sad dog on the 404. just give it a hat")
-    main(16.6, "told sad-404. the dog keeps its job. now with a hat.")
+    say(14.4, 15.8, 16.0, "actually keep the cookie banner. legal wants it. just smaller")
+    main(16.6, "told cookies. the banner stays, half the size.")
     # the card: it asks, you press 2, it folds to one answered line
     y[0] += 18; cy0 = y[0]
     k = tl.show(17.8, 19.9, dur=0.2); a2 = tl.show(19.9, dur=0.2)
@@ -160,7 +160,7 @@ def demo(c):
     y[0] = cy0 + lh
     done = [(21.0, "emoji-csv done", "🦄 exports fine now. the file was read as latin-1."),
             (22.2, "perf done", "signup: 4.1 s → 0.9 s on a mid-range phone."),
-            (23.4, "sad-404 and dark-mode done", "the dog has a hat. settings is dark."),
+            (23.4, "cookies and dark-mode done", "the buy button is free. settings is dark."),
             (24.8, "release done", "2.5 notes drafted. five things, zero tabs.")]
     for i, (t, a, b) in enumerate(done):
         line(t, f'{acc("✓")} {a} <tspan fill="{c["dim"]}">· {E(b)}</tspan>', gap=14 if i == 0 else 0)
@@ -187,7 +187,7 @@ def demo(c):
                f'<text x="700" y="76" font-size="12" fill="{c["dim"]}">agents · ⌥ + number</text>'
                f'<text x="700" y="102" font-size="14" fill="{c["dim"]}">0 {acc(":*")} <tspan fill="{c["text"]}">main</tspan></text>')
     # the panel: each agent's ∿ turns into a ✓ when it ships
-    for n, (name, t0, t1) in enumerate([("perf", 3.5, 22.2), ("dark-mode", 6.0, 23.4), ("sad-404", 8.0, 23.4),
+    for n, (name, t0, t1) in enumerate([("perf", 3.5, 22.2), ("dark-mode", 6.0, 23.4), ("cookies", 8.0, 23.4),
                                          ("emoji-csv", 9.7, 21.0), ("release", 11.4, 24.8)], 1):
         yy = 102 + n * 24; k = tl.show(t0)
         out.append(f'<text class="{k}" x="700" y="{yy}" font-size="14" fill="{c["dim"]}" xml:space="preserve">{n} <tspan class="g" fill="{c["acc"]}">∿</tspan> <tspan fill="{c["text"]}">{name}</tspan></text>')
@@ -249,9 +249,9 @@ def demo_b(c):
     tool(4.2, "ƒ", "perf · reading the Sentry trace")
     say(4.6, 5.8, 6.0, "oh and dark mode. people keep asking")
     main(6.5, "dark-mode started. settings page first, then the rest.")
-    say(6.9, 7.9, 8.1, "and the 404 page is so sad. make it less sad")
-    main(8.6, "cheering it up. sad-404 started.")
-    chip(9.4, "dark-mode", "sad-404", "the 404 uses the old gray. i'm switching it, don't.")
+    say(6.9, 7.9, 8.1, "and the cookie banner hides the buy button on mobile")
+    main(8.6, "freeing the button. cookies started.")
+    chip(9.4, "dark-mode", "cookies", "the banner uses the old gray. i'm switching it, don't.")
     say(10.0, 10.9, 11.1, "wait also the csv export crashes on emoji 😭")
     main(11.6, "emoji-csv is on it. it's always unicode.")
     tool(12.4, "$", "emoji-csv · running the export test")
@@ -272,7 +272,7 @@ def demo_b(c):
     y[0] = cy0 + lh
     done = [(23.4, "emoji-csv done", "🦄 exports fine now. the file was read as latin-1."),
             (24.6, "perf done", "signup: 4.1 s → 0.9 s on a mid-range phone."),
-            (25.8, "sad-404 and dark-mode done", "the dog has a hat. settings is dark."),
+            (25.8, "cookies and dark-mode done", "the buy button is free. settings is dark."),
             (27.0, "all four done", "four things, zero tabs.")]
     for i, (t, a, b) in enumerate(done):
         line(t, f'{acc("✓")} {a} <tspan fill="{c["dim"]}">· {E(b)}</tspan>', gap=14 if i == 0 else 0)
@@ -299,7 +299,7 @@ def demo_b(c):
                f'<text x="700" y="76" font-size="12" fill="{c["dim"]}">agents · ⌥ + number</text>'
                f'<text x="700" y="102" font-size="14" fill="{c["dim"]}">0 {acc(":*")} <tspan fill="{c["text"]}">main</tspan></text>')
     # the panel: each agent's ∿ turns into a ✓ when it ships
-    for n, (name, t0, t1) in enumerate([("perf", 3.5, 24.6), ("dark-mode", 6.6, 25.8), ("sad-404", 8.7, 25.8),
+    for n, (name, t0, t1) in enumerate([("perf", 3.5, 24.6), ("dark-mode", 6.6, 25.8), ("cookies", 8.7, 25.8),
                                          ("emoji-csv", 11.7, 23.4)], 1):
         yy = 102 + n * 24; k = tl.show(t0)
         out.append(f'<text class="{k}" x="700" y="{yy}" font-size="14" fill="{c["dim"]}" xml:space="preserve">{n} <tspan class="g" fill="{c["acc"]}">∿</tspan> <tspan fill="{c["text"]}">{name}</tspan></text>')
@@ -475,10 +475,10 @@ def f_direct(c):
 def f_steer(c):
     m = Mini(c, 10, 230, "✓ sent · ✓✓ read")
     yy = m.y; m.y += 27
-    m.swap(0.4, 3.6, m.fx, yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> sad-404 <tspan fill="{c["dim"]}">· swapping the sad dog for a sun…</tspan>',
-           f'<tspan class="g" fill="{c["acc"]}">∿</tspan> sad-404 <tspan fill="{c["dim"]}">· putting a hat on the dog…</tspan>')
-    m.you(1.4, "@sad-404 keep the dog. just give it a hat", read=1.2)
-    m.row(3.3, f'{m.dim("@ sad-404:")} got it. the dog keeps its job. hat on.', gap=4)
+    m.swap(0.4, 3.6, m.fx, yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> cookies <tspan fill="{c["dim"]}">· deleting the banner…</tspan>',
+           f'<tspan class="g" fill="{c["acc"]}">∿</tspan> cookies <tspan fill="{c["dim"]}">· shrinking the banner…</tspan>')
+    m.you(1.4, "@cookies keep the banner. legal wants it. just smaller", read=1.2)
+    m.row(3.3, f'{m.dim("@ cookies:")} got it. it stays, half the size.', gap=4)
     m.row(4.2, f'{m.dim("the correction lands in the running agent. nothing restarts.")}', size=13, gap=6)
     return m.svg("you correct a running agent; the double check shows it read the message; it changes course.")
 
