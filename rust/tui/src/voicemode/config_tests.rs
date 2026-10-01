@@ -81,12 +81,12 @@ fn the_tts_model_and_the_voice_are_written_only_when_picked() {
 }
 
 #[test]
-fn the_listen_job_is_realtime_on_mistral_and_batch_always() {
+fn the_listen_job_is_the_batch_transcribe_3_never_realtime() {
     let j = with("", listen_job_of).unwrap();
-    let rt = j.realtime.clone().expect("mistral listens in realtime");
-    assert_eq!(rt.model, "voxtral-mini-transcribe-realtime-2602");
-    assert_eq!(rt.key, "sk-test-15");
-    assert_eq!(j.batch.name, "mistral/voxtral-mini-latest");
+    // round 2: no realtime model (Voxtral Mini's is retired)
+    assert!(j.realtime.is_none(), "{j:?}");
+    assert_eq!(j.batch.name, "mistral/voxtral-transcribe-3");
+    assert_eq!(j.batch.key, "sk-test-15");
     // the key is never printed
     let shown = format!("{:?}", j);
     assert!(!shown.contains("sk-test"), "{shown}");

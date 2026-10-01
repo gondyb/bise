@@ -18,7 +18,7 @@ fn mistral_key(k: &str) -> Option<String> {
 
 #[test]
 fn voice_mode_keys_default_when_unset() {
-    let k = VoiceModeKeys::from_text(Some("[voice]\nmodel = \"mistral/voxtral-mini-latest\"\n"));
+    let k = VoiceModeKeys::from_text(Some("[voice]\nmodel = \"mistral/voxtral-transcribe-3\"\n"));
     assert_eq!(k, VoiceModeKeys::default());
     assert_eq!((k.listen, k.read_aloud, k.speed, k.sounds, k.seen_privacy), (ListenMode::Auto, ReadAloud::Needs, 1.0, true, false));
     assert_eq!(VoiceModeKeys::from_text(None), VoiceModeKeys::default());
@@ -82,12 +82,55 @@ fn a_wrong_voice_mode_value_is_a_warning_and_keeps_its_default() {
 }
 
 #[test]
-fn mistral_listens_in_realtime_and_speaks_the_others_do_not_yet() {
-    assert_eq!(realtime_model("mistral"), Some("voxtral-mini-transcribe-realtime-2602"));
+fn no_provider_listens_in_realtime_and_only_mistral_speaks() {
     assert_eq!(tts_model("mistral"), Some("voxtral-mini-tts-2603"));
+    assert_eq!(realtime_model("mistral"), None);
     for p in ["openai", "groq", "elevenlabs", "deepgram"] {
         assert_eq!((realtime_model(p), tts_model(p)), (None, None), "{p}");
     }
+}
+
+#[test]
+fn transcribe_3_is_the_default_voice_model_and_voxtral_mini_is_gone() {
+    let s = setup("");
+    assert_eq!((s.voice.model.as_str(), s.voice.from), (TRANSCRIBE_3, "default"));
+    assert_eq!(s.catalog.default_voice_model, TRANSCRIBE_3);
+    assert_eq!(s.catalog.provider("mistral").unwrap().voice_model, "voxtral-transcribe-3");
+    // in no list: the catalog's voice models have no voxtral-mini
+    let stt: Vec<String> = s.catalog.models.iter().filter(|m| m.stt).map(|m| m.name()).collect();
+    assert!(stt.contains(&TRANSCRIBE_3.to_string()), "{stt:?}");
+    assert!(stt.iter().all(|m| !retired_stt(m)), "{stt:?}");
+    assert_eq!(s.catalog.resolve_stt(TRANSCRIBE_3).known, Known::Listed);
+}
+
+#[test]
+fn a_config_or_env_naming_voxtral_mini_reads_as_transcribe_3() {
+    for old in [
+        "mistral/voxtral-mini-latest",
+        "voxtral-mini-latest",
+        "mistral/voxtral-mini-2602",
+        " Mistral/Voxtral-Mini-Latest ",
+        "mistral/voxtral-mini-transcribe-realtime-2602",
+    ] {
+        let mut w = Vec::new();
+        let t: toml::Table = format!("[voice]\nmodel = {:?}\n", old).parse().unwrap();
+        let cfg = VoiceConfig::read(&t, &mut w);
+        assert!(w.is_empty(), "{old}: {w:?}");
+        let v = VoiceSetup::of(&setup("").catalog, cfg, &no_env);
+        assert_eq!((v.model.as_str(), v.from), (TRANSCRIBE_3, "config"), "{old}");
+        let env = |k: &str| (k == "BISE_VOICE_MODEL").then(|| old.to_string());
+        let s = Setup::from_text(None, &env);
+        assert_eq!(s.voice.model, TRANSCRIBE_3, "{old}");
+        assert!(s.catalog.warnings.is_empty(), "{old}: {:?}", s.catalog.warnings);
+    }
+    // the roles' line too
+    let s = setup("[roles]\nvoice = \"mistral/voxtral-mini-latest\"\n");
+    assert_eq!(s.voice.model, TRANSCRIBE_3);
+    // the other Mistral voice models and the TTS are not touched
+    let c = &setup("").catalog;
+    assert_eq!(c.canonical_stt("voxtral-small-transcribe-3"), "mistral/voxtral-small-transcribe-3");
+    assert_eq!(c.canonical_stt("openai/whisper-1"), "openai/whisper-1");
+    assert!(!retired_stt("mistral/voxtral-transcribe-3"));
 }
 
 #[test]
@@ -96,14 +139,16 @@ fn the_calls_take_the_voice_roles_provider_and_its_key() {
     let keys = Keys { env: &mistral_key, store: &store, files: &[] };
     let s = setup("");
     assert_eq!(s.voice_provider(), "mistral");
-    let rt = s.realtime_call(&keys).unwrap().unwrap();
-    assert_eq!(rt.name, "mistral/voxtral-mini-transcribe-realtime-2602");
-    assert_eq!((rt.model.as_str(), rt.key.as_str(), rt.provider_name.as_str()), ("voxtral-mini-transcribe-realtime-2602", "sk-secret-mistral", "Mistral"));
-    assert!(!rt.base_url.ends_with('/') && rt.base_url.starts_with("https://"), "{}", rt.base_url);
-    // the key never shows
-    assert!(!format!("{:?}", rt).contains("sk-secret"));
+    // no realtime model: voice mode transcribes each turn with the batch one
+    assert_eq!(s.realtime_call(&keys).unwrap(), None);
+    let job = s.voice_job(&keys).unwrap();
+    assert_eq!((job.name.as_str(), job.model.as_str(), job.api.as_str()), (TRANSCRIBE_3, "voxtral-transcribe-3", "mistral"));
     let tts = s.tts_call(&VoiceModeKeys::default(), &keys).unwrap();
     assert_eq!(tts.name, "mistral/voxtral-mini-tts-2603");
+    assert_eq!((tts.model.as_str(), tts.key.as_str(), tts.provider_name.as_str()), ("voxtral-mini-tts-2603", "sk-secret-mistral", "Mistral"));
+    assert!(!tts.base_url.ends_with('/') && tts.base_url.starts_with("https://"), "{}", tts.base_url);
+    // the key never shows
+    assert!(!format!("{:?}", tts).contains("sk-secret"));
     // no key: one line that says what to do
     let none = Keys { env: &no_env, store: &store, files: &[] };
     let e = s.tts_call(&VoiceModeKeys::default(), &none).unwrap_err();

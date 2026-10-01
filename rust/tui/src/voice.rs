@@ -3,10 +3,10 @@
 //!
 //! Ctrl+R records from the default microphone (16 kHz mono PCM); any
 //! key stops, then the whole clip goes to the voice model in one
-//! request (BISE-130: batch, the full model, not the realtime mini one)
-//! and the text lands in the composer. The model, the language and a
-//! vocabulary come from `[voice]` in ~/.bise/config.toml (bise_catalog:
-//! Mistral Voxtral by default; OpenAI, Groq, ElevenLabs, Deepgram, any
+//! request (BISE-130: batch, the full model) and the text lands in the
+//! composer. The model, the language and a vocabulary come from
+//! `[voice]` in ~/.bise/config.toml (bise_catalog: Mistral's Voxtral
+//! Transcribe 3 by default, never Voxtral Mini; OpenAI, Groq, ElevenLabs, Deepgram, any
 //! OpenAI-compatible server), the key from the chat keys' resolution.
 //! While recording, Ctrl+C or Esc cancels. Off by default: `/voice`
 //! toggles it, saved in bise's prefs. The state shows as one chip in

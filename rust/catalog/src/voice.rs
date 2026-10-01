@@ -18,7 +18,7 @@
 //!
 //! ```toml
 //! [voice]
-//! model = "mistral/voxtral-mini-latest"
+//! model = "mistral/voxtral-transcribe-3"
 //! language = "fr"                       # optional; unset: detected
 //! vocabulary = ["bise", "config.toml"]  # optional: words to spell right
 //! ```
@@ -272,14 +272,27 @@ pub fn speed_written(speed: f32) -> String {
     format!("{:.1}", speed.clamp(SPEED_MIN, SPEED_MAX))
 }
 
-/// A provider's realtime transcription model (Voxtral Realtime: the
-/// words as you talk), its id; None: it has none (the voice role's batch
-/// model then transcribes each turn).
-pub fn realtime_model(provider: &str) -> Option<&'static str> {
-    match provider {
-        "mistral" => Some("voxtral-mini-transcribe-realtime-2602"),
-        _ => None,
-    }
+/// The default voice model, dictation and voice mode (models.toml's
+/// `default_voice_model`, Mistral's voice pick).
+pub const TRANSCRIBE_3: &str = "mistral/voxtral-transcribe-3";
+
+/// Voxtral Mini's ids (`voxtral-mini-latest`, `voxtral-mini-2602`, the
+/// realtime `voxtral-mini-transcribe-realtime-2602`…): not offered, it got
+/// too many words wrong (the user, voice mode round 2). A config or
+/// `BISE_VOICE_MODEL` naming one reads as [`TRANSCRIBE_3`].
+pub const RETIRED_STT_PREFIX: &str = "mistral/voxtral-mini-";
+
+/// `name` ("provider/id") is a retired voice model.
+pub fn retired_stt(name: &str) -> bool {
+    name.trim().to_ascii_lowercase().starts_with(RETIRED_STT_PREFIX)
+}
+
+/// A provider's realtime transcription model, its id; None for every
+/// provider now: the only one was Voxtral Mini's (retired), so voice mode
+/// transcribes each turn with the voice role's batch model (the end of a
+/// turn is the VAD's).
+pub fn realtime_model(_provider: &str) -> Option<&'static str> {
+    None
 }
 
 /// A provider's text-to-speech model, its id; None: it does not speak
@@ -464,14 +477,21 @@ pub struct SttResolved {
 }
 
 impl Catalog {
-    /// A bare voice model name goes to the default voice model's provider.
+    /// A bare voice model name goes to the default voice model's provider;
+    /// a retired one (Voxtral Mini, [`RETIRED_STT_PREFIX`]) reads as
+    /// [`TRANSCRIBE_3`], with no error.
     pub fn canonical_stt(&self, name: &str) -> String {
         let name = name.trim();
-        if split_name(name).is_some() {
-            return name.to_string();
+        let full = if split_name(name).is_some() {
+            name.to_string()
+        } else {
+            let p = split_name(&self.default_voice_model).map(|(p, _)| p).unwrap_or("mistral");
+            format!("{}/{}", p, name)
+        };
+        if retired_stt(&full) {
+            return TRANSCRIBE_3.to_string();
         }
-        let p = split_name(&self.default_voice_model).map(|(p, _)| p).unwrap_or("mistral");
-        format!("{}/{}", p, name)
+        full
     }
 
     pub fn resolve_stt(&self, name: &str) -> SttResolved {
