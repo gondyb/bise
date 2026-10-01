@@ -17,14 +17,17 @@ tmux tests). Each phase ships on its own and is useful without the next.
 | # | What | Where | Cost |
 |---|---|---|---|
 | 0 | **Conventions only.** `sb spawn --pr` (implies `--worktree`, base `origin/HEAD` after a fetch, adds "done when: its PR is open" and the PR rules to the brief); main's prompt: a PR request is a worktree request; the agent prompt's PR rules (design §5.3); approvals tier rules (push to its own branch, `gh pr create\|view\|checks\|diff` allowed in auto; merge, approve, comment, `gh api` writes, push to the default branch always ask). No UI. | switchboard (cli, prompts, worktree), approvals/tiers | 1 |
+| 0b | **The flow** ([dev-flow.md](dev-flow.md)). `[flow] mode = "pr" \| "trunk"`, `check`, `push` in the repo's config; detection (protected branch, other committers, AGENTS.md) and the one-time question; the Flow section written into main's and the tasks' prompts from the config (the worktree rule becomes "when the flow says so, or the user asks"); `sb land` (shared folder: the agent's files through a private index, compare-and-swap on main, the shared index synced; worktree: rebase, check, fast-forward; one land at a time); the approvals rows per flow; `/flow`; the feed's "landed" lines. | switchboard (config, cli, prompts, worktree, approvals/tiers), tui (`/flow`, feed lines) | 2.5 |
 | 1 | **See the PRs.** `Forge` trait + GitHub through `gh api graphql` (one query per repo per tick, aliases per branch; cadence and back-off of design §7); `PrSnapshot` on the hub's agent and in the TUI snapshot; the sidebar cell, the held line, the divider link (OSC 8, `links.rs`), the header's held count; feed lines for opened / merged / closed; merged → archive + remove the worktree with no backup (fixes RFC 0002 §5.1's squash case); `bise doctor` line; legend row `↑`, ASCII `#`. | switchboard (new `forge/` module, daemon tick, model, journal), tui (panel, chrome, theme) | 3 |
 | 2 | **Act on the news.** Reviews, comments and failing checks to the owning agent (`@ github → <agent>`, main copied), with the details query (threads, authors, `authorAssociation` filter, `gh run view --log-failed` tail); main's prompt for escalation; the 2-tries cap on a failing check → an inbox item; `/prs`. | switchboard (router, prompts), tui (`/prs`) | 2.5 |
 | 3 | **Ready to merge.** Inbox kind `merge` opened by the hub (design §6.3; variant A), `gh pr merge` with an allowed method, withdraw on change; first-PR tips (gh logged in / not). | switchboard (cards), tui (item view options) | 1.5 |
 | 4 | **Edge cases.** PR from the shared folder (the agent's files to a branch through a private index, then a worktree on it, design §5.2); your own branch's PR in `/prs`; a branch based on another agent's branch (stacked PRs: base = that branch, retarget after its merge). | switchboard (worktree) | 2 |
 | 5 | **GitLab.** `Forge` for GitLab through `glab api graphql` (MRs by `sourceBranches`, approvals, pipeline, merge); `!88` and "pipeline" in the words; remote detection. Needs a GitLab repo to test on. | switchboard (forge), tui (words) | 2 |
 
-Total: about 12 agent-days; 0 + 1 (4 days) already answers the user's
-ask (several branches, their PR state on screen).
+Total: about 14.5 agent-days; 0 + 0b + 1 (6.5 days) already answer the
+user's ask (several branches, their PR state on screen, and the right
+flow per repo). 0b is useful alone, in this repo first: it replaces the
+private-index landing every brief repeats today.
 
 Running costs: no model tokens for polling (the hub, not a model, asks
 GitHub). GitHub: 1 point a query, at most ~240 queries an hour with 10

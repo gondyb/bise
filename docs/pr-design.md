@@ -89,6 +89,10 @@ from main, you merge on GitHub.
 
 ## 5. How an agent gets a branch and opens a PR
 
+When agents open PRs at all (PR flow) or land straight on main (trunk
+flow), which tasks get a branch, and what that changes in the agents'
+instructions: [dev-flow.md](dev-flow.md).
+
 ### 5.1 A PR request is a worktree request
 
 RFC 0002 says main never picks a worktree on its own. New rule: **a
