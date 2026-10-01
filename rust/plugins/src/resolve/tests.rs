@@ -33,6 +33,7 @@ fn manifest(name: &str) -> String {
 
 fn roots(t: &Tmp) -> Roots {
     Roots {
+        builtin: Some(t.0.join("builtin")),
         user: Some(t.0.join("user")),
         workspace: Some(t.0.join("ws")),
         data: t.0.join("data"),
@@ -217,4 +218,44 @@ fn symlinked_skill_outside_root_is_rejected() {
     let res = resolve(&roots(&t));
     assert!(res.plugins[0].skills.is_empty());
     assert_eq!(codes(&res), vec!["plugin.path.outside_root"]);
+}
+
+#[test]
+fn built_in_root_loads_shadows_and_disables() {
+    let t = tmp("builtin");
+    let mcp = format!(
+        "{{\"$schema\":\"{}\",\"mcpServers\":{{\"computer\":{{\"type\":\"stdio\",\"command\":\"bise\",\"args\":[\"computer-use\",\"mcp\"]}}}}}}",
+        MCP_SCHEMA
+    );
+    write(&t.0.join("builtin/computer/plugin.json"), &manifest("computer"));
+    write(&t.0.join("builtin/computer/mcp.json"), &mcp);
+    write(&t.0.join("builtin/other/plugin.json"), &manifest("other"));
+    write(&t.0.join("user/mine/plugin.json"), &manifest("other"));
+    let mut r = roots(&t);
+    let res = resolve(&r);
+    let p = res.plugins.iter().find(|p| p.name == "computer").unwrap();
+    assert_eq!((p.scope, p.state, p.namespace.as_str()), (Scope::BuiltIn, State::Loaded, "computer"));
+    assert_eq!(p.scope.as_str(), "built-in");
+    // "bise" is the harness resolving it, never a `bise` on PATH
+    assert_eq!(p.servers[0].args, ["computer-use", "mcp"]);
+    assert!(p.servers[0].command == "bise" || p.servers[0].command.ends_with("/bise") || p.servers[0].command.ends_with("bend-harness"));
+    let other = |res: &Resolution, s: Scope| res.plugins.iter().find(|p| p.name == "other" && p.scope == s).unwrap().state;
+    assert_eq!(other(&res, Scope::BuiltIn), State::Shadowed);
+    assert_eq!(other(&res, Scope::User), State::Loaded);
+    assert!(res.diagnostics.iter().any(|d| d.code == "plugin.shadowed" && d.message.contains("user plugin")));
+    r.disabled = vec!["computer".into()];
+    let res = resolve(&r);
+    assert_eq!(res.plugins.iter().find(|p| p.name == "computer").unwrap().state, State::Disabled);
+}
+
+#[test]
+fn the_repo_ships_the_computer_plugin() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let r = Roots { builtin: Some(root), user: None, workspace: None, data: std::env::temp_dir(), disabled: vec![] };
+    let res = resolve(&r);
+    assert!(res.diagnostics.is_empty(), "{:?}", res.diagnostics);
+    let p = res.plugins.iter().find(|p| p.name == "computer").expect("plugins/computer");
+    assert_eq!((p.scope, p.state), (Scope::BuiltIn, State::Loaded));
+    assert_eq!(p.servers.len(), 1);
+    assert_eq!(p.servers[0].args, ["computer-use", "mcp"]);
 }

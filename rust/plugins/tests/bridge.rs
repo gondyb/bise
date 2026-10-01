@@ -62,6 +62,7 @@ fn fixture_plugin_end_to_end() {
     let dir = base.join("run/plugins");
     let mut parent = std::process::Command::new("sleep").arg("60").spawn().unwrap();
     let roots = resolve::Roots {
+        builtin: None,
         user: Some(base.join("nothing-here")),
         workspace: Some(plugins.clone()),
         data: base.join("data"),
@@ -140,6 +141,7 @@ fn failing_server_is_a_diagnostic() {
     .unwrap();
     let dir = base.join("run/plugins");
     let roots = resolve::Roots {
+        builtin: None,
         user: None,
         workspace: Some(plugins),
         data: base.join("data"),

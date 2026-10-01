@@ -575,6 +575,9 @@ fn main() -> std::io::Result<()> {
             // agent plugins: list, enable/disable, and the per-session
             // bridge the REPL starts (docs/plugins.md)
             Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
+            // computer use: the `computer` plugin's MCP server, the browsers'
+            // native host, the broker, setup-check/repair/stop (docs/computer-use-design.md)
+            Some("computer-use") => std::process::exit(bise_computer_use::cli::main(&args[1..])),
             // no load_keys(): the listings tell each key's source
             Some("models") => std::process::exit(bise_catalog::cli::main(&args[1..], &auth_paths())),
             Some("login") => std::process::exit(bise_catalog::auth_cli::login_main(&args[1..], &auth_paths(), &key_check)),

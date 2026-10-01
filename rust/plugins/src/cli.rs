@@ -12,7 +12,8 @@ pub const USAGE: &str = "usage:
   bise plugins import-mcp NAME [--dry-run] < servers.json   (Claude Code's / Codex's MCP servers as one plugin)
   bise plugins serve --dir DIR [--workspace DIR] [--parent PID]   (internal: the session bridge)
 
-Roots: ~/.agents/plugins (or $BEND_PLUGINS_HOME) and <workspace>/.agents/plugins.
+Roots: bise's built-in plugins (<app root>/plugins), ~/.agents/plugins (or $BEND_PLUGINS_HOME)
+and <workspace>/.agents/plugins.
 Enable state: ~/.bend-harness/plugins.json. Changes apply at the next session start or /reload.";
 
 fn val(args: &[String], k: &str) -> Option<String> {

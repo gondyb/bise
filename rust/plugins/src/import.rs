@@ -293,7 +293,7 @@ mod tests {
         let dir = write(&root, "from-claude-code", &p).unwrap();
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(dir.join("mcp.json")).unwrap().permissions().mode() & 0o777, 0o600);
-        let roots = Roots { user: Some(root.clone()), workspace: None, data: d.join("data"), disabled: vec![] };
+        let roots = Roots { builtin: None, user: Some(root.clone()), workspace: None, data: d.join("data"), disabled: vec![] };
         let r = resolve(&roots);
         assert_eq!(r.plugins.len(), 1, "{:?}", r.diagnostics);
         let ids: Vec<&str> = r.plugins[0].servers.iter().map(|s| s.id.as_str()).collect();
