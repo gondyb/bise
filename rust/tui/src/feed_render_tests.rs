@@ -1651,6 +1651,101 @@ fn the_ascii_rows() {
     );
 }
 
+// ---- BISE-304: a run of edits folds into one row ----
+
+/// An edit call's wire lines: its patch (`+` adds, `-` removes).
+fn edit_lines(id: u32, name: &str, path: &str, adds: usize, dels: usize, done: Option<(bool, &str)>) -> Vec<String> {
+    let mut p = format!("*** Begin Patch
+*** Update File: {path}
+@@
+");
+    p.push_str(&"-old
+".repeat(dels));
+    p.push_str(&"+new
+".repeat(adds));
+    p.push_str("*** End Patch
+");
+    call_lines(id, name, &p, None, done)
+}
+
+#[test]
+fn three_done_edits_fold_and_the_failed_one_keeps_its_row() {
+    let mut lines = edit_lines(1, "write_file", "src/auth/session.ts", 3, 0, Some((true, "ok")));
+    lines.extend(edit_lines(2, "edit", "src/auth/token.ts", 1, 1, Some((true, "ok"))));
+    lines.extend(edit_lines(3, "edit", "src/auth/nope.ts", 1, 1, Some((false, "File does not exist"))));
+    lines.extend(edit_lines(4, "edit", "src/auth/session.ts", 1, 1, Some((true, "ok"))));
+    lines.extend(edit_lines(5, "apply_patch", "README.md", 2, 0, Some((true, "ok"))));
+    let (mut events, mut cache) = feed_of(&lines);
+    let rows = main_text(&events, 70);
+    assert_eq!(
+        rows,
+        vec![
+            " ± ▸ 3 files · session.ts, token.ts, README.md                 ✓ +7 −2",
+            " ± edit src/auth/nope.ts ✗ File does not exist ▸",
+        ],
+        "{rows:#?}"
+    );
+    // a click: the rows come back in place, each still opens its diff
+    assert!(toggle_event(&mut events, &mut cache, 0));
+    let open = main_text(&events, 70);
+    assert_eq!(open[0], " ± ▾ 3 files · session.ts, token.ts, README.md                 ✓ +7 −2");
+    assert_eq!(open[1], " ± write src/auth/session.ts ✓ +3 ▸");
+    assert_eq!(open.len(), 6, "{open:#?}");
+    // ctrl+o: the fold and every diff; again: all closed
+    set_everything(&mut events, &mut cache, false);
+    assert_eq!(main_text(&events, 70), rows);
+    set_everything(&mut events, &mut cache, true);
+    let all = main_text(&events, 70);
+    assert!(all[0].starts_with(" ± ▾ 3 files"), "{all:#?}");
+    assert!(all.iter().any(|r| r.contains("+new")), "{all:#?}");
+}
+
+#[test]
+fn two_edits_stay_rows_and_a_command_ends_the_run() {
+    let mut lines = edit_lines(1, "edit", "a.ts", 1, 0, Some((true, "ok")));
+    lines.extend(edit_lines(2, "edit", "b.ts", 1, 0, Some((true, "ok"))));
+    lines.extend(call_lines(3, "bash", "ls", Some("checking"), Some((true, "ok"))));
+    lines.extend(edit_lines(4, "edit", "c.ts", 1, 0, Some((true, "ok"))));
+    lines.extend(edit_lines(5, "edit", "d.ts", 1, 0, None));
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 60);
+    assert_eq!(rows.len(), 5, "{rows:#?}");
+    assert!(rows.iter().all(|r| !r.contains("files ·")), "{rows:#?}");
+}
+
+#[test]
+fn one_file_counts_the_edits_and_names_fit_whole() {
+    let mut lines = Vec::new();
+    for id in 1..=4 {
+        lines.extend(edit_lines(id, "edit", "web/src/auth/session.ts", 2, 1, Some((true, "ok"))));
+    }
+    let (events, _) = feed_of(&lines);
+    assert_eq!(main_text(&events, 60), vec![" ± ▸ 4 edits · session.ts                            ✓ +8 −4"]);
+    // many files: whole names, then `+n more`; a basename twice gets its parent
+    let names = ["auth/index.ts", "ui/index.ts", "router.ts", "store.ts", "theme.ts"];
+    let mut lines = Vec::new();
+    for (id, p) in names.iter().enumerate() {
+        lines.extend(edit_lines(id as u32 + 1, "edit", p, 1, 0, Some((true, "ok"))));
+    }
+    let (events, _) = feed_of(&lines);
+    assert_eq!(main_text(&events, 60), vec![" ± ▸ 5 files · auth/index.ts, ui/index.ts +3 more       ✓ +5"]);
+    // not even one name fits: it is cut
+    assert_eq!(main_text(&events, 30), vec![" ± ▸ 5 files · a… +4 more ✓ +5"]);
+}
+
+#[test]
+fn the_ascii_edits_fold() {
+    crate::theme::set_ascii_for_tests(true);
+    let mut lines = Vec::new();
+    for (id, p) in ["a.ts", "b.ts", "c.ts"].iter().enumerate() {
+        lines.extend(edit_lines(id as u32 + 1, "edit", p, 1, 1, Some((true, "ok"))));
+    }
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 50);
+    crate::theme::set_ascii_for_tests(false);
+    assert_eq!(rows, vec![" % > 3 files · a.ts, b.ts, c.ts           ok +3 -3"]);
+}
+
 // ---- a long message of yours folds (BISE-239) ----
 
 #[test]

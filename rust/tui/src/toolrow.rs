@@ -288,6 +288,97 @@ pub(crate) fn fold_row(first: &ToolData, n: usize, total: std::time::Duration, o
     row_of(Span::styled(format!(" {} ", kind_glyph(first)), dim_st), text, state, width)
 }
 
+/// A run of done edits this long folds into one row (BISE-304).
+pub(crate) const FOLD_EDITS: usize = 3;
+
+/// The files of a run of edits, each once, in run order, with their
+/// lines added and removed over every call.
+pub(crate) fn edit_files(patches: &[String]) -> Vec<(String, usize, usize)> {
+    let mut out: Vec<(String, usize, usize)> = Vec::new();
+    for src in patches {
+        for (p, a, d) in crate::code::patch_files(src) {
+            match out.iter_mut().find(|f| f.0 == p) {
+                Some(f) => (f.1, f.2) = (f.1 + a, f.2 + d),
+                None => out.push((p, a, d)),
+            }
+        }
+    }
+    out
+}
+
+/// What the fold names each file: its basename, with its parent when
+/// another file of the run has the same basename (`auth/index.ts`,
+/// `ui/index.ts`).
+fn short_names(paths: &[&str]) -> Vec<String> {
+    let base = |p: &str| p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string();
+    let tail2 = |p: &str| {
+        let parts: Vec<&str> = p.trim_end_matches('/').rsplit('/').take(2).collect();
+        parts.into_iter().rev().collect::<Vec<_>>().join("/")
+    };
+    paths
+        .iter()
+        .map(|p| {
+            let b = base(p);
+            if paths.iter().filter(|q| base(q) == b).count() > 1 {
+                tail2(p)
+            } else {
+                b
+            }
+        })
+        .collect()
+}
+
+/// The names that fit in `room` cells: whole names, then `+n more`; a
+/// name is cut (`…`) only when not even one fits.
+fn names_in(names: &[String], room: usize) -> String {
+    for k in (1..=names.len()).rev() {
+        let more = names.len() - k;
+        let mut s = names[..k].join(", ");
+        if more > 0 {
+            s.push_str(&format!(" +{} more", more));
+        }
+        if s.width() <= room {
+            return s;
+        }
+    }
+    let more = names.len().saturating_sub(1);
+    let tail = if more > 0 { format!(" +{} more", more) } else { String::new() };
+    let first = names.first().map(String::as_str).unwrap_or("");
+    format!("{}{}", fit_chars(first, room.saturating_sub(tail.width())), tail)
+}
+
+/// The fold of a run of done edits (BISE-304, designer): `± ▸ 3 files ·
+/// session.ts, token.ts, README.md   ✓ +7 −2`; one file edited several
+/// times counts the calls, `± ▸ 4 edits · session.ts   ✓ +9 −3`. All dim,
+/// like the commands fold.
+pub(crate) fn edit_fold_row(files: &[(String, usize, usize)], calls: usize, open: bool, width: usize) -> Line<'static> {
+    let dim_st = Style::default().fg(dim());
+    let ascii = theme::ascii_mode();
+    let mark = match (ascii, open) {
+        (true, true) => "v",
+        (true, false) => ">",
+        (false, true) => G_OPEN,
+        (false, false) => G_CLOSED,
+    };
+    let head = if files.len() == 1 {
+        format!("{} {} edits · ", mark, calls)
+    } else {
+        format!("{} {} files · ", mark, files.len())
+    };
+    let (adds, dels) = files.iter().fold((0, 0), |(a, d), f| (a + f.1, d + f.2));
+    let mut state = (if ascii { "ok" } else { G_RECEIVED }).to_string();
+    if adds > 0 {
+        state.push_str(&format!(" +{}", adds));
+    }
+    if dels > 0 {
+        state.push_str(&format!(" {}{}", if ascii { "-" } else { "−" }, dels));
+    }
+    let paths: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
+    let room = width.saturating_sub(3 + 1 + state.width() + head.width());
+    let text = vec![Span::styled(head, dim_st), Span::styled(names_in(&short_names(&paths), room), dim_st)];
+    row_of(Span::styled(format!(" {} ", glyph(G_PATCH)), dim_st), text, vec![Span::styled(state, dim_st)], width)
+}
+
 /// The title of a box: the kind and the description (`$ weighing the
 /// hero image`); without one, the kind's word (`$ bash`, `ƒ typescript`).
 pub(crate) fn box_title(td: &ToolData) -> String {

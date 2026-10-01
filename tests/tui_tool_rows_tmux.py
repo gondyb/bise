@@ -5,7 +5,7 @@ again brings the rows back. BISE-283: a skill call is a sentence,
 `read skill bise-demo` (no JSON, no `▸ output`), a failed one
 `read skill bise-dmeo … ✗ unknown skill`; ctrl+o opens its SKILL.md in a
 box. Through the real binaries (tmux, fake provider: `[[bash: CMD @@
-DESC]]`, `[[skill: NAME]]`).
+DESC]]`, `[[skill: NAME]]`, `[[write_file: JSON]]`).
 
 python3 -u tests/tui_tool_rows_tmux.py
 """
@@ -57,6 +57,19 @@ def main():
         print("---- skill ctrl+o ----\n%s" % t.screen())
         t.keys("C-o")
         t.wait_gone("╭─ read skill bise-demo")
+        # BISE-304: 3 done edits fold into one row; ctrl+o brings the rows
+        # (and their diffs) back
+        t.typed(" ".join('[[write_file: {"file_path": "%s", "content": "a\\nb\\n"}]]' % p
+                         for p in ("src/a.ts", "src/b.ts", "README.md")))
+        t.keys("Enter")
+        sc = t.wait_re(r"± ▸ 3 files · a\.ts, b\.ts, README\.md +✓ \+9", 60)
+        print("---- edits fold ----\n%s" % sc)
+        assert "± write src/a.ts" not in sc, sc
+        t.keys("C-o")
+        sc = t.wait("± write src/a.ts ✓ +3 ▾")
+        assert "± ▾ 3 files" in sc, sc
+        t.keys("C-o")
+        t.wait_gone("± write src/a.ts")
         print("PASS tui tool rows")
 
 
