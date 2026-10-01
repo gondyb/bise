@@ -87,6 +87,58 @@ line under the row (my pick), B in the state column (short words only).
 Ready to merge: A an inbox item with a merge option (my pick), B one line
 from main, you merge on GitHub.
 
+### 4.1 The sidebar: one box per worktree (the user's pick, designer's rules)
+
+Several agents can share a worktree and its branch ([dev-flow.md](dev-flow.md)
+§3.1). The user picked the grouped sidebar, with a clear line between an
+agent's row and a git line. **Git lives in borders, agents live in
+rows.** This replaces the `↑`-in-ψ's-column cell above for agents in a
+worktree; agents in the shared folder never had one.
+
+```
+ agents
+  0 ∿ main :* ✉ 2   1m  22%
+  1 ○ sad-404           18%
+
+╭─ ψ sb/dark-mode ────────── ↑ ─
+│ 2 ∿ dark-mode     3m  12%
+╰ 4 ∿ i18n •       42s  31%
+
+╭─ ψ sb/login-fix ────────── ↑ ─      (↑ red: checks fail)
+╰ 3 ∿ login-fix     5m   9%
+
+ inbox
+  1 ? sad-404  #409 is approv…
+
+ ▸ 2 archived
+```
+
+1. **Order**, top to bottom: the rows in your folder (main first), then
+   one box per worktree, ordered by its first agent's number, then the
+   inbox section, then `▸ n archived`. One blank row between blocks. The
+   inbox section stays a plain dim title with rows, never a box: boxes
+   mean git only. Numbers never change; the order follows the blocks.
+2. **Colors**: the border's lines, the rail `│` and the closing `╰` in
+   the rule color; ψ and the branch dim; `↑` follows the PR rules (dim,
+   red when checks fail, never pink, never green).
+3. **Short on room** (the 24-column panel at 90-99 columns): the branch
+   name is cut with `…` first; ψ and `↑` stay. A border never wraps.
+4. **Every worktree gets a box**, even with one agent: the rule stays
+   simple. ψ leaves the rows inside (the box says it), so names get 2
+   columns back.
+5. **Ctrl held**: the border adds the PR number (`↑ #412`); one lid line
+   inside the box, under the border and before any agent, dim, no
+   glyph, at the border's text column: `changes asked · checks pass`,
+   `no PR yet · 2 commits`, in trunk flow `waits to land · 2nd`. Red only
+   on the words `checks fail`. The agent rows get their state words as
+   everywhere.
+6. **Long lists**: a box never splits across the panel's scroll; if it
+   doesn't fit, it goes under `+ n more`, whole.
+
+Mock: the first section of pr-support.html (at rest, ctrl held, 24
+columns, trunk flow). When it ships, designer updates bise.dev/design
+(its agents panel shows ψ in the rows today).
+
 ## 5. How an agent gets a branch and opens a PR
 
 When agents open PRs at all (PR flow) or land straight on main (trunk
