@@ -273,7 +273,7 @@ impl Hub {
         fx.push(line(
             MAIN,
             "warn",
-            &format!("i can't follow the PRs: {}. `gh auth login` once (or a GITHUB_TOKEN) and their state shows here", what),
+            &format!("i can't follow the PRs: {}. run `gh auth login` once (or set GITHUB_TOKEN) and their state shows here", what),
         ));
     }
 

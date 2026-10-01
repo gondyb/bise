@@ -393,6 +393,9 @@ fn middle_lines(app: &App, c: &Card, s: &Shape, w: usize) -> Vec<Drawn> {
                 asked = true;
             }
             // what was allowed already: dim, above the command
+            // the evidence under what it asks (a merge item's facts and
+            // link): dim, right under it
+            Part::Evidence(t) => plain(&mut main, t, fg(theme::dim())),
             Part::Reason(t) if !asked => plain(&mut main, t, fg(theme::dim())),
             Part::Reason(t) => plain(&mut side, t, fg(theme::dim())),
             Part::Note(t) => plain(&mut side, t, fg(theme::dim()).add_modifier(Modifier::ITALIC)),

@@ -218,6 +218,9 @@ pub(super) enum Part {
     Reason(String),
     /// the hub's remark, dim italic
     Note(String),
+    /// the facts under what it asks (a merge item's checks, its link):
+    /// dim, right under the text; `[label](url)` is a link
+    Evidence(String),
 }
 
 /// A card as the strip and the view show it.
@@ -490,10 +493,30 @@ fn choice_shape(c: &Card) -> Shape {
     let mut lines = body.trim_end().lines();
     let head = lines.next().unwrap_or("").trim().to_string();
     let rest: Vec<&str> = lines.collect();
-    // one paragraph (a merge: the PR's title, its facts, its link,
-    // pr-design §6.3's mock)
-    let minus = if theme::ascii_mode() { "-" } else { "−" };
-    let mut parts = vec![Part::Text(rest.join("\n").trim().replace('−', minus))];
+    let mut parts = Vec::new();
+    if c.kind == "merge" {
+        // designer: the title is what you decide on (text), the rest is
+        // evidence (dim): the facts, the link (clickable)
+        let minus = if theme::ascii_mode() { "-" } else { "−" };
+        let rest: Vec<&str> = rest.iter().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        let (title, evidence) = match rest.len() {
+            0..=2 => (None, &rest[..]),
+            _ => (Some(rest[0]), &rest[1..]),
+        };
+        if let Some(t) = title {
+            parts.push(Part::Text(t.to_string()));
+        }
+        for l in evidence {
+            parts.push(Part::Evidence(if l.contains("/pull/") && !l.contains(' ') {
+                let url = if l.starts_with("http") { l.to_string() } else { format!("https://{l}") };
+                format!("[{l}]({url})")
+            } else {
+                l.replace('−', minus)
+            }));
+        }
+    } else {
+        parts.push(Part::Text(rest.join("\n").trim().to_string()));
+    }
     if !c.note.is_empty() {
         parts.push(Part::Note(c.note.clone()));
     }
