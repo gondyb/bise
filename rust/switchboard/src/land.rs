@@ -38,6 +38,10 @@ pub struct Job {
     pub files: Vec<String>,
     pub others: Vec<(String, Vec<String>)>,
     pub flow: FlowConfig,
+    /// dev-flow §5.1: the agent's feature branch (`refs/heads/computer-
+    /// use`): a plain land from its worktree moves it, never main, and is
+    /// never pushed. None: main.
+    pub onto: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,7 +156,7 @@ fn git_in(dir: &Path, args: &[&str], index: Option<&Path>) -> Result<String, Str
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     git_in(dir, args, None)
 }
 
@@ -195,11 +199,11 @@ fn changed(dir: &Path, files: &[String]) -> Result<Vec<String>, String> {
 }
 
 /// The ref the checkout at `dir` is on (`refs/heads/main`).
-fn head_ref(dir: &Path) -> Result<String, String> {
+pub(crate) fn head_ref(dir: &Path) -> Result<String, String> {
     git(dir, &["symbolic-ref", "-q", "HEAD"]).map_err(|_| format!("{} is not on a branch (detached HEAD)", dir.display()))
 }
 
-fn short(r: &str) -> &str {
+pub(crate) fn short(r: &str) -> &str {
     r.strip_prefix("refs/heads/").unwrap_or(r)
 }
 
@@ -284,12 +288,12 @@ fn own_changes(job: &Job) -> Result<Vec<String>, String> {
     Ok(mine)
 }
 
-fn shorten(dir: &Path, sha: &str) -> String {
+pub(crate) fn shorten(dir: &Path, sha: &str) -> String {
     git(dir, &["rev-parse", "--short", sha]).unwrap_or_else(|_| sha.chars().take(7).collect())
 }
 
 /// Run `check` in `dir` (`sh -c`); its output's tail when it fails.
-fn run_check(dir: &Path, check: &str) -> Result<(), String> {
+pub(crate) fn run_check(dir: &Path, check: &str) -> Result<(), String> {
     let out = std::process::Command::new("/bin/sh")
         .arg("-c")
         .arg(check)
@@ -306,7 +310,7 @@ fn run_check(dir: &Path, check: &str) -> Result<(), String> {
 /// Push `target` to its remote (trunk flow, `push = true`): a refused
 /// push fetches; main behind the remote is rebased (only in a clean
 /// shared folder), then one more try. Err: why it is not pushed.
-fn push(shared: &Path, target: &str) -> Result<(), String> {
+pub(crate) fn push(shared: &Path, target: &str) -> Result<(), String> {
     let remote = git(shared, &["remote"])?.lines().next().map(str::to_string);
     let Some(remote) = remote else {
         return Err("no remote".into());
@@ -351,7 +355,9 @@ pub fn run(job: &Job, queue: &Queue, joined: &mut dyn FnMut()) -> Result<Outcome
     }
     let mine = own_changes(job)?;
     if !job.here && job.worktree {
-        return land_branch(job, queue, joined, &main, &mine);
+        // a feature's agent lands on the feature (dev-flow §5.1)
+        let onto = job.onto.clone().unwrap_or_else(|| main.clone());
+        return land_branch(job, queue, joined, &onto, &main, &mine);
     }
     if mine.is_empty() {
         return Err("nothing of yours to land: the files you changed match the branch".into());
@@ -372,9 +378,24 @@ pub fn run(job: &Job, queue: &Queue, joined: &mut dyn FnMut()) -> Result<Outcome
     })
 }
 
-/// A worktree's branch onto main: its agent's files first, then rebase,
-/// check, fast-forward.
-fn land_branch(job: &Job, queue: &Queue, joined: &mut dyn FnMut(), main: &str, mine: &[String]) -> Result<Outcome, String> {
+/// Move `main` (a ref) from `base` to `tip`, a fast-forward: in the
+/// shared folder when it has `main` checked out (its files move too,
+/// refused when someone's changes are in the way), else a compare-and-
+/// swap of the ref.
+pub(crate) fn move_main(shared: &Path, main: &str, base: &str, tip: &str) -> Result<(), String> {
+    if head_ref(shared).as_deref() == Ok(main) {
+        git(shared, &["merge", "--ff-only", "-q", tip]).map(|_| ()).map_err(|e| {
+            format!("{} could not move: {} (the shared folder has changes on the same files, or {} moved)", short(main), e, short(main))
+        })
+    } else {
+        git(shared, &["update-ref", main, tip, base]).map(|_| ()).map_err(|_| format!("{} moved meanwhile: sb land again", short(main)))
+    }
+}
+
+/// A worktree's branch onto `main` (the default branch, or the agent's
+/// feature: `real_main` says which is pushed): its agent's files first,
+/// then rebase, check, fast-forward.
+fn land_branch(job: &Job, queue: &Queue, joined: &mut dyn FnMut(), main: &str, real_main: &str, mine: &[String]) -> Result<Outcome, String> {
     let branch = head_ref(&job.dir)?;
     if !mine.is_empty() {
         if job.message.trim().is_empty() {
@@ -422,16 +443,9 @@ fn land_branch(job: &Job, queue: &Queue, joined: &mut dyn FnMut(), main: &str, m
     let commits = git(&job.dir, &["rev-list", "--count", &format!("{}..{}", base, tip)])?
         .parse::<usize>()
         .unwrap_or(0);
-    if head_ref(&job.shared).as_deref() == Ok(main) {
-        // main is checked out in the shared folder: a fast-forward there
-        // moves its files too (refused if someone's changes are in the way)
-        git(&job.shared, &["merge", "--ff-only", "-q", &tip]).map_err(|e| {
-            format!("{} could not move: {} (the shared folder has changes on the same files, or {} moved)", short(main), e, short(main))
-        })?;
-    } else {
-        git(&job.shared, &["update-ref", main, &tip, &base]).map_err(|_| format!("{} moved meanwhile: sb land again", short(main)))?;
-    }
-    let (pushed, push_error) = pushed(job, main, main);
+    move_main(&job.shared, main, &base, &tip)?;
+    // a feature is never pushed (pushed: only when the target is main)
+    let (pushed, push_error) = pushed(job, main, real_main);
     Ok(Outcome {
         target: short(main).to_string(),
         sha: shorten(&job.shared, &tip),
@@ -477,6 +491,7 @@ mod tests {
                 .map(|(n, fs)| (n.to_string(), fs.iter().map(|s| s.to_string()).collect()))
                 .collect(),
             flow: FlowConfig::default(),
+            onto: None,
         }
     }
 
@@ -633,7 +648,7 @@ mod tests {
         // push = false: lands stay local
         sh(&ws, "echo a3 > a");
         let mut j = job("x", &ws, &ws, &["a"], &[]);
-        j.flow = FlowConfig { mode: Some(FlowMode::Trunk), check: None, push: false };
+        j.flow = FlowConfig { mode: Some(FlowMode::Trunk), check: None, push: false, ..FlowConfig::default() };
         assert_eq!(run(&j, &Queue::default(), &mut || {}).unwrap().pushed, None);
         let _ = std::fs::remove_dir_all(ws.parent().unwrap());
     }

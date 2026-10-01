@@ -40,9 +40,22 @@ pub struct Workspace {
     /// journal's worktree (its agent's own place, [`Workspace::place_id`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<String>,
+    /// dev-flow §5.1: the feature this worktree lands on (`sb spawn
+    /// --feature`): its branch is made from the feature's tip and `sb
+    /// land` moves the feature, never main. None: not a feature's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
 }
 
 impl Workspace {
+    /// The feature an agent with this workspace lands on (a worktree's).
+    pub fn feature(&self) -> Option<&str> {
+        match self.mode {
+            Mode::Worktree if !self.dropped => self.feature.as_deref(),
+            _ => None,
+        }
+    }
+
     /// The id of the place an agent with this workspace (and this dir)
     /// is in: `shared`, or its worktree's id.
     pub fn place_id(&self, dir: &str) -> String {
@@ -284,9 +297,10 @@ pub fn user_kind(kind: &str) -> bool {
 /// The hub's items with numbered options, about a place (hub/model.bend
 /// `choice_kind`): opened and closed by the hub's Rust side, the user's
 /// digit comes back as `Effect::CardChoice`. `merge`: a PR ready to merge
-/// (pr-design §6.3).
+/// (pr-design §6.3); `feature_try`, `feature_merge`: a feature branch
+/// ready to try, then to merge (dev-flow §5.1).
 pub fn choice_kind(kind: &str) -> bool {
-    matches!(kind, "merge")
+    matches!(kind, "merge" | "feature_try" | "feature_merge")
 }
 
 /// The durable state, as sb-core last sent it.
@@ -327,6 +341,7 @@ impl State {
                     base_commit: None,
                     dropped: false,
                     place: None,
+                    feature: None,
                 },
                 lifecycle: Lifecycle::Active,
                 failure: None,

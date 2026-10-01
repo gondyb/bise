@@ -260,7 +260,7 @@ item:
 ┃ ? computer-use is ready to try                        3 agents · 2h
 ┃
 ┃   14 commits on computer-use, 3 behind main · +3,120 −410
-┃   the check passes. nothing of it is on main.
+┃   the check passes. none of it is on main yet.
 ┃
 ┃   1 try it
 ┃   2 show the diff

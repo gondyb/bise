@@ -78,9 +78,14 @@ pub const COMMANDS: &[CmdDoc] = &[
         "the user message that led to your creation, verbatim, and main's turn up to the spawn.",
     ),
     cmd(
-        "sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--place new|<agent>|<branch> [--with-changes]]",
+        "sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--place new|<agent>|<branch> [--with-changes]] [--feature <name>]",
         Who::Main,
-        "create a task (names: [a-z0-9-], at most 24 chars). Where it works: the shared folder by default; `--place new` a new git worktree (`--worktree` says the same); `--place <agent>` or `<branch>` the worktree of agents already on that change (they share it and its branch).",
+        "create a task (names: [a-z0-9-], at most 24 chars). Where it works: the shared folder by default; `--place new` a new git worktree (`--worktree` says the same); `--place <agent>` or `<branch>` the worktree of agents already on that change (they share it and its branch); `--feature <name>` its own worktree from that feature's tip, landing on the feature.",
+    ),
+    cmd(
+        "sb feature [new|sync|ready|merge|drop|list] <name>",
+        Who::Main,
+        "feature branches (trunk flow): `new` a local branch from main's tip (an existing local branch is adopted), never pushed; `sync` rebases it on main and moves its agents' worktrees; `ready` runs the check and opens the user's \"ready to try\" item; `merge` (only on the user's go) rebases, checks, fast-forwards main, pushes, archives its agents; `drop` (only on the user's word) deletes it, its tip kept in refs/switchboard/trash/. No argument: the list.",
     ),
     cmd(
         "sb move <agent> new|shared|<agent>|<branch>",
@@ -444,9 +449,16 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     "done-when",
                     "report-format",
                     "place",
+                    "feature",
                 ],
                 &["worktree", "with-changes"],
             )?;
+            // dev-flow §5.1: its own worktree from the feature's tip
+            let feature = str_of(&o, "feature");
+            if !feature.is_empty() && (o.contains_key("place") || o.contains_key("worktree")) {
+                return Err("sb spawn: --feature gives the task its own worktree; no --place or --worktree with it".into());
+            }
+            req.insert("feature".into(), json!(feature));
             req.insert(
                 "name".into(),
                 json!(pos.first().cloned().unwrap_or_default()),
@@ -476,6 +488,25 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             let usage = "usage: sb move <agent> new|shared|<agent>|<branch>";
             req.insert("agent".into(), json!(agent_arg(&pos, usage)?));
             req.insert("place".into(), json!(pos.get(1).ok_or(usage)?));
+        }
+        "feature" => {
+            // dev-flow §5.1: sb feature [new|sync|ready|merge|drop|list] <name>
+            let (pos, _) = parse_args(rest, &[], &[])?;
+            let usage = "usage: sb feature [new|sync|ready|merge|drop|list] <name>";
+            // `step`, not `op`: the wire's own key (`"op": "agent"`)
+            match pos.as_slice() {
+                [] => {
+                    req.insert("step".into(), json!("list"));
+                }
+                [op] if op == "list" => {
+                    req.insert("step".into(), json!("list"));
+                }
+                [op, name] if ["new", "sync", "ready", "merge", "drop"].contains(&op.as_str()) => {
+                    req.insert("step".into(), json!(op));
+                    req.insert("name".into(), json!(name));
+                }
+                _ => return Err(usage.into()),
+            }
         }
         "land" => {
             let (pos, o) = parse_args(rest, &[], &["here"])?;
@@ -616,6 +647,7 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         // the hub's line: `✓ x landed 1 commit on main (abc1234)`
         "land" => s("text"),
         "flow" => s("text"),
+        "feature" => s("text"),
         "worktree" if s("path").is_empty() => "the hub knows you work in your own workspace again".to_string(),
         "worktree" => format!("the hub knows you work in {}", s("path")),
         _ => "ok".to_string(),

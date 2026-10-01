@@ -122,7 +122,7 @@ fn det(signal: Signal) -> Detected {
 }
 
 fn cfg(mode: Option<FlowMode>) -> FlowConfig {
-    FlowConfig { mode, check: Some("tests/gate.sh".into()), push: true }
+    FlowConfig { mode, check: Some("tests/gate.sh".into()), push: true, ..FlowConfig::default() }
 }
 
 #[test]
@@ -226,9 +226,9 @@ fn mains_flow_section_by_flow() {
 #[test]
 fn a_tasks_place_line_by_flow_and_place() {
     let others = vec!["i18n".to_string()];
-    let wt = TaskPlace { path: "/w/dark", branch: Some("sb/dark-mode"), others: &others };
-    let alone = TaskPlace { path: "/w/dark", branch: Some("sb/dark-mode"), others: &[] };
-    let shared = TaskPlace { path: "/w", branch: None, others: &[] };
+    let wt = TaskPlace { path: "/w/dark", branch: Some("sb/dark-mode"), others: &others, feature: None };
+    let alone = TaskPlace { path: "/w/dark", branch: Some("sb/dark-mode"), others: &[], feature: None };
+    let shared = TaskPlace { path: "/w", branch: None, others: &[], feature: None };
     let pr = flow(FlowMode::Pr, Source::Saved);
     let trunk = flow(FlowMode::Trunk, Source::Saved);
 
@@ -255,6 +255,39 @@ fn a_tasks_place_line_by_flow_and_place() {
     assert!(task_place(None, &shared, None).ends_with("Do not revert changes you did not make."));
     assert_eq!(done_when_tail(&pr), "its PR is open");
     assert_eq!(done_when_tail(&trunk), "landed on main");
+    // dev-flow §5.1: a feature's agent lands on the feature, never main
+    let mates = vec!["cu-apps".to_string()];
+    let cu = TaskPlace { path: "/w/cu-broker", branch: Some("sb/cu-broker"), others: &mates, feature: Some("computer-use") };
+    let s = task_place(Some(&trunk), &cu, None);
+    for w in [
+        "You work for the feature `computer-use`, a local branch the user will try before it reaches `main`.",
+        "Its other agents: `cu-apps`.",
+        "`sb land` puts your commits on `computer-use` (rebased on its tip), never on `main`.",
+        "Never merge it, never push it.",
+        "run `./gate.sh --quick` first",
+    ] {
+        assert!(s.contains(w), "feature: {w}\u{a}{s}");
+    }
+}
+
+/// dev-flow §5.1: main's prompt says when a feature branch, how, and that
+/// the merge is the user's go (trunk flow only).
+#[test]
+fn mains_feature_lines_in_trunk_flow() {
+    let trunk = main_section(Some(&flow(FlowMode::Trunk, Source::Saved)), None);
+    for w in [
+        "Put a task on a **feature branch** when",
+        "`sb feature new <name>`",
+        "`sb spawn <agent> --feature <name>`",
+        "computer-use goes on its own branch: you'll try it before it reaches main.",
+        "`sb feature ready <name>` opens the try item",
+        "Never merge a feature without the user's go",
+        "`sb feature sync <name>`",
+    ] {
+        assert!(trunk.contains(w), "trunk: {w}");
+    }
+    let pr = main_section(Some(&flow(FlowMode::Pr, Source::Saved)), None);
+    assert!(!pr.contains("sb feature"), "PR flow: every change is a branch already");
 }
 
 /// dev-flow §2: the question is asked once: once the answer is saved

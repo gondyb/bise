@@ -150,10 +150,11 @@ impl Hub {
         let place = f["place"].as_str().map(str::to_string);
         let pr = f["pr"].as_u64();
         let choice = jstr(f, "text");
-        // one arm per kind (feature-branch adds its own)
-        #[allow(clippy::single_match)]
+        // one arm per kind
         match jstr(f, "kind").as_str() {
             "merge" => self.merge_choice(fx, env, card, place, pr, &choice),
+            // dev-flow §5.1: a feature's try and merge items
+            k @ (crate::feature::TRY | crate::feature::MERGE) => self.feature_choice(fx, k, place.as_deref(), &choice),
             _ => {}
         }
     }

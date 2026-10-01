@@ -10,6 +10,7 @@
 //!   every line of each feed, for the views, `sb inspect` and
 //!   `sb history`.
 
+mod features;
 mod gate;
 mod repl;
 mod release;
@@ -250,6 +251,9 @@ struct Shell {
     gates: gate::Gates,
     /// `sb land`'s line: one land at a time per target ref (dev-flow §5).
     lands: crate::land::Queue,
+    /// The feature branches (dev-flow §5.1): the registry, their facts,
+    /// the try builds running (`daemon/features.rs`).
+    features: features::Features,
     /// The PR poller (pr-design §7, `forge::poll`), on its own thread;
     /// its answers come back as `Input::Prs`.
     prs: Option<crate::forge::poll::Poller>,
@@ -489,6 +493,8 @@ impl Shell {
             crate::forge::news::trusted_bots(&std::fs::read_to_string(self.opts.paths.config()).unwrap_or_default());
         // who lands, who waits in line (the boxes' lids)
         self.hub.lids = self.lands.lids();
+        // the features' lids and Δ (dev-flow §5.1)
+        self.feature_views();
         let mut snap = self.hub.snapshot(now_ms());
         // one gate card for several agents' identical calls: it names them all
         self.gate_card_agents(&mut snap);
@@ -899,6 +905,7 @@ impl Shell {
             }
             Effect::Pr(e) => log_line(&self.opts.paths, &crate::forge::log_line(&e)),
             Effect::Merge { card, place, number, head, method } => self.merge_pr(card, place, number, head, method),
+            Effect::Feature { token, op, name, agents } => self.feature(token, op, name, agents),
         }
     }
 
@@ -1007,6 +1014,12 @@ impl Shell {
             // shown from the cache; a fresh detection for the next time
             self.detect_flow();
             let mut text = devflow::show(now.as_ref());
+            // dev-flow §7: the open feature branches, under the flow
+            let hub = &self.hub;
+            let features = self.features.flow_line(&|f| hub.feature_agents(f).len());
+            if !features.is_empty() {
+                text.push_str(&format!("\u{a}{}", features));
+            }
             if let Some(f) = now.as_ref().filter(|f| f.source == devflow::Source::Suggested) {
                 text.push_str(&format!(
                     "\nnot saved: ask the user once (`sb card`), then save the answer with `sb flow pr|trunk`. the question:\n{}",
@@ -1037,7 +1050,8 @@ impl Shell {
             let section = devflow::main_section(flow.as_ref(), style.as_deref());
             return prompts::main_role(&self.hub.workspace, tmp, &section);
         }
-        let id = crate::place::id_of(a);
+        // a feature's agent: the feature's other agents (dev-flow §5.1)
+        let id = crate::place::view_id(a);
         let others: Vec<String> = crate::place::places(&self.hub.st, &self.hub.prs)
             .into_iter()
             .find(|p| p.id == id)
@@ -1048,6 +1062,7 @@ impl Shell {
             path: &a.ws.path,
             branch: (a.ws.mode == crate::model::Mode::Worktree).then_some(branch.as_str()),
             others: &others,
+            feature: a.ws.feature(),
         };
         prompts::task_role(a, tmp, &devflow::task_place(flow.as_ref(), &place, style.as_deref()))
     }
@@ -2038,8 +2053,11 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             runner,
         ),
         lands: crate::land::Queue::default(),
+        features: features::Features::load(&paths.state),
         prs: None,
     };
+    // the features' facts (dev-flow §5.1), off the loop
+    sh.refresh_features();
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
     for dir in dirs {
@@ -2324,6 +2342,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             Msg::Land { line } => {
                 if let Some((kind, text)) = line {
                     sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
+                    // a land moved main or a feature: the features' facts again
+                    sh.refresh_features();
                 }
                 let snap = sh.snapshot();
                 sh.broadcast(&snap);

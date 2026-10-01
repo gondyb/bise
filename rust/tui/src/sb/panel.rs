@@ -1298,6 +1298,7 @@ mod tests {
             look: None,
             place: None,
             pr: None,
+            asking: false,
         });
         sb.activity.insert("auth-fix".into());
         app

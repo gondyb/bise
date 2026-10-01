@@ -53,6 +53,10 @@ pub(crate) struct Card {
     /// place's PR.
     pub(super) place: Option<String>,
     pub(super) pr: Option<u64>,
+    /// dev-flow §5.1: a feature's merge item asks once more before its
+    /// `3 drop the branch` (`drop computer-use? 14 commits go.`); the
+    /// TUI's, kept across snapshots by `Sb::feature_drop_ask`.
+    pub(super) asking: bool,
 }
 
 /// A paragraph of an item the TUI writes itself.
@@ -95,6 +99,7 @@ impl Default for Card {
             look: None,
             place: None,
             pr: None,
+            asking: false,
         }
     }
 }
@@ -482,13 +487,16 @@ fn always_option(rerun: bool, always: &[String], body: &[String]) -> String {
 /// `choice_kind`): a digit answers them (the hub acts, then closes the
 /// item); typed words go to main.
 pub(super) fn choice_kind(kind: &str) -> bool {
-    matches!(kind, "merge")
+    matches!(kind, "merge" | "feature_try" | "feature_merge")
 }
 
 /// A hub item, as the hub writes it: its head line (`#409 is ready to
 /// merge`), then its body (a merge: the PR's title, its facts dim, its
 /// link), a blank line, the numbered options.
 fn choice_shape(c: &Card) -> Shape {
+    if c.asking && c.kind == "feature_merge" {
+        return drop_ask_shape(c);
+    }
     let (body, options) = split_choices(&c.text);
     let mut lines = body.trim_end().lines();
     let head = lines.next().unwrap_or("").trim().to_string();
@@ -522,6 +530,32 @@ fn choice_shape(c: &Card) -> Shape {
     }
     let short = short_labels(&options);
     Shape::plain(format!("{}: {}", c.agent, head), c.agent.clone(), head, parts, options, short, Enter::Answer)
+}
+
+/// A feature merge item after `3 drop the branch` (designer, d4172e6):
+/// it asks once more, on the same item, `drop computer-use? 14 commits
+/// go.` `1 drop it` / `2 keep it`. The name from its place, the count
+/// from its text (`14 commits · the check passes.`).
+fn drop_ask_shape(c: &Card) -> Shape {
+    let name = c
+        .place
+        .as_deref()
+        .and_then(|p| p.strip_prefix("feature:"))
+        .unwrap_or("the branch")
+        .to_string();
+    let commits = c
+        .text
+        .lines()
+        .find_map(|l| {
+            let mut w = l.split_whitespace();
+            let n = w.next()?.parse::<usize>().ok()?;
+            w.next().filter(|x| x.starts_with("commit")).map(|_| n)
+        })
+        .unwrap_or(0);
+    let head = format!("drop {}? {} commit{} go.", name, commits, if commits == 1 { "" } else { "s" });
+    let options = vec!["drop it".to_string(), "keep it".to_string()];
+    let short = short_labels(&options);
+    Shape::plain(format!("{}: {}", c.agent, head), c.agent.clone(), head, Vec::new(), options, short, Enter::Answer)
 }
 
 /// The link a merge item's `2` opens: its PR's, from the place's box
@@ -668,7 +702,7 @@ pub(super) fn kind_look(kind: &str) -> (u8, &'static str, Color) {
     match kind {
         "approval" | "confirm" => (0, theme::G_NEEDS_YOU, theme::accent()),
         // a PR ready to merge (pr-design §6.3): yours to act on, pink
-        "question" | "merge" => (1, theme::G_NEEDS_YOU, theme::accent()),
+        "question" | "merge" | "feature_try" | "feature_merge" => (1, theme::G_NEEDS_YOU, theme::accent()),
         "blocked" => (2, theme::G_NEEDS_YOU, theme::accent()),
         "failed" => (3, theme::G_FAILED, theme::error()),
         "restart" => (3, theme::G_RESTART_FAILED, theme::error()),
@@ -904,6 +938,32 @@ fn pick(app: &mut App, id: u64, i: usize) -> bool {
     // a hub item: its digit answers (the hub acts on it), the history
     // says the option's words
     let n = s.num(i);
+    // dev-flow §5.1: `3 drop the branch` deletes work, so it asks once
+    // more on the same item; `1 drop it` sends the 3, `2 keep it` goes back
+    if c.kind == "feature_merge" {
+        let ask = |app: &mut App, on: bool| {
+            app.sb.feature_drop_ask = on.then_some(id);
+            if let Some(x) = app.sb.cards.iter_mut().find(|x| x.id == id) {
+                x.asking = on;
+            }
+        };
+        match (c.asking, n) {
+            (false, 3) => {
+                ask(app, true);
+                return true;
+            }
+            (true, 1) => {
+                ask(app, false);
+                answer(app, id, "3", Some("drop the branch"));
+                return true;
+            }
+            (true, _) => {
+                ask(app, false);
+                return true;
+            }
+            _ => {}
+        }
+    }
     if c.kind == "merge" && n == 2 {
         // `open it on GitHub`: here, and the item stays (pr-design §6.3)
         if let Some(url) = merge_link(&app.sb, &c) {

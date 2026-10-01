@@ -23,6 +23,11 @@ pub(crate) struct Place {
     /// the held line the hub writes (`waits to land · 2nd`, `no PR yet ·
     /// 2 commits`): it wins over the PR's words, shown as it is
     pub(crate) lid: Option<String>,
+    /// dev-flow §5.1, pr-design §4.1 item 8: a feature branch (its agents
+    /// may each have a worktree; they share the branch). `trying`: its
+    /// try build builds or is on trial: `Δ` dim, else `ψ`; never `↑`.
+    pub(crate) feature: bool,
+    pub(crate) trying: bool,
 }
 
 /// The PR of a worktree's branch (`PrView`): the enums as their JSON
@@ -74,6 +79,8 @@ pub(super) fn parse(v: &Value) -> Vec<Place> {
                 }
             }),
             lid: s(p, "lid").filter(|l| !l.is_empty()),
+            feature: p.get("feature").and_then(|b| b.as_bool()).unwrap_or(false),
+            trying: p.get("trying").and_then(|b| b.as_bool()).unwrap_or(false),
         })
         .collect()
 }
@@ -167,9 +174,19 @@ impl Place {
         Some(folder_of(self.id.strip_prefix("pt:")?)).filter(|f| !f.is_empty())
     }
 
-    /// The PR when it is open or a draft.
+    /// The PR when it is open or a draft (a feature never has one).
     pub(crate) fn live_pr(&self) -> Option<&Pr> {
-        self.pr.as_ref().filter(|p| p.live())
+        self.pr.as_ref().filter(|p| p.live() && !self.feature)
+    }
+
+    /// The glyph of its border and of a solo row's mark: `Δ` while a
+    /// feature's try build builds or is on trial, else `ψ`.
+    fn glyph(&self) -> &'static str {
+        if self.feature && self.trying {
+            theme::glyph(G_BUILDING)
+        } else {
+            theme::glyph(G_WORKTREE)
+        }
     }
 
     /// Trunk flow: its land waits in the queue (the hub's lid says
@@ -199,7 +216,7 @@ impl Place {
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
         // `╭─ ` `ψ ` the branch ` ` at least one `─`, then ` mark ─`
         let tail = if right.is_empty() { 0 } else { right_w + 3 };
-        let fixed = 3 + theme::glyph(G_WORKTREE).width() + 1 + 1 + tail;
+        let fixed = 3 + self.glyph().width() + 1 + 1 + tail;
         let room = w.saturating_sub(fixed + 1);
         let branch = match &self.label() {
             Some(b) if room >= 2 => panel::fit(b, room),
@@ -207,7 +224,7 @@ impl Place {
         };
         let mut spans = vec![
             Span::styled("╭─ ", line),
-            Span::styled(theme::glyph(G_WORKTREE).to_string(), d),
+            Span::styled(self.glyph().to_string(), d),
         ];
         if !branch.is_empty() {
             spans.push(Span::styled(format!(" {}", branch), d));
@@ -236,7 +253,8 @@ impl Place {
             return Span::styled(theme::glyph(G_WAITING).to_string(), d);
         }
         let Some(pr) = self.live_pr() else {
-            return Span::styled(theme::glyph(G_WORKTREE).to_string(), d);
+            // a feature: Δ while it builds or is on trial (dev-flow §7)
+            return Span::styled(self.glyph().to_string(), d);
         };
         let st = if pr.stale_ms.is_none() && !pr.fails() && asks {
             if no_color() { Style::default().add_modifier(Modifier::BOLD) } else { Style::default().fg(accent()) }
@@ -381,7 +399,32 @@ mod tests {
     }
 
     fn place(branch: &str, pr: Option<Pr>, lid: Option<&str>) -> Place {
-        Place { id: "wt:x".into(), branch: Some(branch.into()), agents: vec!["x".into()], pr, lid: lid.map(Into::into) }
+        Place { id: "wt:x".into(), branch: Some(branch.into()), agents: vec!["x".into()], pr, lid: lid.map(Into::into), ..Place::default() }
+    }
+
+    /// dev-flow §7, pr-design §4.1 item 8: a feature's border and mark are
+    /// `Δ` while its try build builds or is on trial, else `ψ`; never `↑`.
+    #[test]
+    fn a_feature_is_psi_then_delta_while_trying() {
+        let v = serde_json::json!({"places": [
+            {"id": "feature:computer-use", "branch": "computer-use", "agents": ["cu-a", "cu-b"], "pr": null,
+             "lid": "feature · 14 commits · 3 behind main · not tried", "feature": true, "trying": false}
+        ]});
+        let mut p = parse(&v).remove(0);
+        assert!(p.feature && !p.trying);
+        assert_eq!(text(&p.border(31, false)), "╭─ ψ computer-use ─────────────");
+        assert_eq!(p.row_mark(false).content, "ψ");
+        assert_eq!(p.lid_line(60).map(|l| text(&l)).unwrap(), "│  feature · 14 commits · 3 behind main · not tried");
+        p.trying = true;
+        assert_eq!(text(&p.border(31, false)), "╭─ Δ computer-use ─────────────");
+        assert_eq!(p.row_mark(true).content, "Δ");
+        assert_eq!(p.row_mark(true).style.fg, Some(dim()));
+        // never ↑, even if a PR were sent for its branch
+        p.pr = Some(pr("open", "approved", "pass"));
+        assert!(!text(&p.border(31, true)).contains('↑'));
+        // an older hub: no feature key
+        let old = parse(&serde_json::json!({"places": [{"id": "wt:x", "agents": []}]}));
+        assert!(!old[0].feature && !old[0].trying);
     }
 
     /// The contract's JSON (switchboard place.rs, `the_contract_json`)

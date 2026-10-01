@@ -61,6 +61,11 @@ pub trait Env {
     /// a tip at `head` loses nothing at a drop (no backup, RFC 0002
     /// §5.1's squash case).
     fn pr_merged(&mut self, _branch: &str, _head: &str) {}
+    /// dev-flow §5.1: a worktree on `sb/<name>` from the tip of feature
+    /// `feature` (a registered one), landing on it.
+    fn worktree_feature(&mut self, _name: &str, feature: &str) -> Result<Workspace, String> {
+        Err(format!("no feature {}", feature))
+    }
 }
 
 /// A request of the `sb` CLI (RFC 0003 §4, RFC 0001 §7.2, §7.5).
@@ -118,6 +123,15 @@ pub enum AgentReq {
         /// `--place <agent>|<branch>` (dev-flow §3.1): join that worktree;
         /// "" = the shared folder, or a new worktree with `worktree`.
         place: String,
+        /// `--feature <name>` (dev-flow §5.1): a new worktree from the
+        /// feature's tip, landing on it. "" = none.
+        feature: String,
+    },
+    /// `sb feature new|sync|ready|merge|drop|list [<name>]` (dev-flow
+    /// §5.1): the daemon's (`Effect::Feature`), git off the hub's loop.
+    Feature {
+        op: String,
+        name: String,
     },
     /// `sb move <agent> new|shared|<agent>|<branch>` (dev-flow §3.1).
     Move {
@@ -276,6 +290,11 @@ impl AgentReq {
                     .and_then(|x| x.as_bool())
                     .unwrap_or(false),
                 place: jstr(v, "place"),
+                feature: jstr(v, "feature"),
+            },
+            "feature" => AgentReq::Feature {
+                op: jstr(v, "step"),
+                name: jstr(v, "name"),
             },
             "move" => AgentReq::Move {
                 agent: jstr(v, "agent"),
@@ -410,6 +429,8 @@ pub enum Input {
         number: u64,
         res: Result<(), String>,
     },
+    /// A feature step ended (dev-flow §5.1, the daemon's thread).
+    Feature(FeatureDone),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -522,6 +543,33 @@ pub enum Effect {
         head: String,
         method: crate::place::MergeMethod,
     },
+    /// dev-flow §5.1: a feature step (`sb feature <op> <name>`, or the
+    /// user's answer on a feature item: `try`, `diff`, `later`, `keep`,
+    /// `merge`, `drop`), run by the daemon in a thread; it answers
+    /// `token` when an agent asked, then comes back as
+    /// `Input::Feature`.
+    Feature {
+        token: Option<Token>,
+        op: String,
+        name: String,
+        /// The feature's agents (live), each with its worktree.
+        agents: Vec<(String, String)>,
+    },
+}
+
+/// What a feature step did (dev-flow §5.1), for the hub: a card to open
+/// or close, agents to archive, a line for main's feed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FeatureDone {
+    pub name: String,
+    /// (kind, text): open this item (place `feature:<name>`), closing the
+    /// feature's other open items first.
+    pub open: Option<(String, String)>,
+    /// Close the feature's open items (with this result).
+    pub close: Option<String>,
+    pub archive: Vec<String>,
+    /// (kind, text) for main's feed: `info`, `warn`.
+    pub line: Option<(String, String)>,
 }
 
 /// The sb-core executable: `SB_CORE_BIN` (the harness sets it from its
@@ -676,6 +724,11 @@ pub struct Hub {
     /// The repo's `[flow] mode` (None: not set), for the views' held
     /// header (`lands via PRs` / `lands on main`); the daemon reads it.
     pub flow: Option<crate::flow::FlowMode>,
+    /// dev-flow §5.1, set by the daemon: each feature's held lid by place
+    /// id (`feature · 14 commits · not tried`), and the ones whose try
+    /// build builds or is on trial (the `Δ`). Runtime only.
+    pub feature_lids: BTreeMap<String, String>,
+    pub trying: BTreeSet<String>,
     /// pr-hub (pr-design §7-§10), runtime but `known`: what the journal
     /// says of each place's PR (its number; `pr_*` lines, read back by
     /// `replay`); `pr_lids`: the held line of a worktree with no PR yet
@@ -845,6 +898,8 @@ impl Hub {
             prs: BTreeMap::new(),
             lids: BTreeMap::new(),
             flow: None,
+            feature_lids: BTreeMap::new(),
+            trying: BTreeSet::new(),
             pr_known: BTreeMap::new(),
             pr_lids: BTreeMap::new(),
             pr_ok_ms: BTreeMap::new(),
@@ -1118,6 +1173,84 @@ impl Hub {
         Ok(target)
     }
 
+    /// A feature step ended (dev-flow §5.1): its items replaced or
+    /// closed, its agents archived (a merge, a drop), main's feed told.
+    fn feature_done(&mut self, fx: &mut Fx, env: &mut dyn Env, d: FeatureDone) {
+        let place = crate::feature::place_id(&d.name);
+        if d.open.is_some() || d.close.is_some() {
+            let open: Vec<u64> = self
+                .st
+                .open_cards()
+                .filter(|c| c.place.as_deref() == Some(place.as_str()))
+                .map(|c| c.id)
+                .collect();
+            let res = d.close.clone().unwrap_or_else(|| "replaced".into());
+            for id in open {
+                self.close_card(fx, env, id, &res);
+            }
+        }
+        if let Some((kind, text)) = &d.open {
+            self.open_card(
+                fx,
+                env,
+                merge::HubItem { kind, agent: MAIN, text, place: &place, pr: None },
+            );
+        }
+        for a in &d.archive {
+            self.core(fx, env, None, json!({"t": "drop", "name": a, "force": true}));
+        }
+        if let Some((kind, text)) = &d.line {
+            fx.push(line(MAIN, kind, text));
+        }
+        self.dirty = true;
+    }
+
+    /// The user's number on a feature item (pr-merge's choice cards,
+    /// dev-flow §5.1): `feature_try` 1 try it / 2 show the diff / 3 not
+    /// yet; `feature_merge` 1 merge / 2 keep working / 3 drop the branch
+    /// (the TUI asked "drop it?" once more before sending 3). The card
+    /// stays open until the step ends (`feature_done` closes or replaces
+    /// it). A number out of range: nothing.
+    fn feature_choice(&mut self, fx: &mut Fx, kind: &str, place: Option<&str>, choice: &str) {
+        let Some(name) = place.and_then(crate::feature::of_place) else { return };
+        let op = match (kind, choice.trim()) {
+            (crate::feature::TRY, "1") => "try",
+            (crate::feature::TRY, "2") => "diff",
+            (crate::feature::TRY, "3") => "later",
+            (crate::feature::MERGE, "1") => "merge",
+            (crate::feature::MERGE, "2") => "keep",
+            (crate::feature::MERGE, "3") => "drop",
+            _ => return,
+        };
+        let agents = self.feature_agents(name);
+        fx.push(Effect::Feature { token: None, op: op.into(), name: name.into(), agents });
+    }
+
+    /// The live agents of feature `name` with their worktrees (dev-flow
+    /// §5.1), in the hub's order.
+    pub fn feature_agents(&self, name: &str) -> Vec<(String, String)> {
+        self.st
+            .order
+            .iter()
+            .filter_map(|n| self.st.agents.get(n))
+            .filter(|a| a.lifecycle != Lifecycle::Archived && a.ws.feature() == Some(name))
+            .map(|a| (a.name.clone(), a.ws.path.clone()))
+            .collect()
+    }
+
+    /// `sb spawn --feature <f>` (dev-flow §5.1): the task's name as sb-core
+    /// will pick it (the next free one, `fix-2`), then its worktree from
+    /// the feature's tip, made now so sb-core takes it as the place to
+    /// join.
+    fn feature_worktree(&self, env: &mut dyn Env, name: Option<&str>, brief: &Brief, feature: &str) -> Result<Workspace, String> {
+        if self.flow == Some(crate::flow::FlowMode::Pr) {
+            return Err("this repo ships through pull requests: a feature is a PR's branch here (`--place new`)".into());
+        }
+        let base = new_task(name, brief, true, false)?["base"].as_str().unwrap_or_default().to_string();
+        let free = unique_name(&self.st, &base);
+        env.worktree_feature(&free, feature)
+    }
+
     /// `sb land` (dev-flow §5): what the land needs from the state. The
     /// daemon adds the repo's flow and runs it (`land::run`).
     fn land_job(&self, from: &str, here: bool, message: &str) -> Result<crate::land::Job, String> {
@@ -1143,6 +1276,8 @@ impl Hub {
             files: a.files.iter().cloned().collect(),
             others,
             flow: crate::flow::FlowConfig::default(),
+            // a feature's agent lands on the feature (dev-flow §5.1)
+            onto: a.ws.feature().map(|f| format!("refs/heads/{}", f)),
         })
     }
 
@@ -1448,8 +1583,9 @@ impl Hub {
                     // BISE-136: a private worktree (gate.sh new), else null
                     "place": a.place,
                     // dev-flow §3.1: the id of the place it is in (`places`)
-                    // (BISE-136: its private worktree's, `pt:<path>`)
-                    "place_id": crate::place::id_of(a),
+                    // (BISE-136: its private worktree's, `pt:<path>`; a
+                    // feature's agent: its feature's, dev-flow §5.1)
+                    "place_id": crate::place::view_id(a),
                     "created_ms": a.created_ms,
                     "note": a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default(),
                     "report": a.last_report.as_ref().map(|r| clip(&one_line(&r.summary), 200)),
@@ -1485,8 +1621,12 @@ impl Hub {
             })
             .collect();
         let places = crate::place::places(&self.st, &self.prs);
-        let (lids, stale) = self.pr_views(now);
-        let places = crate::place::views(&places, &lids, &stale);
+        let (mut lids, stale) = self.pr_views(now);
+        // a feature's lid: the land queue's (`landing`) wins
+        for (id, l) in &self.feature_lids {
+            lids.entry(id.clone()).or_insert_with(|| l.clone());
+        }
+        let places = crate::place::views(&places, &lids, &stale, &self.trying);
         json!({"ev": "state", "agents": agents, "cards": cards, "places": places,
                "flow": self.flow.map(|f| f.as_str())})
     }
@@ -1603,6 +1743,7 @@ impl Hub {
             }
             Input::RoleLine { dir, key, line } => self.role_answer(&mut fx, env.now(), &dir, key, line),
             Input::Prs(r) => self.prs_in(&mut fx, env, r),
+            Input::Feature(d) => self.feature_done(&mut fx, env, d),
             Input::ReplExited {
                 agent,
                 crashed,
@@ -2203,6 +2344,17 @@ impl Hub {
                 fx.push(Effect::Flow { client: None, token: Some(token), set });
                 return;
             }
+            AgentReq::Feature { op, name } => {
+                // merge and drop on the user's go only: main's (dev-flow §5.1)
+                let is_main = self.st.resolve(from).as_deref() == Some(MAIN);
+                if matches!(op.as_str(), "new" | "merge" | "drop") && !is_main {
+                    reply(fx, json!({"ok": false, "error": format!("sb feature {} is main's: ask main", op)}));
+                    return;
+                }
+                let agents = self.feature_agents(&name);
+                fx.push(Effect::Feature { token: Some(token), op, name, agents });
+                return;
+            }
             AgentReq::Worktree { path } => {
                 let Some(name) = self.st.resolve(from) else {
                     reply(fx, json!({"ok": false, "error": format!("unknown agent: {}", from)}));
@@ -2228,11 +2380,14 @@ impl Hub {
                 worktree,
                 with_changes,
                 place,
+                feature,
             } => {
                 let name = Some(name.as_str()).filter(|n| !n.is_empty());
-                let join = match place.as_str() {
-                    "" | "new" | crate::place::SHARED => Ok(None),
-                    p => crate::place::find_worktree(&self.st, p).map(Some),
+                let join = match (place.as_str(), feature.as_str()) {
+                    // dev-flow §5.1: its own worktree, from the feature's tip
+                    (_, f) if !f.is_empty() => self.feature_worktree(env, name, &brief, f).map(Some),
+                    ("" | "new" | crate::place::SHARED, _) => Ok(None),
+                    (p, _) => crate::place::find_worktree(&self.st, p).map(Some),
                 };
                 match join.and_then(|j| new_task(name, &brief, worktree || place == "new", with_changes).map(|v| (j, v))) {
                     Ok((join, mut v)) => {
@@ -2327,6 +2482,24 @@ fn failed_turn_report(agent: &str, turn_done: &str) -> Option<String> {
 /// (RFC 0001 §7.1): a valid name or the slug of the objective, the brief
 /// as the task reads it (sb-core adds the `# Task` header with the final
 /// name).
+/// The name sb-core gives a new task of base name `base` (hub/core.bend
+/// `unique_name`): `base` when free, else `base-2`, `base-3`… cut to 24
+/// characters, trailing dashes off before the suffix.
+fn unique_name(st: &State, base: &str) -> String {
+    let taken = |n: &str| n == MAIN || n == "user" || n == "hub" || st.resolve(n).is_some();
+    if !taken(base) {
+        return base.to_string();
+    }
+    (2..1002)
+        .map(|i| {
+            let suffix = format!("-{}", i);
+            let head: String = base.chars().take(24usize.saturating_sub(suffix.len())).collect();
+            format!("{}{}", head.trim_end_matches('-'), suffix)
+        })
+        .find(|c| !taken(c))
+        .unwrap_or_else(|| base.to_string())
+}
+
 fn new_task(name: Option<&str>, brief: &Brief, worktree: bool, with_changes: bool) -> Result<Value, String> {
     if brief.objective.trim().is_empty() {
         return Err("empty objective".into());

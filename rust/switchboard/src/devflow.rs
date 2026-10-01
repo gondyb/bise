@@ -406,7 +406,7 @@ pub fn main_section(f: Option<&Flow>, style: Option<&str>) -> String {
             }
         ),
         FlowMode::Trunk => format!(
-            "- This repo ships straight to `{b}`, through `sb land`: small tested commits, one land at a time. A small change works in the shared folder when nobody else edits those files; a bigger one in a worktree, landed when its work is done. A long feature: a branch, then the user approves the land.{push}\n- Never push or merge yourself: `sb land` does what the flow needs. \"open a PR\" from the user: that task gets a branch and a PR.",
+            "- This repo ships straight to `{b}`, through `sb land`: small tested commits, one land at a time. A small change works in the shared folder when nobody else edits those files; a bigger one in a worktree, landed when its work is done.{push}\n- Most work lands on `{b}`. Put a task on a **feature branch** when it's experimental, risky for a release (core loop, hub, security, sandbox, packaging, a migration), big (several agents or more than a day), or the user asks (\"in a branch\", \"I want to try it first\"); during a launch freeze, everything does. When unsure, ask once (`computer-use straight on {b}, or on a branch you try first?`). The user's words win both ways (\"just land it\").\n- `sb feature new <name>` (a local branch from `{b}`'s tip, never pushed; an existing local branch of that name is adopted as it is), then spawn its agents with `sb spawn <agent> --feature <name>`: each gets its own worktree and lands on that branch. Say it in your routing line: `computer-use goes on its own branch: you'll try it before it reaches main.`\n- When its agents are done, `sb feature ready <name>` opens the try item in the user's inbox (it builds the branch on their go, then asks whether to merge). Never merge a feature without the user's go; `sb feature merge <name>` only after it (\"merge computer-use\"), `sb feature drop <name>` only on their word. When the branch is far behind `{b}`, or before a try: `sb feature sync <name>`. `sb feature` lists them.\n- Never push or merge yourself: `sb land` does what the flow needs. \"open a PR\" from the user: that task gets a branch and a PR.",
             b = f.base,
             push = if f.push { format!(" The hub pushes `{}` after every land.", f.base) } else { " Lands stay local (`push = false`) until the user asks.".into() }
         ),
@@ -439,8 +439,10 @@ pub struct TaskPlace<'a> {
     pub path: &'a str,
     /// Its branch, in a worktree.
     pub branch: Option<&'a str>,
-    /// The other agents of its place (a worktree's).
+    /// The other agents of its place (a worktree's; a feature's agents).
     pub others: &'a [String],
+    /// dev-flow §5.1: the feature it lands on, in its own worktree.
+    pub feature: Option<&'a str>,
 }
 
 /// A task's working-directory line by flow and place (dev-flow §6 "A
@@ -456,6 +458,22 @@ pub fn task_place(f: Option<&Flow>, p: &TaskPlace, style: Option<&str>) -> Strin
     let style = style
         .map(|s| format!(" Commit messages: {s}."))
         .unwrap_or_default();
+    // dev-flow §5.1: a feature's agent, whatever the flow says of main
+    if let (Some(feat), Some(b)) = (p.feature, p.branch) {
+        let base = f.map(|f| f.base.as_str()).unwrap_or("main");
+        let with = match p.others {
+            [] => String::new(),
+            o => format!(
+                " Its other agents: {}.",
+                o.iter().map(|a| format!("`{a}`")).collect::<Vec<_>>().join(", ")
+            ),
+        };
+        let check = f.map(check_line).unwrap_or_else(|| "the repo's tests".into());
+        return format!(
+            "`{path}` — a git worktree on branch `{b}`, yours. You work for the feature `{feat}`, a local branch the user will try before it reaches `{base}`.{with} Commit your files with `sb land --here \"<message>\"`; run {check} first. `sb land` puts your commits on `{feat}` (rebased on its tip), never on `{base}`. Never merge it, never push it.{style}",
+            path = p.path
+        );
+    }
     match (f, p.branch) {
         (None, Some(b)) => format!(
             "`{}` — an isolated git worktree on branch `{b}`. Work only there. You may commit on your branch; never push unless the user asks.",

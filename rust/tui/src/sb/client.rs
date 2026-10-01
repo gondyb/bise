@@ -104,6 +104,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         places: Vec::new(),
         flow: String::new(),
         cards: Vec::new(),
+        feature_drop_ask: None,
         card: CardView::default(),
         selected: None,
         preview: false,

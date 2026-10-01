@@ -311,6 +311,40 @@ impl Env for GitEnv {
             dropped: false,
             // a new place, named after its first agent (dev-flow §3.1)
             place: Some(crate::place::worktree_id(name)),
+            feature: None,
+        })
+    }
+
+    fn worktree_feature(&mut self, name: &str, feature: &str) -> Result<Workspace, String> {
+        if crate::feature::Registry::load(&self.paths.state).get(feature).is_none() {
+            return Err(if self.branch_exists(feature) {
+                format!("{} is a branch, not a feature yet: `sb feature new {}` adopts it", feature, feature)
+            } else {
+                format!("no feature {}: `sb feature new {}` makes it from main's tip", feature, feature)
+            });
+        }
+        let base = git(self.ws(), &["rev-parse", "--verify", &format!("refs/heads/{}^{{commit}}", feature)])
+            .map_err(|_| format!("the branch {} is gone: `sb feature drop {}` forgets it", feature, feature))?;
+        let branch = self.free_branch(name);
+        let path = self.free_path(name);
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+        }
+        let ps = path.to_string_lossy().to_string();
+        git(self.ws(), &["worktree", "add", "-q", "-b", &branch, &ps, &base])?;
+        self.own(&path, name);
+        if let Err(e) = self.prepare(&path) {
+            self.remove(&path, &branch);
+            return Err(e);
+        }
+        Ok(Workspace {
+            mode: Mode::Worktree,
+            path: ps,
+            branch: Some(branch),
+            base_commit: Some(base),
+            dropped: false,
+            place: Some(crate::place::worktree_id(name)),
+            feature: Some(feature.to_string()),
         })
     }
 
@@ -447,6 +481,8 @@ impl Env for GitEnv {
             dropped: false,
             // the same place, back (its other agents rejoin it by id)
             place: Some(ws.place_id(name)),
+            // a feature's agent, restored, lands on it again
+            feature: ws.feature.clone(),
         })
     }
 }

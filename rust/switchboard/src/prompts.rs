@@ -92,6 +92,7 @@ pub fn plain_place(agent: &Agent) -> String {
         path: &agent.ws.path,
         branch: (agent.ws.mode == Mode::Worktree).then_some(branch.as_str()),
         others: &[],
+        feature: agent.ws.feature(),
     };
     crate::devflow::task_place(None, &p, None)
 }

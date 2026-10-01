@@ -60,6 +60,10 @@ pub fn id_of(a: &crate::model::Agent) -> String {
 pub enum PlaceKind {
     Shared,
     Worktree,
+    /// dev-flow §5.1: a feature branch, id `feature:<name>`: its agents
+    /// (each in its own worktree, or sharing one) all land on it. `path`
+    /// is the shared folder (the branch is checked out nowhere).
+    Feature,
 }
 
 /// A place (dev-flow §3.1). `agents`: the agents in it, not archived,
@@ -185,6 +189,14 @@ pub struct PlaceView {
     pub agents: Vec<String>,
     pub pr: Option<PrView>,
     pub lid: Option<String>,
+    /// dev-flow §5.1, pr-design §4.1 item 8: a feature branch's place
+    /// (`id` = `feature:<name>`, `branch` = the name, never a PR): a box
+    /// with 2+ live agents even in separate worktrees. `trying`: its try
+    /// build builds or is on trial, the mark is `Δ` (else `ψ`).
+    #[serde(default)]
+    pub feature: bool,
+    #[serde(default)]
+    pub trying: bool,
 }
 
 /// The PR as the TUI shows it. `stale_ms`: how old the last answer of
@@ -219,18 +231,38 @@ pub fn places(st: &State, prs: &BTreeMap<String, PrSnapshot>) -> Vec<Place> {
         if a.ws.mode == Mode::Worktree && a.ws.dropped {
             continue;
         }
-        let id = a.ws.place_id(&a.dir);
+        // dev-flow §5.1: a feature's agents are its place, whatever their
+        // worktrees (a feature's place lives while one of them is live)
+        let feature = a.ws.feature().filter(|_| live);
+        if a.ws.feature().is_some() && feature.is_none() {
+            continue;
+        }
+        let id = match feature {
+            Some(f) => crate::feature::place_id(f),
+            None => a.ws.place_id(&a.dir),
+        };
         let i = match out.iter().position(|p| p.id == id) {
             Some(i) => i,
             None => {
-                out.push(Place {
-                    id: id.clone(),
-                    kind: PlaceKind::Worktree,
-                    path: a.ws.path.clone(),
-                    branch: a.ws.branch.clone(),
-                    base: a.ws.base_commit.clone(),
-                    agents: Vec::new(),
-                    pr: prs.get(&id).cloned(),
+                out.push(match feature {
+                    Some(f) => Place {
+                        id: id.clone(),
+                        kind: PlaceKind::Feature,
+                        path: out[0].path.clone(),
+                        branch: Some(f.to_string()),
+                        base: None,
+                        agents: Vec::new(),
+                        pr: None,
+                    },
+                    None => Place {
+                        id: id.clone(),
+                        kind: PlaceKind::Worktree,
+                        path: a.ws.path.clone(),
+                        branch: a.ws.branch.clone(),
+                        base: a.ws.base_commit.clone(),
+                        agents: Vec::new(),
+                        pr: prs.get(&id).cloned(),
+                    },
                 });
                 out.len() - 1
             }
@@ -300,15 +332,35 @@ pub fn place_of(st: &State, name: &str) -> Option<String> {
     st.agents.get(name).map(|a| a.ws.place_id(&a.dir))
 }
 
+/// The place an agent shows in (the snapshot's `place_id`): its
+/// feature's (`feature:<name>`, dev-flow §5.1), else [`place_of`]'s.
+pub fn view_id(a: &crate::model::Agent) -> String {
+    let live = a.lifecycle != Lifecycle::Archived;
+    match (&a.place, a.ws.feature()) {
+        // BISE-136: its private worktree first ([`id_of`])
+        (Some(_), _) if live => id_of(a),
+        (_, Some(f)) if live => crate::feature::place_id(f),
+        _ => id_of(a),
+    }
+}
+
 /// The views the TUI draws: worktrees only. `lids`: the held line of a
 /// place, by id (the land queue's `waits to land · 2nd`, else pr-hub's
 /// `no PR yet · 2 commits`). `stale`: the age of a PR's state, by place
 /// id, when the forge is late (pr-hub: its last ask failed, or it is
 /// older than `core::PR_STALE_MS`).
-pub fn views(places: &[Place], lids: &BTreeMap<String, String>, stale: &BTreeMap<String, u64>) -> Vec<PlaceView> {
+/// Features: `lids` holds their lid too (`feature · 14 commits · not
+/// tried`, the daemon's), `trying` the ids whose try build builds or is
+/// on trial.
+pub fn views(
+    places: &[Place],
+    lids: &BTreeMap<String, String>,
+    stale: &BTreeMap<String, u64>,
+    trying: &std::collections::BTreeSet<String>,
+) -> Vec<PlaceView> {
     places
         .iter()
-        .filter(|p| p.kind == PlaceKind::Worktree)
+        .filter(|p| p.kind != PlaceKind::Shared)
         .map(|p| PlaceView {
             id: p.id.clone(),
             branch: p.branch.clone(),
@@ -322,6 +374,8 @@ pub fn views(places: &[Place], lids: &BTreeMap<String, String>, stale: &BTreeMap
                 stale_ms: stale.get(&p.id).copied(),
             }),
             lid: lids.get(&p.id).cloned(),
+            feature: p.kind == PlaceKind::Feature,
+            trying: trying.contains(&p.id),
         })
         .collect()
 }
@@ -339,6 +393,7 @@ mod tests {
             base_commit: Some("abc".into()),
             dropped: false,
             place: id.map(Into::into),
+            feature: None,
         }
     }
 
@@ -370,10 +425,45 @@ mod tests {
         assert_eq!(ps[1].agents, ["c"]);
         // the views: worktrees only, the lid by id
         let lids = BTreeMap::from([("wt:a".to_string(), "waits to land · 2nd".to_string())]);
-        let v = views(&ps, &lids, &BTreeMap::new());
+        let v = views(&ps, &lids, &BTreeMap::new(), &Default::default());
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].lid.as_deref(), Some("waits to land · 2nd"));
         assert_eq!(v[0].pr, None);
+        assert!(!v[0].feature);
+    }
+
+    #[test]
+    fn a_features_agents_are_one_place_whatever_their_worktrees() {
+        let mut st = State::new("/w");
+        for n in ["a", "b", "c"] {
+            st.test_task(n, "x");
+        }
+        // a and b: each its own worktree, both on the feature cu
+        for (n, p) in [("a", "/wt/a"), ("b", "/wt/b")] {
+            let mut w = wt(Some(&format!("wt:{}", n)), p, &format!("sb/{}", n));
+            w.feature = Some("cu".into());
+            st.agents.get_mut(n).unwrap().ws = w;
+        }
+        let ps = places(&st, &BTreeMap::new());
+        let ids: Vec<&str> = ps.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["shared", "feature:cu"]);
+        assert_eq!(ps[1].kind, PlaceKind::Feature);
+        assert_eq!(ps[1].agents, ["a", "b"]);
+        assert_eq!(ps[1].branch.as_deref(), Some("cu"));
+        assert_eq!(ps[1].pr, None);
+        assert_eq!(view_id(&st.agents["a"]), "feature:cu");
+        // land and overlaps stay per worktree
+        assert_eq!(place_of(&st, "a").as_deref(), Some("wt:a"));
+        let trying = std::collections::BTreeSet::from(["feature:cu".to_string()]);
+        let lids = BTreeMap::from([("feature:cu".to_string(), "feature · 2 commits · not tried".to_string())]);
+        let v = views(&ps, &lids, &BTreeMap::new(), &trying);
+        assert_eq!((v[0].feature, v[0].trying, v[0].lid.as_deref()), (true, true, Some("feature · 2 commits · not tried")));
+        // all archived: no place left
+        for n in ["a", "b"] {
+            st.agents.get_mut(n).unwrap().lifecycle = Lifecycle::Archived;
+        }
+        assert_eq!(places(&st, &BTreeMap::new()).len(), 1);
+        assert_eq!(view_id(&st.agents["a"]), "wt:a");
     }
 
     /// BISE-136, call 8: agents in a private worktree are in its place
@@ -411,7 +501,7 @@ mod tests {
         assert_eq!(ps[1].branch.as_deref(), Some("feat/x"));
         assert_eq!(id_of(&st.agents["a"]), "shared");
         // the views: a worktree like any other
-        let v = views(&ps, &BTreeMap::new(), &BTreeMap::new());
+        let v = views(&ps, &BTreeMap::new(), &BTreeMap::new(), &Default::default());
         assert!(v.iter().any(|p| p.id == "pt:/p/a-wt" && p.agents == ["c"]));
     }
 
@@ -450,11 +540,14 @@ mod tests {
                 stale_ms: None,
             }),
             lid: None,
+            feature: false,
+            trying: false,
         };
         let j = serde_json::to_value(&v).unwrap();
         assert_eq!(
             j,
             serde_json::json!({"id": "wt:a", "branch": "sb/a", "agents": ["a"], "lid": null,
+                "feature": false, "trying": false,
                 "pr": {"number": 412, "url": "https://github.com/o/r/pull/412", "state": "draft",
                        "review": "changes_requested", "checks": {"state": "fail", "failing": ["ci/test"]},
                        "stale_ms": null}})

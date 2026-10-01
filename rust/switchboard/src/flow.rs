@@ -48,6 +48,14 @@ pub struct FlowConfig {
     pub check: Option<String>,
     /// Push the default branch after each land (trunk flow).
     pub push: bool,
+    /// dev-flow §5.1: how to build a feature for the user to try
+    /// (`scripts/versions.sh build {branch}`; `{branch}`: the feature's
+    /// name, run from the shared folder; without it, run in a worktree
+    /// of the feature's tip). None: the user checks the branch out.
+    pub try_cmd: Option<String>,
+    /// What the user runs after the try build (`{out}/bise`; `{out}`: the
+    /// build's last output line, `{dir}`: where it ran). None: that line.
+    pub try_run: Option<String>,
 }
 
 impl Default for FlowConfig {
@@ -56,6 +64,8 @@ impl Default for FlowConfig {
             mode: None,
             check: None,
             push: true,
+            try_cmd: None,
+            try_run: None,
         }
     }
 }
@@ -97,6 +107,8 @@ impl FlowConfig {
                 "mode" => c.mode = FlowMode::parse(&toml_str(v)),
                 "check" => c.check = Some(toml_str(v)).filter(|s| !s.trim().is_empty()),
                 "push" => c.push = toml_str(v) != "false",
+                "try" => c.try_cmd = Some(toml_str(v)).filter(|s| !s.trim().is_empty()),
+                "try_run" => c.try_run = Some(toml_str(v)).filter(|s| !s.trim().is_empty()),
                 _ => {}
             }
         }
@@ -192,7 +204,11 @@ mod tests {
         assert_eq!(c.check.as_deref(), Some("tests/gate.sh # quick"));
         assert!(!c.push);
         let d = FlowConfig::parse("[flow]\u{a}check = cargo test # all\u{a}");
-        assert_eq!(d, FlowConfig { mode: None, check: Some("cargo test".into()), push: true });
+        assert_eq!(d, FlowConfig { mode: None, check: Some("cargo test".into()), push: true, ..FlowConfig::default() });
+        // dev-flow §5.1: the try build and what the user runs
+        let t = FlowConfig::parse("[flow]\u{a}try = \"scripts/versions.sh build {branch}\"\u{a}try_run = \"{out}/bise\"\u{a}");
+        assert_eq!(t.try_cmd.as_deref(), Some("scripts/versions.sh build {branch}"));
+        assert_eq!(t.try_run.as_deref(), Some("{out}/bise"));
         assert_eq!(FlowConfig::parse(""), FlowConfig::default());
         assert_eq!(FlowConfig::parse("[flow]\u{a}mode = \"weird\"\u{a}").mode, None);
     }

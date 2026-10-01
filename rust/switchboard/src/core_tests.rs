@@ -36,6 +36,7 @@ impl Env for FakeEnv {
             base_commit: Some("abc".into()),
             dropped: false,
             place: Some(format!("wt:{}", name)),
+            feature: None,
         })
     }
     fn worktree_loss(&mut self, _ws: &Workspace) -> Loss {
@@ -149,6 +150,7 @@ impl T {
                 worktree: false,
                 with_changes: false,
                 place: String::new(),
+                feature: String::new(),
             },
         );
         assert!(
@@ -259,6 +261,7 @@ fn the_board_of_main_follows_the_tasks() {
             worktree: false,
             with_changes: false,
             place: String::new(),
+            feature: String::new(),
         },
     );
     let ctx = fx
@@ -912,6 +915,7 @@ fn journal_replay_rebuilds_the_same_state() {
             worktree: false,
             with_changes: false,
             place: String::new(),
+            feature: String::new(),
         },
     );
     record(fx);
@@ -1633,6 +1637,7 @@ fn spawn_in(t: &mut T, name: &str, place: &str) -> (u64, Vec<Effect>) {
             worktree: place == "new",
             with_changes: false,
             place: if place == "new" { String::new() } else { place.into() },
+            feature: String::new(),
         },
     )
 }
@@ -1658,7 +1663,10 @@ fn a_worktree_shared_by_two_agents_goes_with_its_last_one() {
     assert!(err_of(&fx, tok).contains("no place nowhere"), "{:?}", fx);
     // the snapshot: one box, its agents in order
     let snap = t.hub.snapshot(0);
-    assert_eq!(snap["places"], json!([{"id": "wt:a", "branch": "sb/a", "agents": ["a", "b", "c"], "pr": null, "lid": null}]));
+    assert_eq!(
+        snap["places"],
+        json!([{"id": "wt:a", "branch": "sb/a", "agents": ["a", "b", "c"], "pr": null, "lid": null, "feature": false, "trying": false}])
+    );
     assert_eq!(snap["agents"][1]["place_id"], "wt:a");
     assert_eq!(snap["agents"][0]["place_id"], "shared");
     // files are tracked in a worktree too; an overlap is within the place
@@ -2403,6 +2411,7 @@ mod prs {
                 worktree: true,
                 with_changes: false,
                 place: String::new(),
+                feature: String::new(),
             },
         );
         assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == name)), "{:?}", fx);
@@ -2959,6 +2968,7 @@ mod prs {
                 worktree: false,
                 with_changes: false,
                 place: String::new(),
+                feature: String::new(),
             },
         );
         assert!(!fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "github")), "{:?}", fx);

@@ -159,6 +159,9 @@ pub(super) struct Sb {
     /// header's held `lands via PRs` (dev-flow §7).
     flow: String,
     cards: Vec<Card>,
+    /// dev-flow §5.1: the feature merge item asking `drop it?` once more
+    /// (its `3 drop the branch` was picked), by card id.
+    feature_drop_ask: Option<u64>,
     /// Index in `nav()` of the highlighted entry of the panel.
     selected: Option<usize>,
     preview: bool,
@@ -838,6 +841,8 @@ fn apply_state(app: &mut App, v: &Value) {
                     look: None,
                     place: x.get("place").and_then(|p| p.as_str()).map(String::from),
                     pr: x.get("pr").and_then(|n| n.as_u64()),
+                    // the drop's second ask stays across snapshots
+                    asking: sb.feature_drop_ask == x.get("id").and_then(|i| i.as_u64()),
                 })
                 .collect()
         })

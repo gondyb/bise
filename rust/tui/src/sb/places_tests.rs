@@ -28,6 +28,7 @@ fn place(dir: &str, agents: &[&str], pr: Option<Pr>, lid: Option<&str>) -> Place
         agents: agents.iter().map(|a| a.to_string()).collect(),
         pr,
         lid: lid.map(Into::into),
+        ..Place::default()
     }
 }
 
@@ -75,6 +76,7 @@ fn mock() -> App {
         look: None,
         place: None,
         pr: None,
+        asking: false,
     });
     app
 }
@@ -216,6 +218,7 @@ fn a_private_worktree_is_a_worktree() {
         agents: agents.iter().map(|a| a.to_string()).collect(),
         pr: None,
         lid: lid.map(Into::into),
+        ..Place::default()
     };
     let mut app = mock();
     app.sb.agents.push(Agent { place: path.into(), ..agent("fix", "idle", &format!("pt:{path}")) });
