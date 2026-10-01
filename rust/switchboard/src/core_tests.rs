@@ -2418,6 +2418,7 @@ mod prs {
             review,
             checks,
             updated_at: "t".into(),
+            facts: Default::default(),
         }
     }
 
@@ -2500,6 +2501,123 @@ mod prs {
         assert!(t.hub.prs.is_empty());
     }
 
+    /// pr-merge: approved, checks passing, GitHub would merge it.
+    fn ready_pr(head: &str, approvers: &[&str]) -> PrSnapshot {
+        let mut p = pr(412, PrState::Open, Review::Approved, Checks::Pass);
+        p.head_oid = head.into();
+        p.facts = Box::new(crate::place::PrFacts {
+            title: "dark mode".into(),
+            approved_by: approvers.iter().map(|a| a.to_string()).collect(),
+            commits: 2,
+            additions: 40,
+            deletions: 3,
+            checks: 3,
+            mergeable: true,
+            methods: vec![crate::place::MergeMethod::Squash, crate::place::MergeMethod::Merge],
+        });
+        p
+    }
+
+    fn merge_cards(t: &T) -> Vec<Card> {
+        t.hub.st.open_cards().filter(|c| c.kind == "merge").cloned().collect()
+    }
+
+    fn closed_as(t: &T, id: u64) -> Option<String> {
+        t.journal
+            .borrow()
+            .iter()
+            .find(|j| j["type"] == "card_closed" && j["id"] == id)
+            .and_then(|j| j["resolution"].as_str().map(str::to_string))
+    }
+
+    #[test]
+    fn the_ready_to_merge_item() {
+        let mut t = T::new();
+        spawn_wt(&mut t, "dark");
+        // in review: no item
+        t.go(report(1_000, Ok(vec![pr(412, PrState::Open, Review::Pending, Checks::Running)]), None));
+        assert!(merge_cards(&t).is_empty());
+        // approved, green, mergeable: one item, the user's, about the place
+        t.go(report(2_000, Ok(vec![ready_pr("tip1", &["alice"])]), None));
+        let cs = merge_cards(&t);
+        assert_eq!(cs.len(), 1, "{:?}", t.hub.st.cards);
+        let c = &cs[0];
+        assert_eq!((c.agent.as_str(), c.place.as_deref(), c.pr), ("dark", Some("wt:dark"), Some(412)));
+        assert!(c.text.starts_with("#412 is ready to merge\ndark mode\napproved by alice · 3 of 3 checks pass"), "{}", c.text);
+        assert!(c.text.ends_with("1. squash and merge\n2. open it on GitHub\n3. not yet"), "{}", c.text);
+        let snap = t.hub.snapshot(2_000);
+        let sc = snap["cards"].as_array().unwrap().iter().find(|x| x["kind"] == "merge").cloned().unwrap();
+        assert_eq!((sc["place"].clone(), sc["pr"].clone()), (json!("wt:dark"), json!(412)));
+        // the same answer: the same item
+        t.go(report(3_000, Ok(vec![ready_pr("tip1", &["alice"])]), None));
+        assert_eq!(merge_cards(&t).iter().map(|c| c.id).collect::<Vec<_>>(), [c.id]);
+        // a push: the checks run again, the item goes
+        let mut pushed = ready_pr("tip2", &["alice"]);
+        pushed.checks = Checks::Running;
+        t.go(report(4_000, Ok(vec![pushed]), None));
+        assert!(merge_cards(&t).is_empty());
+        assert_eq!(closed_as(&t, c.id).as_deref(), Some("withdrawn: the PR changed"));
+        // green again: a new item; `3 not yet` closes it, quiet while the PR is the same
+        t.go(report(5_000, Ok(vec![ready_pr("tip2", &["alice"])]), None));
+        let id = merge_cards(&t)[0].id;
+        t.user(MAIN, &format!("/answer {} 3", id));
+        assert_eq!(closed_as(&t, id).as_deref(), Some("not yet"));
+        t.go(report(6_000, Ok(vec![ready_pr("tip2", &["alice"])]), None));
+        assert!(merge_cards(&t).is_empty());
+        // a new review: it changed, the item is back
+        t.go(report(7_000, Ok(vec![ready_pr("tip2", &["alice", "bob"])]), None));
+        let id = merge_cards(&t)[0].id;
+        // `1`: gh pr merge, squash, the head pinned; the item stays while it runs
+        let fx = t.user(MAIN, &format!("/answer {} 1", id));
+        assert!(
+            fx.iter().any(|e| matches!(e, Effect::Merge { number: 412, head, method: crate::place::MergeMethod::Squash, card, .. } if head == "tip2" && *card == id)),
+            "{:?}",
+            fx
+        );
+        assert_eq!(merge_cards(&t).len(), 1);
+        let note = |t: &T| t.hub.snapshot(8_000)["cards"].as_array().unwrap().iter().find(|x| x["kind"] == "merge").map(|x| x["note"].clone());
+        assert_eq!(note(&t), Some(json!("merging…")));
+        // twice: one merge
+        let fx = t.user(MAIN, &format!("/answer {} 1", id));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Merge { .. })));
+        // a poll while it runs: the item stays
+        t.go(report(8_000, Ok(vec![ready_pr("tip2", &["alice", "bob"])]), None));
+        assert_eq!(merge_cards(&t)[0].id, id);
+        // refused: closed, main told; back at the next answer with gh's reason
+        let fx = t.go(Input::Merged { card: id, place: "wt:dark".into(), number: 412, res: Err("Pull request is not mergeable".into()) });
+        assert!(has_line(&fx, MAIN, "gh couldn't merge #412"), "{:?}", fx);
+        assert_eq!(closed_as(&t, id).as_deref(), Some("merge failed"));
+        t.go(report(9_000, Ok(vec![ready_pr("tip2", &["alice", "bob"])]), None));
+        let id = merge_cards(&t)[0].id;
+        assert_eq!(note(&t), Some(json!("gh couldn't merge it: Pull request is not mergeable")));
+        // merged: closed, main told; the forge's next answer archives the place
+        t.user(MAIN, &format!("/answer {} 1", id));
+        let fx = t.go(Input::Merged { card: id, place: "wt:dark".into(), number: 412, res: Ok(()) });
+        assert!(has_line(&fx, MAIN, "sb pr : dim : 412 : https://github.com/o/r/pull/412 : you merged it"), "{:?}", fx);
+        assert_eq!(closed_as(&t, id).as_deref(), Some("merged"));
+        t.go(report(10_000, Ok(vec![pr(412, PrState::Merged, Review::Approved, Checks::Pass)]), Some(false)));
+        assert!(merge_cards(&t).is_empty());
+        assert_eq!(t.status("dark"), Status::Archived);
+    }
+
+    #[test]
+    fn a_merge_item_goes_when_github_merges_it_and_words_go_to_main() {
+        let mut t = T::new();
+        spawn_wt(&mut t, "dark");
+        t.go(report(1_000, Ok(vec![ready_pr("tip1", &[])]), None));
+        let id = merge_cards(&t)[0].id;
+        // words, not a digit: main gets them, the item closes
+        t.user(MAIN, &format!("/answer {} wait for the release", id));
+        assert_eq!(closed_as(&t, id).as_deref(), Some("answered"));
+        assert!(t.hub.st.main_notes.iter().any(|n| n.contains("wait for the release")), "{:?}", t.hub.st.main_notes);
+        // a new review opens it again; merged on GitHub: withdrawn
+        t.go(report(2_000, Ok(vec![ready_pr("tip1", &["alice"])]), None));
+        let id = merge_cards(&t)[0].id;
+        t.go(report(3_000, Ok(vec![pr(412, PrState::Merged, Review::Approved, Checks::Pass)]), Some(true)));
+        assert!(merge_cards(&t).is_empty());
+        assert_eq!(closed_as(&t, id).as_deref(), Some("withdrawn: merged on GitHub"));
+    }
+
     #[test]
     fn offline_401_and_rate_limit_keep_the_last_state_faint() {
         let mut t = T::new();
@@ -2515,9 +2633,16 @@ mod prs {
         .enumerate()
         {
             let fx = t.go(report(2_000 + i as u64, Err(e), None));
-            // said once (hub.log), never to main, never an inbox item
+            // said once (hub.log), never an inbox item; to main only gh
+            // logged out (pr-design §8, pr-merge), once
             assert_eq!(events(&fx), if i == 0 { vec!["PRs"] } else { vec![] });
-            assert!(!fx.iter().any(|e| matches!(e, Effect::Line { .. })), "{:?}", fx);
+            let lines: Vec<&Effect> = fx.iter().filter(|e| matches!(e, Effect::Line { .. })).collect();
+            if i == 1 {
+                assert!(has_line(&fx, MAIN, "i can't follow the PRs: gh isn't logged in"), "{:?}", fx);
+                assert_eq!(lines.len(), 1, "{:?}", fx);
+            } else {
+                assert!(lines.is_empty(), "{:?}", fx);
+            }
             assert!(t.hub.st.cards.is_empty());
         }
         // the last state stays, with its age

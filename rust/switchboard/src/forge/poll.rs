@@ -513,6 +513,7 @@ mod tests {
             review: crate::place::Review::None,
             checks,
             updated_at: "t".into(),
+            facts: Default::default(),
         }
     }
 

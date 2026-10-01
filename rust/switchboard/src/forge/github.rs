@@ -3,20 +3,25 @@
 //! never reads, stores or prints a token: gh does.
 
 use super::{Activity, FailedCheck, Forge, ForgeError, Note, NoteKind, RepoRef};
-use crate::place::{Checks, PrSnapshot, PrState, Review};
+use crate::place::{Checks, MergeMethod, PrFacts, PrSnapshot, PrState, Review};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 /// What one alias asks: the 3 latest PRs of the branch (a fork's PR on a
 /// branch of the same name is skipped by its owner), the last commit's
-/// checks with the names of the failing ones.
+/// checks with the names of the failing ones; for the ready-to-merge
+/// item (pr-design §6.3): the title, the size, the reviewers' latest
+/// reviews, whether GitHub would merge it now.
 const FIELDS: &str = "number url state isDraft reviewDecision headRefName headRefOid updatedAt \
-headRepositoryOwner { login } \
+headRepositoryOwner { login } title additions deletions mergeStateStatus total: commits { totalCount } latestReviews(first: 10) { nodes { state author { login } } } \
 commits(last: 1) { nodes { commit { statusCheckRollup { state \
-contexts(first: 50) { nodes { __typename \
+contexts(first: 50) { totalCount nodes { __typename \
 ... on CheckRun { name status conclusion } \
 ... on StatusContext { context state } } } } } } }";
+
+/// What the repo is asked once per query: the merge methods it allows.
+const REPO_FIELDS: &str = "squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed";
 
 /// A GraphQL string literal.
 fn lit(s: &str) -> String {
@@ -38,11 +43,52 @@ pub fn query(repo: &RepoRef, branches: &[String]) -> String {
         })
         .collect();
     format!(
-        "query {{ repository(owner: {}, name: {}) {{ {} }} }}",
+        "query {{ repository(owner: {}, name: {}) {{ {} {} }} }}",
         lit(&repo.owner),
         lit(&repo.name),
+        REPO_FIELDS,
         aliases.join(" ")
     )
+}
+
+/// The repo's allowed merge methods, squash first (pr-design §6.3).
+fn methods_of(r: &Value) -> Vec<MergeMethod> {
+    [
+        ("squashMergeAllowed", MergeMethod::Squash),
+        ("mergeCommitAllowed", MergeMethod::Merge),
+        ("rebaseMergeAllowed", MergeMethod::Rebase),
+    ]
+    .into_iter()
+    .filter(|(k, _)| r[*k].as_bool() == Some(true))
+    .map(|(_, m)| m)
+    .collect()
+}
+
+/// The facts of PR node `n` for the ready-to-merge item. Mergeable:
+/// GitHub's `mergeStateStatus` says the merge would go through now
+/// (`CLEAN`; `HAS_HOOKS`: clean with pre-receive hooks; `UNSTABLE`:
+/// only checks that are not required fail).
+fn facts_of(n: &Value, methods: &[MergeMethod]) -> PrFacts {
+    let num = |v: &Value| v.as_u64().unwrap_or(0).min(u32::MAX as u64) as u32;
+    let mut approved_by: Vec<String> = n["latestReviews"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| r["state"].as_str() == Some("APPROVED"))
+        .filter_map(|r| r["author"]["login"].as_str().map(str::to_string))
+        .collect();
+    approved_by.dedup();
+    let rollup = &n["commits"]["nodes"][0]["commit"]["statusCheckRollup"];
+    PrFacts {
+        title: n["title"].as_str().unwrap_or_default().to_string(),
+        approved_by,
+        commits: num(&n["total"]["totalCount"]),
+        additions: num(&n["additions"]),
+        deletions: num(&n["deletions"]),
+        checks: num(&rollup["contexts"]["totalCount"]),
+        mergeable: matches!(n["mergeStateStatus"].as_str(), Some("CLEAN" | "HAS_HOOKS" | "UNSTABLE")),
+        methods: methods.to_vec(),
+    }
 }
 
 fn checks_of(rollup: &Value) -> Checks {
@@ -77,7 +123,7 @@ fn checks_of(rollup: &Value) -> Checks {
     }
 }
 
-fn snapshot(n: &Value, branch: &str) -> Option<PrSnapshot> {
+fn snapshot(n: &Value, branch: &str, methods: &[MergeMethod]) -> Option<PrSnapshot> {
     let state = match (n["state"].as_str()?, n["isDraft"].as_bool() == Some(true)) {
         ("OPEN", true) => PrState::Draft,
         ("OPEN", false) => PrState::Open,
@@ -101,6 +147,7 @@ fn snapshot(n: &Value, branch: &str) -> Option<PrSnapshot> {
         review,
         checks: checks_of(rollup),
         updated_at: n["updatedAt"].as_str().unwrap_or_default().to_string(),
+        facts: Box::new(facts_of(n, methods)),
     })
 }
 
@@ -120,12 +167,13 @@ pub fn parse(out: &str, repo: &RepoRef, branches: &[String]) -> Result<Vec<PrSna
     if r.is_null() {
         return Err(ForgeError::Other(format!("no repository {}/{} on {}", repo.owner, repo.name, repo.host)));
     }
+    let methods = methods_of(r);
     let mut prs = Vec::new();
     for (i, b) in branches.iter().enumerate() {
         let ours = r[format!("b{}", i)]["nodes"].as_array().into_iter().flatten().find(|n| {
             n["headRepositoryOwner"]["login"].as_str().is_none_or(|o| o.eq_ignore_ascii_case(&repo.owner))
         });
-        if let Some(pr) = ours.and_then(|n| snapshot(n, b)) {
+        if let Some(pr) = ours.and_then(|n| snapshot(n, b, &methods)) {
             prs.push(pr);
         }
     }
@@ -406,6 +454,32 @@ impl Forge for GitHub {
         }
         Ok(act)
     }
+
+    fn merge(&self, repo: &RepoRef, number: u64, head: &str, method: MergeMethod) -> Result<(), ForgeError> {
+        let args = merge_args(repo, number, head, method);
+        self.gh(&args.iter().map(String::as_str).collect::<Vec<_>>()).map(|_| ())
+    }
+}
+
+/// `gh pr merge`'s arguments (pr-design §6.3): the repo named (never
+/// guessed from the folder's remotes), the head pinned (`gh` refuses
+/// when a commit came since), the branch left to GitHub (the hub removes
+/// the worktree and its local branch after the merge, §6.4).
+pub fn merge_args(repo: &RepoRef, number: u64, head: &str, method: MergeMethod) -> Vec<String> {
+    let mut a: Vec<String> = ["pr", "merge"].iter().map(|s| s.to_string()).collect();
+    a.push(number.to_string());
+    a.push(method.flag().into());
+    a.push("--repo".into());
+    a.push(if repo.host == "github.com" {
+        format!("{}/{}", repo.owner, repo.name)
+    } else {
+        format!("{}/{}/{}", repo.host, repo.owner, repo.name)
+    });
+    if !head.is_empty() {
+        a.push("--match-head-commit".into());
+        a.push(head.into());
+    }
+    a
 }
 
 /// The forge of a workspace: its `origin`'s repo, when it is on GitHub
@@ -465,6 +539,37 @@ mod tests {
         assert_eq!(prs[1].branch, "sb/c");
         assert_eq!(prs[1].state, PrState::Merged);
         assert_eq!(prs[1].checks, Checks::Pass);
+    }
+
+    #[test]
+    fn the_merge_facts() {
+        let out = serde_json::json!({"data": {"repository": {
+            "squashMergeAllowed": false, "mergeCommitAllowed": true, "rebaseMergeAllowed": true,
+            "b0": {"nodes": [{"number": 409, "url": "u", "state": "OPEN", "isDraft": false, "reviewDecision": "APPROVED",
+                "headRefOid": "h", "updatedAt": "t", "headRepositoryOwner": {"login": "o"},
+                "title": "the sad 404 gets a dog in a hat", "additions": 84, "deletions": 12,
+                "mergeStateStatus": "CLEAN", "total": {"totalCount": 3},
+                "latestReviews": {"nodes": [
+                    {"state": "APPROVED", "author": {"login": "alice"}},
+                    {"state": "COMMENTED", "author": {"login": "bob"}}]},
+                "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS",
+                    "contexts": {"totalCount": 6, "nodes": []}}}}]}}]}
+        }}});
+        let prs = parse(&out.to_string(), &repo(), &["sb/a".to_string()]).unwrap();
+        let f = &prs[0].facts;
+        assert_eq!(f.title, "the sad 404 gets a dog in a hat");
+        assert_eq!(f.approved_by, ["alice"]);
+        assert_eq!((f.commits, f.additions, f.deletions, f.checks), (3, 84, 12, 6));
+        assert!(f.mergeable);
+        // no squash: merge first (pr-design §6.3)
+        assert_eq!(f.methods, [MergeMethod::Merge, MergeMethod::Rebase]);
+        // blocked (a required review or check missing), behind, conflicting: not now
+        for s in ["BLOCKED", "BEHIND", "DIRTY", "UNKNOWN", "DRAFT"] {
+            let mut o = out.clone();
+            o["data"]["repository"]["b0"]["nodes"][0]["mergeStateStatus"] = s.into();
+            assert!(!parse(&o.to_string(), &repo(), &["sb/a".to_string()]).unwrap()[0].facts.mergeable, "{s}");
+        }
+        assert!(query(&repo(), &["sb/a".to_string()]).contains("squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed"));
     }
 
     #[test]

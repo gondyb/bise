@@ -692,3 +692,30 @@ fn an_answer_says_one_line_in_the_thread() {
     super::super::dispatch(&mut app, &line(&focus, "you → @docs : thanks"));
     assert!(matches!(app.events.last(), Some(Ev::Info(t)) if t == "→ you → @docs : thanks"));
 }
+
+/// pr-design §6.3: the ready-to-merge item, as the hub writes it. Its
+/// head line is the title, the facts dim; a digit answers with the digit
+/// (the hub merges, or files it); `2` opens the PR here and leaves it.
+#[test]
+fn the_ready_to_merge_item() {
+    let (mut app, mut hub) = app_with_hub();
+    let text = "#409 is ready to merge\nthe sad 404 gets a dog in a hat\napproved by alice · 6 of 6 checks pass · 3 commits · +84 −12\ngithub.com/acme/web/pull/409\n\n1. squash and merge\n2. open it on GitHub\n3. not yet";
+    app.sb.cards = vec![Card { place: Some("wt:sad-404".into()), pr: Some(409), ..card(20, "merge", "sad-404", text) }];
+    let s = shape(&app.sb.cards[0]);
+    assert_eq!(s.title, "sad-404: #409 is ready to merge");
+    assert_eq!(s.summary, "#409 is ready to merge");
+    assert_eq!(s.options, ["squash and merge", "open it on GitHub", "not yet"]);
+    assert!(matches!(s.parts.get(1), Some(Part::Reason(r)) if r.starts_with("approved by alice")));
+    assert_eq!(kind_look("merge").2, theme::accent());
+    open(&mut app);
+    // 2: the link opens here (the text's, no box in this test); nothing sent, the item stays
+    crate::links::OPENED.with(|o| o.borrow_mut().clear());
+    assert!(key(&mut app, KeyCode::Char('2'), KeyModifiers::NONE));
+    assert!(sent(&mut hub).is_empty());
+    assert_eq!(crate::links::OPENED.with(|o| o.borrow().clone()), ["https://github.com/acme/web/pull/409"]);
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(20));
+    // 1: the digit goes to the hub, the history says the option's words
+    assert!(key(&mut app, KeyCode::Char('1'), KeyModifiers::NONE));
+    assert_eq!(sent(&mut hub), vec!["/answer 20 1"]);
+    assert!(matches!(app.events.last(), Some(Ev::Approval { ok: true, text, .. }) if text == "you answered sad-404: squash and merge"));
+}

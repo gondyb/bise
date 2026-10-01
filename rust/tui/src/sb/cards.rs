@@ -48,6 +48,11 @@ pub(crate) struct Card {
     /// How the TUI's own items (setup, BISE-245) read: their words are
     /// the TUI's, not parsed from `text`.
     pub(super) look: Option<Box<Look>>,
+    /// A hub item's place id and PR number (the ready-to-merge item,
+    /// pr-design §6.3): its box's `↑` takes the accent, `2` opens the
+    /// place's PR.
+    pub(super) place: Option<String>,
+    pub(super) pr: Option<u64>,
 }
 
 /// A paragraph of an item the TUI writes itself.
@@ -88,6 +93,8 @@ impl Default for Card {
             seen_at: std::time::Instant::now(),
             note: String::new(),
             look: None,
+            place: None,
+            pr: None,
         }
     }
 }
@@ -295,6 +302,9 @@ pub(super) fn shape(c: &Card) -> Shape {
     if c.kind == "setup" {
         return setup_shape(c);
     }
+    if choice_kind(&c.kind) {
+        return choice_shape(c);
+    }
     let (body, options) = if no_words(&c.kind) { (c.text.clone(), Vec::new()) } else { split_choices(&c.text) };
     let summary = body.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string();
     let mut parts = vec![Part::Text(body)];
@@ -465,6 +475,67 @@ fn always_option(rerun: bool, always: &[String], body: &[String]) -> String {
     }
 }
 
+/// The hub's items with numbered options, about a place (the hub's
+/// `choice_kind`): a digit answers them (the hub acts, then closes the
+/// item); typed words go to main.
+pub(super) fn choice_kind(kind: &str) -> bool {
+    matches!(kind, "merge")
+}
+
+/// A hub item, as the hub writes it: its head line (`#409 is ready to
+/// merge`), then its body (a merge: the PR's title, its facts dim, its
+/// link), a blank line, the numbered options.
+fn choice_shape(c: &Card) -> Shape {
+    let (body, options) = split_choices(&c.text);
+    let mut lines = body.trim_end().lines();
+    let head = lines.next().unwrap_or("").trim().to_string();
+    let rest: Vec<&str> = lines.collect();
+    let mut parts: Vec<Part> = Vec::new();
+    match c.kind.as_str() {
+        // the title as text, the facts dim, the link as text (pr-design §6.3)
+        "merge" => {
+            let minus = if theme::ascii_mode() { "-" } else { "−" };
+            for (i, l) in rest.iter().enumerate() {
+                let l = l.replace('−', minus);
+                if i + 2 == rest.len() {
+                    parts.push(Part::Reason(l));
+                } else {
+                    parts.push(Part::Text(l));
+                }
+            }
+        }
+        _ => parts.push(Part::Text(rest.join("\n"))),
+    }
+    if !c.note.is_empty() {
+        parts.push(Part::Note(c.note.clone()));
+    }
+    let short = short_labels(&options);
+    Shape::plain(format!("{}: {}", c.agent, head), c.agent.clone(), head, parts, options, short, Enter::Answer)
+}
+
+/// The link a merge item's `2` opens: its PR's, from the place's box
+/// (the hub's snapshot), else the link line of its text.
+pub(super) fn merge_link(sb: &Sb, c: &Card) -> Option<String> {
+    let from_place = c
+        .place
+        .as_ref()
+        .and_then(|id| sb.places.iter().find(|p| p.id == *id))
+        .and_then(|p| p.pr.as_ref())
+        .filter(|pr| c.pr.is_none_or(|n| n == pr.number))
+        .map(|pr| pr.url.clone());
+    from_place.or_else(|| {
+        let (body, _) = split_choices(&c.text);
+        let tag = format!("/pull/{}", c.pr?);
+        body.lines().map(str::trim).find(|l| l.ends_with(&tag)).map(|l| {
+            if l.starts_with("http") {
+                l.to_string()
+            } else {
+                format!("https://{l}")
+            }
+        })
+    })
+}
+
 /// A setup item (BISE-245): its look, written by setup.rs; without one
 /// (never from setup.rs), its first line in the strip, a diff in code
 /// colors, the rest as text.
@@ -585,7 +656,8 @@ impl Sb {
 pub(super) fn kind_look(kind: &str) -> (u8, &'static str, Color) {
     match kind {
         "approval" | "confirm" => (0, theme::G_NEEDS_YOU, theme::accent()),
-        "question" => (1, theme::G_NEEDS_YOU, theme::accent()),
+        // a PR ready to merge (pr-design §6.3): yours to act on, pink
+        "question" | "merge" => (1, theme::G_NEEDS_YOU, theme::accent()),
         "blocked" => (2, theme::G_NEEDS_YOU, theme::accent()),
         "failed" => (3, theme::G_FAILED, theme::error()),
         "restart" => (3, theme::G_RESTART_FAILED, theme::error()),
@@ -811,9 +883,24 @@ fn pick_digit(app: &mut App, id: u64, d: usize) -> bool {
 }
 
 fn pick(app: &mut App, id: u64, i: usize) -> bool {
-    let Some(s) = app.sb.card_by_id(id).map(shape) else { return false };
+    let Some(c) = app.sb.card_by_id(id).cloned() else { return false };
+    let s = shape(&c);
     let (Some(reply), Some(said)) = (s.options.get(i), s.short.get(i)) else { return false };
-    answer(app, id, reply, Some(said));
+    if !choice_kind(&c.kind) {
+        answer(app, id, reply, Some(said));
+        return true;
+    }
+    // a hub item: its digit answers (the hub acts on it), the history
+    // says the option's words
+    let n = s.num(i);
+    if c.kind == "merge" && n == 2 {
+        // `open it on GitHub`: here, and the item stays (pr-design §6.3)
+        if let Some(url) = merge_link(&app.sb, &c) {
+            crate::links::open(&url);
+        }
+        return true;
+    }
+    answer(app, id, &n.to_string(), Some(reply));
     true
 }
 

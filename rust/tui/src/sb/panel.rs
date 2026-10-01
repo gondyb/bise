@@ -1296,6 +1296,8 @@ mod tests {
             seen_at: std::time::Instant::now(),
             note: String::new(),
             look: None,
+            place: None,
+            pr: None,
         });
         sb.activity.insert("auth-fix".into());
         app

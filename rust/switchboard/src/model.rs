@@ -265,13 +265,28 @@ pub struct Card {
     #[serde(default)]
     pub for_msg: Option<u64>,
     pub created_ms: u64,
+    /// What the card asks about, when it is a place's (the hub's items,
+    /// [`choice_kind`]): the place's id, and its PR's number.
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub pr: Option<u64>,
 }
 
 /// BISE-299: the kinds of the user's inbox, set at the card's creation
-/// (hub/model.bend `user_kind`): main's escalations and the future
-/// tool-call confirmations. The agents' traffic is main's, never a card.
+/// (hub/model.bend `user_kind`): main's escalations, the tool-call
+/// confirmations and the hub's own items ([`choice_kind`]). The agents'
+/// traffic is main's, never a card.
 pub fn user_kind(kind: &str) -> bool {
-    matches!(kind, "question" | "drop" | "confirm")
+    matches!(kind, "question" | "drop" | "confirm") || choice_kind(kind)
+}
+
+/// The hub's items with numbered options, about a place (hub/model.bend
+/// `choice_kind`): opened and closed by the hub's Rust side, the user's
+/// digit comes back as `Effect::CardChoice`. `merge`: a PR ready to merge
+/// (pr-design §6.3).
+pub fn choice_kind(kind: &str) -> bool {
+    matches!(kind, "merge")
 }
 
 /// The durable state, as sb-core last sent it.

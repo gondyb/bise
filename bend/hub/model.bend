@@ -38,9 +38,12 @@ type Msg is Data:
 type MRec is Data:
   MRec{msg: Msg, st: MSt, settled: Bool}
 
+# `place` and `pr`: what a card asks about, when it is a place's (the
+# ready-to-merge item: the place's id and the PR's number, pr-design §6.3)
 type Card is Data:
   Card{id: Nat, kind: String, agent: String, text: String,
-    for_msg: Maybe<&2, Nat>, created: Nat}
+    for_msg: Maybe<&2, Nat>, created: Nat, place: Maybe<&2, String>,
+    pr: Maybe<&2, Nat>}
 
 type Agent is Data:
   Agent{name: String, is_main: Bool, parent: Maybe<&2, String>, life: Life,
@@ -101,33 +104,43 @@ def MRec.settled(x: MRec) -> Bool:
 
 def Card.id(x: Card) -> Nat:
   match x:
-    case Card{+id, _, _, _, _, _}:
+    case Card{+id, _, _, _, _, _, _, _}:
       id
 
 def Card.kind(x: Card) -> String:
   match x:
-    case Card{_, +kind, _, _, _, _}:
+    case Card{_, +kind, _, _, _, _, _, _}:
       kind
 
 def Card.agent(x: Card) -> String:
   match x:
-    case Card{_, _, +agent, _, _, _}:
+    case Card{_, _, +agent, _, _, _, _, _}:
       agent
 
 def Card.text(x: Card) -> String:
   match x:
-    case Card{_, _, _, +text, _, _}:
+    case Card{_, _, _, +text, _, _, _, _}:
       text
 
 def Card.for_msg(x: Card) -> Maybe<&2, Nat>:
   match x:
-    case Card{_, _, _, _, +for_msg, _}:
+    case Card{_, _, _, _, +for_msg, _, _, _}:
       for_msg
 
 def Card.created(x: Card) -> Nat:
   match x:
-    case Card{_, _, _, _, _, +created}:
+    case Card{_, _, _, _, _, +created, _, _}:
       created
+
+def Card.place(x: Card) -> Maybe<&2, String>:
+  match x:
+    case Card{_, _, _, _, _, _, +place, _}:
+      place
+
+def Card.pr(x: Card) -> Maybe<&2, Nat>:
+  match x:
+    case Card{_, _, _, _, _, _, _, +pr}:
+      pr
 
 def St.agents(x: St) -> List<&2, Agent>:
   match x:
@@ -406,14 +419,22 @@ def drop_card(xs: List<&2, Card>, +id: Nat) -> List<&2, Card>:
 def put_card(xs: List<&2, Card>, +c: Card) -> List<&2, Card>:
   snoc(Card, drop_card(xs, Card.id(c)), c)
 
+# the hub's items with numbered options (opened by the hub's Rust side,
+# `card_open`): the user's digit goes back to Rust (`card_choice`), which
+# acts and closes the item; typed words go to main
+def choice_kind(+k: String) -> Bool:
+  String.eq(k, "merge")
+
 # BISE-299: the user's inbox holds only what needs the user, by kind, set
 # at the card's creation: main's escalations (`question`: `sb card`,
 # `drop`: main's drop of a task with attention) and, later, tool-call
-# confirmations (`confirm`). Only the user answers or closes them. The
-# agents' traffic (reports, blocked, overlap, crashes) is main's, never a
-# card: an older journal's cards of other kinds close at boot.
+# confirmations (`confirm`), and the hub's own items about a place
+# (`merge`: a PR ready to merge, pr-design §6.3). Only the user answers or
+# closes them. The agents' traffic (reports, blocked, overlap, crashes) is
+# main's, never a card: an older journal's cards of other kinds close at
+# boot.
 def user_kind(+k: String) -> Bool:
-  String.eq(k, "question") || String.eq(k, "drop") || String.eq(k, "confirm")
+  String.eq(k, "question") || String.eq(k, "drop") || String.eq(k, "confirm") || choice_kind(k)
 
 # the ids of the open cards that are not the user's (an older journal's)
 def legacy_cards(xs: List<&2, Card>) -> List<&2, Nat>:

@@ -19,7 +19,7 @@ pub mod github;
 pub mod news;
 pub mod poll;
 
-use crate::place::{PrSnapshot, PrState};
+use crate::place::{MergeMethod, PrSnapshot, PrState};
 
 /// A repository on a forge: `github.com/owner/name`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,6 +91,14 @@ pub trait Forge: Send {
     /// forge that has no such details).
     fn activity(&self, _repo: &RepoRef, _pr: &PrSnapshot, _logs: bool) -> Result<Activity, ForgeError> {
         Ok(Activity::default())
+    }
+
+    /// pr-design §6.3: merge PR `number` with `method`, only while its
+    /// head is still `head` (a push since the user said yes: no merge),
+    /// with the user's login. Only the user's `1` on the ready-to-merge
+    /// item calls it: no agent ever merges.
+    fn merge(&self, _repo: &RepoRef, _number: u64, _head: &str, _method: MergeMethod) -> Result<(), ForgeError> {
+        Err(ForgeError::Other("this forge can't merge".into()))
     }
 }
 
@@ -301,6 +309,7 @@ mod tests {
             review: Review::None,
             checks: Checks::None,
             updated_at: "t1".into(),
+            facts: Default::default(),
         }
     }
 

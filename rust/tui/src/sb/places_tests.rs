@@ -73,6 +73,8 @@ fn mock() -> App {
         seen_at: std::time::Instant::now(),
         note: String::new(),
         look: None,
+        place: None,
+        pr: None,
     });
     app
 }

@@ -402,6 +402,14 @@ pub enum Input {
     },
     /// An answer of the PR poller (`forge::poll`, its own thread).
     Prs(crate::forge::poll::Report),
+    /// `gh pr merge`'s answer for the ready-to-merge item `card`
+    /// (`Effect::Merge`, the daemon's thread): Err is gh's reason.
+    Merged {
+        card: u64,
+        place: String,
+        number: u64,
+        res: Result<(), String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -504,6 +512,16 @@ pub enum Effect {
     /// A PR event (pr-design §10): the daemon logs it (pr-news routes
     /// them, wave 3). The journaled ones also come as `Journal`.
     Pr(crate::forge::PrEvent),
+    /// pr-design §6.3: the user's `1` on a ready-to-merge item. The
+    /// daemon runs `gh pr merge` on a thread (the head pinned) and
+    /// answers with `Input::Merged`.
+    Merge {
+        card: u64,
+        place: String,
+        number: u64,
+        head: String,
+        method: crate::place::MergeMethod,
+    },
 }
 
 /// The sb-core executable: `SB_CORE_BIN` (the harness sets it from its
@@ -675,6 +693,9 @@ pub struct Hub {
     /// trusted_bots` (the daemon reads config.toml).
     pr_news: crate::forge::news::News,
     pub pr_bots: Vec<String>,
+    /// pr-merge (pr-design §6.3): the ready-to-merge items' runtime side
+    /// (merge.rs).
+    merges: merge::Merges,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -831,6 +852,7 @@ impl Hub {
             pr_done: BTreeSet::new(),
             pr_news: Default::default(),
             pr_bots: Vec::new(),
+            merges: merge::Merges::default(),
             dirty: false,
             link,
             revive: None,
@@ -1252,6 +1274,7 @@ impl Hub {
                     fx.push(Effect::Pr(PrEvent::Unreachable { error: e.clone() }));
                     self.dirty = true;
                 }
+                self.gh_off(fx, &e);
                 self.pr_late = Some(e);
                 return;
             }
@@ -1313,6 +1336,8 @@ impl Hub {
         self.prs.retain(|k, _| ids.contains(k.as_str()));
         self.pr_lids.retain(|k, _| ids.contains(k.as_str()));
         self.pr_ok_ms.retain(|k, _| ids.contains(k.as_str()));
+        // pr-merge: the ready-to-merge items against the PRs now
+        self.merge_sync(fx, env);
     }
 
     /// pr-news' decisions, carried out: a message from `github` (sb-core's
@@ -1451,7 +1476,11 @@ impl Hub {
                     "text": c.text,
                     "for_msg": c.for_msg,
                     "age_ms": now.saturating_sub(c.created_ms),
-                    "note": self.card_note(c),
+                    "note": if c.kind == "merge" { self.merge_note(c) } else { self.card_note(c) },
+                    // a hub item's place and PR (pr-merge): the TUI ties
+                    // it to the place's box and opens its link
+                    "place": c.place,
+                    "pr": c.pr,
                 })
             })
             .collect();
@@ -1619,6 +1648,7 @@ impl Hub {
             Input::ConfirmClose { card, res } => {
                 self.core(&mut fx, env, None, json!({"t": "confirm_close", "card": card, "res": res}))
             }
+            Input::Merged { card, place, number, res } => self.merged(&mut fx, env, card, &place, number, res),
         }
         self.refresh_contexts(&mut fx, env.now());
         if self.dirty {
@@ -1741,6 +1771,8 @@ impl Hub {
             }),
             "deliver" => self.deliver(fx, env, f),
             // not the client's `confirm` (a yes/no in the status row): a card's
+            // the user's digit on a hub item (merge.rs)
+            "card_choice" => self.card_choice(fx, env, f),
             "confirm" if f.get("card").is_some() => fx.push(Effect::Confirm {
                 card: f["card"].as_u64().unwrap_or(0),
                 agent,
@@ -2328,6 +2360,9 @@ plain text        message to the agent in view (main by default)
 /model [m] [default]  the model of the agent in view (default: also config.toml's)
 /flow [pr|trunk]  how this repo ships code (PRs or straight to main), why, and switch it
 /reasoning [effort]   its reasoning effort (none, low, medium, high, max...)";
+
+#[path = "merge.rs"]
+mod merge;
 
 #[cfg(test)]
 #[path = "core_tests.rs"]

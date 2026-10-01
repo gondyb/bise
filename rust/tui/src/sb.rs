@@ -371,16 +371,18 @@ impl Sb {
     }
 
     /// An inbox item asks you about `p`'s PR (ready to merge, pr-design
-    /// §6.3): its `↑` takes the accent. Until the card carries its place
-    /// (pr-merge), a `merge` item of one of its agents, or naming its
-    /// number.
+    /// §6.3): its `↑` takes the accent. The item names its place
+    /// (pr-merge); one without (an older hub): a `merge` item of one of
+    /// its agents, or naming its number.
     fn asks_merge(&self, p: &places::Place) -> bool {
         let Some(pr) = p.live_pr() else { return false };
         let tag = format!("#{}", pr.number);
-        self.cards.iter().any(|c| {
-            c.kind == "merge"
-                && (p.agents.contains(&c.agent)
-                    || c.text.match_indices(&tag).any(|(i, _)| !c.text[i + tag.len()..].starts_with(|ch: char| ch.is_ascii_digit())))
+        self.cards.iter().filter(|c| c.kind == "merge").any(|c| match &c.place {
+            Some(id) => *id == p.id,
+            None => {
+                p.agents.contains(&c.agent)
+                    || c.text.match_indices(&tag).any(|(i, _)| !c.text[i + tag.len()..].starts_with(|ch: char| ch.is_ascii_digit()))
+            }
         })
     }
 
@@ -834,6 +836,8 @@ fn apply_state(app: &mut App, v: &Value) {
                     seen_at: std::time::Instant::now(),
                     note: s(x, "note"),
                     look: None,
+                    place: x.get("place").and_then(|p| p.as_str()).map(String::from),
+                    pr: x.get("pr").and_then(|n| n.as_u64()),
                 })
                 .collect()
         })

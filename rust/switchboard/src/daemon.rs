@@ -898,7 +898,34 @@ impl Shell {
                 self.switch_idle_repls();
             }
             Effect::Pr(e) => log_line(&self.opts.paths, &crate::forge::log_line(&e)),
+            Effect::Merge { card, place, number, head, method } => self.merge_pr(card, place, number, head, method),
         }
+    }
+
+    /// pr-design §6.3: the user's `1` on a ready-to-merge item: `gh pr
+    /// merge` with the user's login, on a thread (the network); the
+    /// answer comes back as `Input::Merged`. The repo and gh are found
+    /// as the poller finds them.
+    fn merge_pr(&self, card: u64, place: String, number: u64, head: String, method: crate::place::MergeMethod) {
+        let ws = self.opts.paths.workspace.clone();
+        let bin = self.opts.paths.bin_dir();
+        let log_paths = self.opts.paths.clone();
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            use crate::forge::Forge;
+            let gh = crate::forge::github::GitHub::find(&crate::tools_env::hub_agent_path(&bin))
+                .unwrap_or(crate::forge::github::GitHub { gh: "gh".into() });
+            let res = crate::worktree::git(&ws, &["remote", "get-url", "origin"])
+                .ok()
+                .and_then(|url| crate::forge::repo_of_url(&url))
+                .ok_or_else(|| "origin is not a GitHub repo".to_string())
+                .and_then(|repo| gh.merge(&repo, number, &head, method).map_err(|e| e.describe()));
+            log_line(
+                &log_paths,
+                &format!("PR #{} merge ({:?}): {}", number, method, res.as_ref().map_or_else(|e| e.as_str(), |_| "merged")),
+            );
+            let _ = tx.send(Msg::In(Input::Merged { card, place, number, res }));
+        });
     }
 
     /// The PR poller (pr-design §7): started once, off the loop (it

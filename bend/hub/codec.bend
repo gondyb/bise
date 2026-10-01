@@ -66,7 +66,8 @@ def msg_json(+m: M.Msg) -> J.Json:
 def card_json(+c: M.Card) -> J.Json:
   J.obj([J.kv("id", J.JNum{M.Card.id(c)}), J.kv("kind", J.JStr{M.Card.kind(c)}),
     J.kv("agent", J.JStr{M.Card.agent(c)}), J.kv("text", J.JStr{M.Card.text(c)}),
-    J.kv("for_msg", jmaybe_nat(M.Card.for_msg(c))), J.kv("created_ms", J.JNum{M.Card.created(c)})])
+    J.kv("for_msg", jmaybe_nat(M.Card.for_msg(c))), J.kv("created_ms", J.JNum{M.Card.created(c)}),
+    J.kv("place", jmaybe_str(M.Card.place(c))), J.kv("pr", jmaybe_nat(M.Card.pr(c)))])
 
 def mst_kvs(s: M.MSt) -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
   match s:
@@ -166,7 +167,8 @@ def msg_of(+j: J.Json) -> M.Msg:
 
 def card_of(+j: J.Json) -> M.Card:
   M.Card{get_nat(j, "id"), get_s(j, "kind"), get_s(j, "agent"), get_s(j, "text"),
-    opt_nat(J.get(j, "for_msg")), get_nat(j, "created_ms")}
+    opt_nat(J.get(j, "for_msg")), get_nat(j, "created_ms"), opt_str(J.get(j, "place")),
+    opt_nat(J.get(j, "pr"))}
 
 def mst_of(+j: J.Json) -> M.MSt:
   +s = get_s(j, "state")

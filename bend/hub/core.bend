@@ -68,12 +68,14 @@ type In is Data:
   IConfirmClose{}
   IForge{}
   IForgeCard{}
+  ICardOpen{}
   INone{}
 
 type CardK is Data:
   KQuestion{}
   KDrop{}
   KConfirm{}
+  KChoice{}
   KOther{}
 
 type Cmd is Data:
@@ -475,10 +477,23 @@ def note_main(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
 # opens card number next_card (the caller reads it first when it needs it)
 # in the user's inbox: `kind` is a user kind (M.user_kind), never an
 # agent's traffic (BISE-299)
-def open_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>) -> X.Cx<o>:
+#
+# open_card_at: the same, about a place (and its PR): the hub's own items
+def open_card_at(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>, +place: Maybe<&2, String>, +pr: Maybe<&2, Nat>) -> X.Cx<o>:
   +id = M.St.next_card(st(o, cx))
-  +cx2 = emit(o, cx, M.ECardOpened{M.Card{id, kind, agent, text, for_msg, now(o, cx)}}, {==}, Unit{}, Unit{})
+  +cx2 = emit(o, cx, M.ECardOpened{M.Card{id, kind, agent, text, for_msg, now(o, cx), place, pr}}, {==}, Unit{}, Unit{})
   line(o, cx2, M.MAIN(), "card", cat(["#", ns(id), " ", kind, " @", agent, " : ", text]))
+
+def open_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>) -> X.Cx<o>:
+  open_card_at(o, cx, kind, agent, text, for_msg, None{}, None{})
+
+# the hub's Rust side opens one of its items (`card_open`: a PR ready to
+# merge, pr-design §6.3); a kind outside the user's inbox opens nothing
+# (BISE-299)
+def hub_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +place: Maybe<&2, String>, +pr: Maybe<&2, Nat>) -> X.Cx<o>:
+  pick_lazy(X.Cx<o>, M.choice_kind(kind),
+    u => open_card_at(o, cx, kind, agent, text, None{}, place, pr),
+    u => notice(o, cx, String.append("not a hub item: ", kind)))
 
 # BISE-299, the hook for tool-call confirmations: a tool call that needs
 # the user opens a `confirm` card for `agent` straight in the user's
@@ -1511,7 +1526,36 @@ def is_yes(+t: String) -> Bool:
 def card_kind(+k: String) -> CardK:
   Bool.pick(CardK, String.eq(k, "question"), KQuestion{},
     Bool.pick(CardK, String.eq(k, "drop"), KDrop{},
-      Bool.pick(CardK, String.eq(k, "confirm"), KConfirm{}, KOther{})))
+      Bool.pick(CardK, String.eq(k, "confirm"), KConfirm{},
+        Bool.pick(CardK, M.choice_kind(k), KChoice{}, KOther{}))))
+
+def digits(cs: List<&2, Char>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{+h, +t}:
+      Char.is_digit(h) && digits(t)
+
+# an option's number (`1`), not words
+def is_number(+t: String) -> Bool:
+  +s = String.trim(t)
+  Bool.pick(Bool, String.is_empty(s), False{}, digits(String.to_list(s)))
+
+# a hub item's answer (M.choice_kind): a number goes to the hub's Rust
+# side (the `card_choice` effect), which acts and closes the item (a merge
+# runs `gh pr merge`: the item stays open meanwhile); words go to main,
+# and close it
+def answer.choice(-o: M.St, num: Bool, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
+  match num:
+    case True{}:
+      out(o, cx, [J.kv("fx", J.JStr{"card_choice"}), J.kv("card", J.JNum{M.Card.id(c)}),
+        J.kv("kind", J.JStr{M.Card.kind(c)}), J.kv("agent", J.JStr{M.Card.agent(c)}),
+        J.kv("place", C.jmaybe_str(M.Card.place(c))), J.kv("pr", C.jmaybe_nat(M.Card.pr(c))),
+        J.kv("text", J.JStr{String.trim(text)})])
+    case False{}:
+      +id = M.Card.id(c)
+      +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (\"", M.one_line(M.Card.text(c)), "\") in words: \"", M.one_line(text), "\""]))
+      close_card(o, cx2, id, "answered")
 
 def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
   match k:
@@ -1526,6 +1570,8 @@ def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> 
       +cx2 = out(o, cx, [J.kv("fx", J.JStr{"confirm"}), J.kv("card", J.JNum{M.Card.id(c)}),
         J.kv("agent", J.JStr{M.Card.agent(c)}), J.kv("text", J.JStr{text})])
       close_card(o, cx2, M.Card.id(c), "answered")
+    case KChoice{}:
+      answer.choice(o, is_number(text), cx, c, text)
     case KOther{}:
       close_card(o, cx, M.Card.id(c), "vue")
 
@@ -2491,7 +2537,11 @@ def in_tag(+t: String) -> In:
   # user when a check still fails after two tries
   Bool.pick(In, String.eq(t, "forge"), IForge{},
   Bool.pick(In, String.eq(t, "forge_card"), IForgeCard{},
-  INone{})))))))))))))))))))))))))))))
+  # the hub's own items about a place (pr-design §6.3): the Rust side
+  # opens them and closes them (`card_close`: done, or withdrawn)
+  Bool.pick(In, String.eq(t, "card_open"), ICardOpen{},
+  Bool.pick(In, String.eq(t, "card_close"), IConfirmClose{},
+  INone{})))))))))))))))))))))))))))))))
 
 # `/close N`: the user files a card without answering it
 def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
@@ -2577,6 +2627,8 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
       fst(o, send(o, cx, msg(M.GITHUB(), C.get_s(i, "to"), C.get_s(i, "text"), False{}, None{}, False{}, False{})))
     case IForgeCard{}:
       open_card(o, cx, "question", C.get_s(i, "agent"), C.get_s(i, "text"), None{})
+    case ICardOpen{}:
+      hub_card(o, cx, C.get_s(i, "kind"), C.get_s(i, "agent"), C.get_s(i, "text"), C.opt_str(J.get(i, "place")), C.opt_nat(J.get(i, "pr")))
     case INone{}:
       cx
 

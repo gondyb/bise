@@ -90,6 +90,60 @@ pub struct PrSnapshot {
     pub checks: Checks,
     /// The forge's `updatedAt` (ISO 8601).
     pub updated_at: String,
+    /// What the ready-to-merge item says and needs (pr-merge, wave 3);
+    /// boxed: the events carry two snapshots.
+    #[serde(default)]
+    pub facts: Box<PrFacts>,
+}
+
+/// pr-design §6.3: the ready-to-merge item's lines (`the sad 404 gets a
+/// dog in a hat`, `approved by alice · 6 of 6 checks pass · 3 commits ·
+/// +84 −12`) and what `1` needs: whether the forge would merge it now
+/// (GitHub's `mergeStateStatus` clean: the required reviews and checks
+/// are there, no conflict, not behind a required base) and the methods
+/// the repo allows, the one to use first.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrFacts {
+    pub title: String,
+    /// The reviewers whose latest review approves it (logins).
+    pub approved_by: Vec<String>,
+    pub commits: u32,
+    pub additions: u32,
+    pub deletions: u32,
+    /// The head commit's checks (check runs and statuses), counted.
+    pub checks: u32,
+    pub mergeable: bool,
+    /// The repo's allowed methods, in pr-design §6.3's order: squash,
+    /// else merge, else rebase.
+    pub methods: Vec<MergeMethod>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeMethod {
+    Squash,
+    Merge,
+    Rebase,
+}
+
+impl MergeMethod {
+    /// `gh pr merge`'s flag.
+    pub fn flag(self) -> &'static str {
+        match self {
+            MergeMethod::Squash => "--squash",
+            MergeMethod::Merge => "--merge",
+            MergeMethod::Rebase => "--rebase",
+        }
+    }
+
+    /// The item's option 1 (`squash and merge`).
+    pub fn label(self) -> &'static str {
+        match self {
+            MergeMethod::Squash => "squash and merge",
+            MergeMethod::Merge => "merge",
+            MergeMethod::Rebase => "rebase and merge",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -372,6 +426,16 @@ mod tests {
             review: Review::ChangesRequested,
             checks: Checks::Fail { failing: vec!["ci/test".into()] },
             updated_at: "2026-10-01T10:00:00Z".into(),
+            facts: Box::new(PrFacts {
+                title: "dark mode".into(),
+                approved_by: vec!["alice".into()],
+                commits: 3,
+                additions: 84,
+                deletions: 12,
+                checks: 6,
+                mergeable: false,
+                methods: vec![MergeMethod::Squash, MergeMethod::Rebase],
+            }),
         };
         let v = PlaceView {
             id: "wt:a".into(),
@@ -398,5 +462,13 @@ mod tests {
         assert_eq!(serde_json::to_value(Checks::Pass).unwrap(), serde_json::json!({"state": "pass"}));
         let back: PrSnapshot = serde_json::from_value(serde_json::to_value(&pr).unwrap()).unwrap();
         assert_eq!(back, pr);
+        // the facts (pr-merge): snake_case methods; a snapshot without
+        // them (an older answer) reads with empty facts
+        let j = serde_json::to_value(&pr).unwrap();
+        assert_eq!(j["facts"]["methods"], serde_json::json!(["squash", "rebase"]));
+        let mut old = j.clone();
+        old.as_object_mut().unwrap().remove("facts");
+        let back: PrSnapshot = serde_json::from_value(old).unwrap();
+        assert_eq!(*back.facts, PrFacts::default());
     }
 }
