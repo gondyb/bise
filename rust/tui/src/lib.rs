@@ -101,6 +101,7 @@ mod gust;
 mod anim;
 mod zen;
 mod voice;
+mod voicemode;
 #[cfg(test)]
 mod voice_ui_tests;
 #[cfg(test)]
