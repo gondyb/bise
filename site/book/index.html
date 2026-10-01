@@ -311,12 +311,12 @@
     <div class="chipc"><div class="c" style="background:#5a5349"></div><div class="n">dim</div><div class="h">#5a5349 · dark #b8b0a3</div></div>
     <div class="chipc"><div class="c" style="background:#8a8174"></div><div class="n">kick</div><div class="h">#8a8174 · dark #8a8276</div></div>
     <div class="chipc"><div class="c" style="background:#c8264a"></div><div class="n">pen</div><div class="h">#c8264a · dark #f4a6b0</div></div>
-    <div class="chipc"><div class="c" style="background:#3446a8"></div><div class="n">blue pencil</div><div class="h">#3446a8 · dark #9aa8ff</div></div>
+    <div class="chipc"><div class="c" style="background:#6b645a"></div><div class="n">graphite</div><div class="h">#6b645a · dark #b8b0a3</div></div>
     <div class="chipc"><div class="c" style="background:#faf7f0"></div><div class="n">figure card</div><div class="h">#faf7f0 · dark #1f1c19</div></div>
     <div class="chipc"><div class="c" style="background:linear-gradient(100deg,#f2ede2 0,#f4a6b099 8px,#f4a6b099 calc(100% - 8px),#f2ede2 100%)"></div><div class="n">highlighter</div><div class="h">#f4a6b0 · 60%, dark 28%</div></div>
   </div>
   <ul class="list">
-    <li>the paper has a light grain. one accent on it: the pen. the blue pencil is for doodles and tallies only.</li>
+    <li>the paper has a light grain. one accent on it: the pen. graphite is for doodles and tallies only.</li>
     <li>the switch in the menu turns the page to dark paper, the same book at night.</li>
   </ul>
 
@@ -348,12 +348,12 @@
     <div><span class="u">you stay in flow<svg class="ul" viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true"><path class="draw" d="M3 10 C60 4,120 13,180 8 S270 5,297 9"/></svg></span><span class="lbl">the underline</span></div>
     <div><span class="circ">painless<svg class="ring" viewBox="0 0 120 50" preserveAspectRatio="none" aria-hidden="true"><path class="draw" d="M16 11 C42 1,98 2,113 19 C125 33,94 47,56 46 C20 45,3 35,6 23 C9 12,34 5,70 6"/></svg></span><span class="lbl">the ring</span></div>
     <div><span class="pen" style="display:flex;align-items:center;gap:8px;font-size:26px"><svg class="arr" viewBox="0 0 80 40" aria-hidden="true"><path class="draw" d="M76 30 C56 36,26 32,8 12"/><path class="draw" style="--d:.5s" d="M6 26 L7 11 L21 14"/></svg>this one</span><span class="lbl">the arrow, and a note</span></div>
-    <div><svg class="tally" viewBox="0 0 150 40" aria-hidden="true"><g filter="url(#pencil)"><path class="draw blue" style="--d:0s" d="M6 4 L5 36"/><path class="draw blue" style="--d:.08s" d="M15 4 L14 36"/><path class="draw blue" style="--d:.16s" d="M24 4 L23 36"/><path class="draw blue" style="--d:.24s" d="M33 4 L32 36"/><path class="draw blue" style="--d:.35s" d="M0 30 L40 10"/><path class="draw blue" style="--d:.45s" d="M62 5 L61 35"/><path class="draw blue" style="--d:.53s" d="M71 5 L70 35"/></g></svg><span class="lbl">the tally, in blue pencil</span></div>
+    <div><svg class="tally" viewBox="0 0 150 40" aria-hidden="true"><g filter="url(#pencil)"><path class="draw graphite" style="--d:0s" d="M6 4 L5 36"/><path class="draw graphite" style="--d:.08s" d="M15 4 L14 36"/><path class="draw graphite" style="--d:.16s" d="M24 4 L23 36"/><path class="draw graphite" style="--d:.24s" d="M33 4 L32 36"/><path class="draw graphite" style="--d:.35s" d="M0 30 L40 10"/><path class="draw graphite" style="--d:.45s" d="M62 5 L61 35"/><path class="draw graphite" style="--d:.53s" d="M71 5 L70 35"/></g></svg><span class="lbl">the tally, in graphite</span></div>
     <div><span class="hl">made for humans</span><span class="lbl">the highlighter</span></div>
   </div>
 
   <h3>the doodle</h3>
-  <p>bise is also the north wind. it's drawn as a colored-pencil cloud (blue pencil, hatched, pink cheeks) that blows next to the name, and falls asleep at the end of a page.</p>
+  <p>bise is also the north wind. it's drawn as a pencil cloud (graphite, hatched, pink cheeks) that blows next to the name, and falls asleep at the end of a page.</p>
   <div class="doodles">
     <figure><div class="bob" data-doodle="blow"></div><figcaption>blowing: the gusts start at its edge</figcaption></figure>
     <figure><div class="bob" data-doodle="asleep"></div><figcaption>asleep: the last breath</figcaption></figure>
@@ -704,8 +704,10 @@ function setTheme(t) {
   document.getElementById("swatches").innerHTML = PAL[t].map(([n, h, c]) =>
     `<div class="sw"><div class="c" style="background:${bg}; color:${h}">${n}</div><div class="m"><div>${h}</div><div class="dim">${c}</div></div></div>`).join("");
 }
-document.querySelectorAll(".toggle button").forEach((b) => b.onclick = () => setTheme(b.dataset.t));
-setTheme(matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+// the OS theme until you pick one with the switch; then it's remembered (the landing's key: bise-theme, 1 = dark paper, written only by the switch)
+document.querySelectorAll(".toggle button").forEach((b) => b.onclick = () => { setTheme(b.dataset.t); try { localStorage.setItem("bise-theme", b.dataset.t === "dark" ? "1" : "0"); } catch {} });
+{ let d = null; try { d = localStorage.getItem("bise-theme"); } catch {}
+  setTheme(d === "1" ? "dark" : d === "0" ? "light" : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
 
 // hero: cursors appear and type, like agents at work
 const tasks = ["fixing the safari bug", "writing the release note", "running the tests", "drafting the landing page", "reviewing the auth PR", "profiling the slow query", "updating the docs", "migrating the db"];

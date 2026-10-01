@@ -122,9 +122,9 @@ keeps its own look, below, unchanged.
 `site/content/landing-paper.html`, tokens in `site/book/paper.css` and
 `docs/brand/readme/ink.py`).
 - Paper `#f2ede2` with a light grain; ink `#1d1a17`, dim `#5a5349`, kick
-  `#8a8174`; the pen `#c8264a` is the one accent; the blue pencil `#3446a8`
-  is for doodles and tallies. Dark paper: `#171513`, ink `#ece6da`, pen
-  `#f4a6b0`, blue `#9aa8ff`. Highlighter: `#f4a6b0` at 60% (dark 28%).
+  `#8a8174`; the pen `#c8264a` is the one accent; graphite `#6b645a`
+  is for doodles and tallies (no blue, user). Dark paper: `#171513`, ink
+  `#ece6da`, pen `#f4a6b0`, graphite `#b8b0a3`. Highlighter: `#f4a6b0` at 60% (dark 28%).
 - Type: Newsreader for text and titles (600, tight tracking); Caveat for
   the pen only (the `:*`, group labels, short notes in the margin);
   JetBrains Mono only inside screens, for code and commands. Where no web
@@ -132,8 +132,9 @@ keeps its own look, below, unchanged.
 - The kiss in Caveat: the `*` comes down level with the colon (a mouth).
 - Pen marks drawn in SVG that draw themselves once: underline, ring, arrow,
   tally, highlighter. One or two per screen.
-- The doodle: the north wind as a colored-pencil cloud (blue pencil,
-  hatched, pink cheeks), blowing next to the name (the gusts start at its
+- The doodle: the north wind as a pencil cloud (graphite: stroke
+  `#6b645a`, hatch and gusts `#8a8174`, face `#1d1a17`; dark `#b8b0a3`,
+  `#8a8276`, `#ece6da`; pink cheeks), blowing next to the name (the gusts start at its
   right edge, never across its face), asleep at the end of a page.
 - Screens on the site are figures: a card a bit lighter than the paper
   (`#faf7f0`, dark `#1f1c19`), a pencil frame, a flat offset shadow kept very

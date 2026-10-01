@@ -7,13 +7,13 @@
 html[data-theme="light"] {
   --bg:#f2ede2; --bg2:#ebe4d6; --text:#1d1a17; --dim:#5a5349; --faint:#8a8174; --line:#d9cfbd; --rule:#cfc5b4;
   --acc:#c8264a; --tint:#f4a6b03d; --raised:#ebe4d6; --chip:#e3dac8;
-  --pen:#c8264a; --blue:#3446a8; --kick:#8a8174; --card:#faf7f0; --cardfoot:#f3eee4; --frame:#1d1a17a8; --drop:#1d1a170c; --hl:#f4a6b099;
+  --pen:#c8264a; --graphite:#6b645a; --kick:#8a8174; --card:#faf7f0; --cardfoot:#f3eee4; --frame:#1d1a17a8; --drop:#1d1a170c; --hl:#f4a6b099;
   --grain:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 .35 0 0 0 0 .3 0 0 0 0 .25 0 0 0 .08 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
 }
 html[data-theme="dark"] {
   --bg:#171513; --bg2:#1e1b18; --text:#ece6da; --dim:#b8b0a3; --faint:#8a8276; --line:#38332e; --rule:#4a4540;
   --acc:#f4a6b0; --tint:#f4a6b02e; --raised:#1e1b18; --chip:#262220;
-  --pen:#f4a6b0; --blue:#9aa8ff; --kick:#8a8276; --card:#1f1c19; --cardfoot:#24201d; --frame:#ece6da80; --drop:#00000038; --hl:#f4a6b047;
+  --pen:#f4a6b0; --graphite:#b8b0a3; --kick:#8a8276; --card:#1f1c19; --cardfoot:#24201d; --frame:#ece6da80; --drop:#00000038; --hl:#f4a6b047;
   --grain:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .9 0 0 0 .05 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
 }
 
@@ -89,7 +89,7 @@ iframe { border:0; border-radius:10px; box-shadow:3px 3px 0 var(--drop); outline
 
 /* ---- pen marks: they draw themselves when their block comes in (paper.js adds .in) ---- */
 .draw { fill:none; stroke:var(--pen); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; stroke-dasharray:900; stroke-dashoffset:900; }
-.draw.blue { stroke:var(--blue); }
+.draw.graphite { stroke:var(--graphite); }
 .in .draw { animation:pen 1.3s cubic-bezier(.6,.1,.3,1) forwards; animation-delay:calc(.4s + var(--d, 0s)); }
 @keyframes pen { to { stroke-dashoffset:0; } }
 .u { position:relative; white-space:nowrap; } .u .ul { position:absolute; left:-2%; bottom:-.2em; width:104%; height:.42em; overflow:visible; }
@@ -102,8 +102,9 @@ iframe { border:0; border-radius:10px; box-shadow:3px 3px 0 var(--drop); outline
 .doodle { overflow:visible; display:block; } .doodle .gust path { stroke-dasharray:14 9; animation:gust 1.6s linear infinite; }
 @keyframes gust { to { stroke-dashoffset:-46; } }
 @keyframes bob { 50% { transform:translateY(-8px) rotate(-2deg); } }
-html[data-theme="dark"] .doodle [data-ink="blue"] { stroke:#9aa8ff; } html[data-theme="dark"] .doodle [data-ink="face"] { stroke:#ece6da; }
-html[data-theme="dark"] #hatchB line { stroke:#8d9cf5; }
+/* graphite, no blue: light #6b645a (hatch and gusts #8a8174), dark #b8b0a3 (hatch and gusts #8a8276) */
+html[data-theme="dark"] .doodle [data-ink="graphite"] { stroke:#b8b0a3; } html[data-theme="dark"] .doodle [data-ink="face"] { stroke:#ece6da; }
+html[data-theme="dark"] .doodle [data-ink="gust"] { stroke:#8a8276; } html[data-theme="dark"] #hatchB line { stroke:#8a8276; }
 
 /* the identity plates (05) */
 .plates { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:26px 34px; max-width:1100px; margin:18px 0 30px; }

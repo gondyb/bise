@@ -15,12 +15,13 @@ FONTS = {
 
 # the paper tokens (site/content/landing-paper.html). 'in_*' are the screens' own colors on that paper.
 PAPER = {
-    "light": dict(paper="#f2ede2", ink="#1d1a17", dim="#5a5349", kick="#8a8174", pen="#c8264a", blue="#3446a8",
+    # graphite: the cloud and every pencil mark are grey, no blue (the user, after the first round)
+    "light": dict(paper="#f2ede2", ink="#1d1a17", dim="#5a5349", kick="#8a8174", pen="#c8264a", graphite="#6b645a",
                   card="#faf7f0", foot="#f3eee4", frame="#1d1a17a8", shadow="#1d1a170c", hl="#f4a6b099",
-                  hatch="#5b6fc7", face="#2a2550", cheek="#ef9aae", cheek_a=".55", grain=(90, 77, 64), grain_a=20),
-    "dark":  dict(paper="#171513", ink="#ece6da", dim="#b8b0a3", kick="#8a8276", pen="#f4a6b0", blue="#9aa8ff",
+                  hatch="#8a8174", gust="#8a8174", face="#1d1a17", cheek="#ef9aae", cheek_a=".55", grain=(90, 77, 64), grain_a=20),
+    "dark":  dict(paper="#171513", ink="#ece6da", dim="#b8b0a3", kick="#8a8276", pen="#f4a6b0", graphite="#b8b0a3",
                   card="#1f1c19", foot="#24201d", frame="#ece6da80", shadow="#00000038", hl="#f4a6b047",
-                  hatch="#8d9cf5", face="#ece6da", cheek="#f4a6b0", cheek_a=".45", grain=(255, 242, 230), grain_a=11),
+                  hatch="#8a8276", gust="#8a8276", face="#ece6da", cheek="#f4a6b0", cheek_a=".45", grain=(255, 242, 230), grain_a=11),
 }
 
 _fonts = {}
@@ -153,7 +154,7 @@ def cloud(mode, asleep=False):
     wind = '' if asleep else ('<g class="gust"><path d="M182 74 C196 68,208 80,226 72 S246 66,254 70"/>'
                               '<path d="M180 86 C196 90,210 98,232 92"/><path d="M174 60 C188 52,200 56,216 48"/></g>')
     return (f'<g filter="url(#pencil)" fill="none" stroke-linecap="round" stroke-linejoin="round">'
-            f'<path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="{t["blue"]}" stroke-width="2.8"/>'
+            f'<path d="M40 92 C16 92,10 66,32 60 C26 36,56 26,70 42 C78 18,118 16,126 40 C142 26,170 36,164 58 C188 60,188 92,164 94 Z" fill="url(#hatchB)" stroke="{t["graphite"]}" stroke-width="2.8"/>'
             f'<g stroke="{t["face"]}" stroke-width="2">{eyes}</g><circle cx="66" cy="78" r="6" fill="{t["cheek"]}" opacity="{t["cheek_a"]}"/><circle cx="122" cy="78" r="6" fill="{t["cheek"]}" opacity="{t["cheek_a"]}"/>'
-            f'<g stroke="{t["blue"] if asleep else t["face"]}" stroke-width="1.8">{mouth}</g>'
-            f'<g stroke="{t["blue"]}" stroke-width="2">{wind}</g></g>')
+            f'<g stroke="{t["graphite"] if asleep else t["face"]}" stroke-width="1.8">{mouth}</g>'
+            f'<g stroke="{t["gust"]}" stroke-width="2">{wind}</g></g>')

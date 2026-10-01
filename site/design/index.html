@@ -504,9 +504,13 @@ figure.ex .tabs button.on{border-bottom-color:var(--t-acc)}
   q.addEventListener("keydown", e => { if (e.key === "Enter") { const l = links.find(l => !l.classList.contains("hide")); if (l) { location.hash = l.getAttribute("href"); q.blur(); } } if (e.key === "Escape") { q.value = ""; q.dispatchEvent(new Event("input")); q.blur(); } });
   addEventListener("keydown", e => { if (e.key === "/" && document.activeElement !== q && !e.metaKey && !e.ctrlKey) { e.preventDefault(); q.focus(); } });
   // theme
-  document.querySelectorAll(".toggle button").forEach(b => b.onclick = () => {
-    document.documentElement.dataset.theme = b.dataset.t;
-    document.querySelectorAll(".toggle button").forEach(x => x.classList.toggle("on", x === b)); });
+  // the OS theme until you pick one with the switch; then it's remembered (the landing's key: bise-theme, 1 = dark paper, written only by the switch)
+  const theme = (t) => { document.documentElement.dataset.theme = t;
+    document.querySelectorAll(".toggle button").forEach(x => x.classList.toggle("on", x.dataset.t === t));
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "dark" ? "#171513" : "#f2ede2"; };
+  document.querySelectorAll(".toggle button").forEach(b => b.onclick = () => { theme(b.dataset.t); try { localStorage.setItem("bise-theme", b.dataset.t === "dark" ? "1" : "0"); } catch {} });
+  { let d = null; try { d = localStorage.getItem("bise-theme"); } catch {}
+    theme(d === "1" ? "dark" : d === "0" ? "light" : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
   document.getElementById("burger").onclick = () => document.body.classList.toggle("nav");
   // the gust: 5 cells cross left to right, 110 ms a frame, 9 frames; 1 cell breathes
   const R = ["≈","∿","~","·"," "," "," "," "," "], R3 = ["≈","∿","~","·"," "," "," "], B = ["·","~","∿","≈","∿","~"];
