@@ -151,12 +151,7 @@ impl Runner {
         } else {
             String::new()
         };
-        let store = bise_catalog::auth::Store::read(&self.home.auth_file()).unwrap_or_default();
-        let files = bise_catalog::auth::EnvFile::read_all(&self.home.env_files());
-        let env = |k: &str| (self.env)(k);
-        let keys = bise_catalog::auth::Keys { env: &env, store: &store, files: &files };
-        let ready = |id: &str| setup.catalog.provider(id).is_some_and(|p| keys.ready(p));
-        Route::of(&model, &setup.small_model, &ready)
+        Route::of(&model, &setup.small_model)
     }
 
     /// Re-read what picks the checker (config.toml, auth.json,

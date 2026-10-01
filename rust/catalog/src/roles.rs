@@ -78,17 +78,11 @@ pub fn jev_of(model: &str) -> Option<(&'static str, String)> {
     model.strip_prefix("openrouter/typesafe/").map(|id| ("openrouter", format!("typesafe/{}", id)))
 }
 
-/// The checker's model when the role is unset: Jev through TypeSafe when
-/// its key is ready, else through OpenRouter when that key is, else the
-/// small jobs model (`ready`: a provider id has its key).
-pub fn checker_default(small: &str, ready: &dyn Fn(&str) -> bool) -> String {
-    if ready("typesafe") {
-        JEV_TYPESAFE.into()
-    } else if ready("openrouter") {
-        JEV_OPENROUTER.into()
-    } else {
-        small.into()
-    }
+/// The checker's model when the role is unset: the small jobs model.
+/// Jev runs only when the user picks it (TypeSafe or OpenRouter): as
+/// designed it asks about nearly every command (docs/approvals-eval).
+pub fn checker_default(small: &str) -> String {
+    small.into()
 }
 
 /// Every role, in the order the screens list them.

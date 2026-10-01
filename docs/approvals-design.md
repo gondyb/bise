@@ -21,9 +21,11 @@ the hard rules and the wire; §14 says what changed.
 - The checker is called **rarely**, to save tokens and time: cheap tiers
   first (§3), the checker only for the rest, its verdicts cached (§4.4).
 - The checker is a **role, `checker`, in `/models`** (the `classify` role
-  of BISE-298, shown with this feature), **Jev by default** (TypeSafe's
-  System One model); a chat model can take the role instead, or it can be
-  off (§4.2). Settled by the user (Q2).
+  of BISE-298, shown with this feature), **the small jobs model by
+  default**; Jev (TypeSafe's System One model) when the user picks it, or
+  another chat model, or off (§4.2). Settled by the user (Q2); the default
+  moved from Jev to small jobs after the eval (docs/approvals-eval: Jev as
+  designed asks about every command).
 - **The sandbox on macOS now** (Seatbelt: writes only in the roots,
   network only when allowed), the parser path where there is none (§6).
   Settled (Q1).
@@ -293,7 +295,9 @@ until this feature). Designer's words:
   when the mode is `yolo`). Off: the row says `off · commands ask you`,
   dim; enter sets it up.
 - Picker, step 1 "checker: which provider?", `now: TypeSafe · jev-1.13`:
-  - `TypeSafe` (`✓ ready · now · recommended`, recommended in accent);
+  - `auto` first: the small jobs model (`Mistral · mistral-small-latest ·
+    now` when unset);
+  - `TypeSafe` (`✓ ready · now`; no tag, designer: auto is the default);
   - `OpenRouter` (`✓ ready · jev through OpenRouter`);
   - a dim separator row "or a chat model checks" (not selectable), then the
     chat providers as in the other roles (`Anthropic ✓ ready`, `Mistral ✓
@@ -311,9 +315,8 @@ until this feature). Designer's words:
   (`TYPESAFE_API_KEY` too). OpenRouter's key already works for Jev.
 - config.toml: `[roles] classify = "typesafe/jev-1.13"` (or
   `"openrouter/typesafe/jev-1.13"`, a chat `provider/model`, or `"off"`);
-  `BISE_CLASSIFY_MODEL` for one session. Unset: Jev through TypeSafe if its
-  key is ready, else through OpenRouter if that key is ready, else the
-  small jobs model.
+  `BISE_CLASSIFY_MODEL` for one session. Unset: the small jobs model,
+  whatever keys are ready (Jev only when picked).
 - `/approvals` shows which checker runs and points to `/models`.
 
 A checker error falls back to a card, never to another checker (no
@@ -721,11 +724,12 @@ by an edit is lost (said in `/help`). A recursive delete of a root itself
   ⇧⇥ changes it."
 - **First switch to `auto`** with a checker that sends data out, a one-time
   tip that says exactly what leaves the machine (designer):
-  - Jev: "in auto, commands that aren't clearly safe go to Jev by TypeSafe
-    for a check (the command, the script it runs, and your request).
-    /models changes it."
-  - a chat model in the role: "in auto, <model> checks the commands that
-    aren't clearly safe. /models changes it."
+  - a chat model in the role (auto's default, the small jobs model): "auto
+    sends commands to Mistral (mistral-small-latest) to check them. /models
+    changes it."; a local one (Ollama, LM Studio): "auto checks commands
+    with <model>, on this machine. /models changes it."
+  - Jev: "auto sends commands to Jev (TypeSafe) to check them. /models
+    changes it."
 - `/approvals`: the mode, the checker (it points to `/models` to change
   it) and the saved rules; `/approvals yolo|auto` switches the mode (for a
   user without `shift+tab`).
@@ -901,7 +905,7 @@ user runs on a real repo, a short script of what to try, and main merges
 | default `auto` (spec) | default `yolo`, the last pick remembered |
 | `shift+tab` cycles 3 modes | `shift+tab` toggles 2 |
 | the classifier judged every call past a small fast path | tiers 0–4 decide ~93 % of bash calls without a model (§3.2) |
-| `approvals_model`, then the `classify` role | the `checker` role in `/models` (the `classify` role shown), Jev by default (TypeSafe or OpenRouter), a chat model instead, or off |
+| `approvals_model`, then the `classify` role | the `checker` role in `/models` (the `classify` role shown), the small jobs model by default, Jev (TypeSafe or OpenRouter) or another chat model when picked, or off |
 | classifier verdicts: allow / deny-and-continue / card | allow or card; the only denial is the deny-once for a bash edit the parser cannot read (no model call) |
 | a turn cache | a per-repo, per-hub-session cache of allow verdicts, keyed by pattern for plain parts (§4.4) |
 | reason line: the classifier's words | words picked from the scores (designer); scores in the debug log and behind ctrl+o |

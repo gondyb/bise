@@ -38,29 +38,20 @@ fn scores(c: f32, t: f32, s: f32) -> Vec<(String, f32)> {
 
 #[test]
 fn the_role_resolves_to_a_route() {
-    let none = |_: &str| false;
-    let all = |_: &str| true;
-    let or = |id: &str| id == "openrouter";
     let small = "mistral/mistral-small-latest";
-    let jev = |via| Route::Jev { via, model: String::new() };
-    let strip = |r: Route| match r {
-        Route::Jev { via, .. } => jev(via),
-        r => r,
-    };
-    // unset: TypeSafe's key, else OpenRouter's, else the small jobs model
-    assert_eq!(strip(Route::of("", small, &all)), jev(Via::TypeSafe));
-    assert_eq!(strip(Route::of("", small, &or)), jev(Via::OpenRouter));
-    assert_eq!(Route::of("", small, &none), Route::Chat { model: small.into() });
-    assert_eq!(Route::of("", "", &none), Route::Off);
+    // unset: the small jobs model, whatever keys are there (Jev only
+    // when picked)
+    assert_eq!(Route::of("", small), Route::Chat { model: small.into() });
+    assert_eq!(Route::of("", ""), Route::Off);
     // picked
-    assert_eq!(Route::of("off", small, &all), Route::Off);
-    assert_eq!(Route::of("typesafe/jev-1.13", small, &none), Route::Jev { via: Via::TypeSafe, model: "jev-1.13.0".into() });
+    assert_eq!(Route::of("off", small), Route::Off);
+    assert_eq!(Route::of("typesafe/jev-1.13", small), Route::Jev { via: Via::TypeSafe, model: "jev-1.13.0".into() });
     assert_eq!(
-        Route::of("openrouter/typesafe/jev-1.13", small, &none),
+        Route::of("openrouter/typesafe/jev-1.13", small),
         Route::Jev { via: Via::OpenRouter, model: "typesafe/jev-1.13".into() }
     );
-    assert_eq!(Route::of("anthropic/claude-haiku-4-5", small, &all), Route::Chat { model: "anthropic/claude-haiku-4-5".into() });
-    assert_eq!(Route::of("off", small, &all).checker(), Checker::Off);
+    assert_eq!(Route::of("anthropic/claude-haiku-4-5", small), Route::Chat { model: "anthropic/claude-haiku-4-5".into() });
+    assert_eq!(Route::of("off", small).checker(), Checker::Off);
 }
 
 /// Design §4.3 and §12: nothing but the parts, a script they run, the
@@ -351,10 +342,18 @@ fn jev_through_typesafe_against_a_fake_server() {
 }
 
 #[test]
-fn jev_through_openrouter_and_the_default_chain() {
+fn jev_through_openrouter_when_picked() {
     let (port, seen) = server(|_| (200, answers(0.95, 0.95, 0.0)));
-    // unset: no TypeSafe key, OpenRouter's is there
+    // unset with OpenRouter's key there: never Jev (the small jobs
+    // model, none in this home)
     let (h, dir) = home(&format!("[providers.openrouter]\nbase_url = \"http://127.0.0.1:{port}/api/v1\"\n"));
+    let r = Runner::with(&h, Box::new(super::check::Wire::default()), env_with("OPENROUTER_API_KEY", "or-test-key-456"));
+    assert!(!matches!(r.route(), Route::Jev { .. }), "{:?}", r.route());
+    let _ = std::fs::remove_dir_all(dir);
+    // picked: Jev through OpenRouter
+    let (h, dir) = home(&format!(
+        "[roles]\nclassify = \"openrouter/typesafe/jev-1.13\"\n[providers.openrouter]\nbase_url = \"http://127.0.0.1:{port}/api/v1\"\n"
+    ));
     let r = Runner::with(&h, Box::new(super::check::Wire::default()), env_with("OPENROUTER_API_KEY", "or-test-key-456"));
     assert_eq!(r.route(), Route::Jev { via: Via::OpenRouter, model: "typesafe/jev-1.13".into() });
     assert!(matches!(r.check(&req("make lint")), CheckOut::Allow { .. }));

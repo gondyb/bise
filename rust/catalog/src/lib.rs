@@ -875,7 +875,7 @@ pub struct Setup {
     pub voice: voice::VoiceSetup,
     /// the checker's model (approvals, design §4.2): BISE_CLASSIFY_MODEL,
     /// else `[roles] classify` ("off" included), else small_model with
-    /// "default": with the keys, [`roles::checker_default`] picks Jev first
+    /// "default" ([`roles::checker_default`]; Jev only when picked)
     pub classify_model: String,
     pub classify_model_from: &'static str,
     /// config `compaction_threshold` as written (BISE-300): "450000" or
@@ -1073,8 +1073,7 @@ impl Setup {
         } else if let Some(m) = classify_cfg {
             (checker(m), "config")
         } else {
-            // unset: TypeSafe, OpenRouter, the small jobs model, by the
-            // keys (roles::checker_default); the last one here
+            // unset: the small jobs model (roles::checker_default)
             (small_model.clone(), "default")
         };
         let effort = effort_cfg.unwrap_or_default();

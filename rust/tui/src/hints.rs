@@ -52,15 +52,28 @@ thread_local! {
 }
 
 /// The words of [`Hint::FirstAuto`] for the checker on (designer, §8):
-/// Jev by TypeSafe, or the chat model in the role. Set once before the
-/// hint is asked for (it shows once per user).
+/// what leaves the machine, named after what `auto` resolves to. Set once
+/// before the hint is asked for (it shows once per user).
 pub(crate) fn set_auto_text(checker: &str, who: &str) {
-    let t = if checker == "jev" {
-        "in auto, commands that aren't clearly safe go to Jev by TypeSafe for a check (the command, the script it runs, and your request). /models changes it.".to_string()
-    } else {
-        format!("in auto, {who} checks the commands that aren't clearly safe. /models changes it.")
-    };
+    let t = auto_text(checker, who, &bise_catalog::Catalog::builtin());
     AUTO_TEXT.with(|c| c.set(Box::leak(t.into_boxed_str())));
+}
+
+/// The tip's words: `who` is the hub's `checker_who` (`TypeSafe`, or the
+/// chat model's `provider/id`); a provider without a key runs on this
+/// machine (Ollama, LM Studio).
+fn auto_text(checker: &str, who: &str, catalog: &bise_catalog::Catalog) -> String {
+    if checker == "jev" {
+        return format!("auto sends commands to Jev ({who}) to check them. /models changes it.");
+    }
+    let Some((pid, model)) = bise_catalog::split_name(who) else {
+        return format!("auto sends commands to {who} to check them. /models changes it.");
+    };
+    match catalog.provider(pid) {
+        Some(p) if p.key_env.is_empty() => format!("auto checks commands with {model}, on this machine. /models changes it."),
+        Some(p) => format!("auto sends commands to {} ({model}) to check them. /models changes it.", p.name),
+        None => format!("auto sends commands to {pid} ({model}) to check them. /models changes it."),
+    }
 }
 
 impl Hint {
@@ -475,6 +488,19 @@ pub(crate) fn covered(h: Hint) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// designer: the first-auto tip names what `auto` resolves to and
+    /// says what leaves the machine
+    #[test]
+    fn the_auto_tip_names_the_checker() {
+        let c = bise_catalog::Catalog::builtin();
+        assert_eq!(
+            auto_text("model", "mistral/mistral-small-latest", &c),
+            "auto sends commands to Mistral (mistral-small-latest) to check them. /models changes it."
+        );
+        assert_eq!(auto_text("model", "ollama/qwen3:8b", &c), "auto checks commands with qwen3:8b, on this machine. /models changes it.");
+        assert_eq!(auto_text("jev", "TypeSafe", &c), "auto sends commands to Jev (TypeSafe) to check them. /models changes it.");
+    }
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("bise-hints-{}-{}-{:?}", tag, std::process::id(), std::thread::current().id()));

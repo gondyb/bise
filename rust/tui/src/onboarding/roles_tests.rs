@@ -127,16 +127,17 @@ fn models_lists_each_role_with_its_provider_then_its_model() {
     assert!(line_of(&sc, "checker ").contains("auto · Mistral · mistral-small-latest"), "{sc}");
 }
 
-/// The checker's row, `design §4.2` and designer's words: Jev first,
-/// then a chat model, or off.
+/// The checker's row, `design §4.2` and designer's words: auto (the small
+/// jobs model), Jev's two routes, then a chat model, or off.
 #[test]
 fn the_checker_row_and_its_picker() {
     let _s = serial();
     let (e, hm) = home("checker", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY", "TYPESAFE_API_KEY"]);
     let mut o = open(&e, Open::Roles);
     let sc = screen(&o);
-    // unset, TypeSafe's key ready: Jev, dim like small jobs
-    assert!(line_of(&sc, "checker ").contains("auto · TypeSafe · jev-1.13"), "{sc}");
+    // unset, TypeSafe's key ready: still the small jobs model (Jev only
+    // when picked), dim like small jobs
+    assert!(line_of(&sc, "checker ").contains("auto · Mistral · mistral-small-latest"), "{sc}");
     while shown().get(o.sel).map(|r| r.id) != Some("classify") {
         o.on_key(key(KeyCode::Down), 1, &e);
     }
@@ -144,10 +145,11 @@ fn the_checker_row_and_its_picker() {
     assert!(sc.split_whitespace().collect::<Vec<_>>().join(" ").contains("checker: in auto, decides which commands run and which ask you."), "{sc}");
     o.on_key(key(KeyCode::Enter), 1, &e);
     let sc = screen(&o);
-    assert!(sc.contains("checker: which provider?") && sc.contains("now: auto · TypeSafe · jev-1.13"), "{sc}");
+    assert!(sc.contains("checker: which provider?") && sc.contains("now: auto · Mistral · mistral-small-latest"), "{sc}");
     assert!(sc.contains("the checker sees the command, the script it runs, and your request."), "{sc}");
-    assert!(line_of(&sc, "auto ").contains("TypeSafe · jev-1.13 · now"), "{sc}");
-    assert!(line_of(&sc, "TypeSafe ").contains("✓ ready · recommended"), "{sc}");
+    assert!(line_of(&sc, "auto ").contains("Mistral · mistral-small-latest · now"), "{sc}");
+    // designer: no tag on TypeSafe, like every other provider
+    assert_eq!(line_of(&sc, "TypeSafe ").trim_end().rsplit("TypeSafe").next().map(str::trim), Some("✓ ready"), "{sc}");
     assert!(line_of(&sc, "OpenRouter ").contains("not set up · jev through OpenRouter"), "{sc}");
     assert!(sc.contains("  ── or a chat model checks ──"), "{sc}");
     assert!(line_of(&sc, "Mistral ").contains("✓ ready · main, agents, small jobs use it"), "{sc}");
@@ -170,7 +172,7 @@ fn the_checker_row_and_its_picker() {
     assert!(line_of(&sc, "checker ").contains("TypeSafe") && line_of(&sc, "checker ").contains("jev-1.13"), "{sc}");
     // off: the row says so
     o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(line_of(&screen(&o), "TypeSafe ").contains("✓ ready · now · recommended"), "{}", screen(&o));
+    assert!(line_of(&screen(&o), "TypeSafe ").trim_end().ends_with("✓ ready · now"), "{}", screen(&o));
     o.sel = o.pick_rows("classify").iter().position(|r| *r == PRow::Off).unwrap();
     o.on_key(key(KeyCode::Enter), 1, &e);
     assert!(cfg(&hm).contains("classify = \"off\""), "{}", cfg(&hm));
