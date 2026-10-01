@@ -163,6 +163,9 @@ pub struct Agent {
     /// BISE-136: the private git worktree it works in (`gate.sh new`,
     /// `sb worktree`), when not its own workspace.
     pub place: Option<String>,
+    /// The branch checked out in `place` as the PR poller last read it
+    /// (None: detached, as `gate.sh new` makes it, or not read yet).
+    pub place_branch: Option<String>,
 }
 
 impl Agent {
@@ -323,6 +326,7 @@ impl State {
                 turn_started_ms: None,
                 activity: None,
                 place: None,
+                place_branch: None,
             },
         );
         st.order.push(MAIN.to_string());

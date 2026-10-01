@@ -14,6 +14,11 @@
 //! pr-hub fills [`Place::pr`] (`places(st, prs)`), pr-tui reads
 //! `places: [PlaceView]` in the TUI snapshot and `place_id` on each
 //! agent. Change them only with main and the wave 2 agents.
+//!
+//! BISE-136 (designer's call 8) adds a kind of id, not a type: a private
+//! worktree an agent told the hub about (`gate.sh new`) is a worktree
+//! place `pt:<path>` ([`private_id`]), its branch what it has checked
+//! out (None: detached, the views name it by its folder).
 
 use crate::model::{Lifecycle, Mode, State};
 use serde::{Deserialize, Serialize};
@@ -25,6 +30,29 @@ pub const SHARED: &str = "shared";
 /// The id of the worktree first made for the agent of dir `dir`.
 pub fn worktree_id(dir: &str) -> String {
     format!("wt:{}", dir)
+}
+
+/// BISE-136, designer's call 8: the id of a private worktree an agent
+/// told the hub about (`gate.sh new`, `sb worktree <path>`): `pt:<path>`.
+/// It is a worktree like any other (a row with its mark alone, a box
+/// shared), with no branch when detached: the views then name it by its
+/// folder, the path's last part.
+pub fn private_id(path: &str) -> String {
+    format!("pt:{}", path)
+}
+
+/// The path of a private worktree's id (None: not one).
+pub fn private_path(id: &str) -> Option<&str> {
+    id.strip_prefix("pt:")
+}
+
+/// The id of the place agent `a` works in: its private worktree when it
+/// told one (live agents only), else its workspace's place.
+pub fn id_of(a: &crate::model::Agent) -> String {
+    match &a.place {
+        Some(p) if a.lifecycle != Lifecycle::Archived => private_id(p),
+        _ => a.ws.place_id(&a.dir),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +181,29 @@ pub fn places(st: &State, prs: &BTreeMap<String, PrSnapshot>) -> Vec<Place> {
                 out.len() - 1
             }
         };
+        // BISE-136: an agent in a private worktree is in that place (its
+        // workspace's worktree stays, for its folder and its PR)
+        let i = match a.place.as_ref().filter(|_| live) {
+            Some(path) => {
+                let pid = private_id(path);
+                match out.iter().position(|p| p.id == pid) {
+                    Some(j) => j,
+                    None => {
+                        out.push(Place {
+                            id: pid.clone(),
+                            kind: PlaceKind::Worktree,
+                            path: path.clone(),
+                            branch: a.place_branch.clone(),
+                            base: None,
+                            agents: Vec::new(),
+                            pr: prs.get(&pid).cloned(),
+                        });
+                        out.len() - 1
+                    }
+                }
+            }
+            None => i,
+        };
         if live {
             out[i].agents.push(a.name.clone());
         }
@@ -269,6 +320,45 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].lid.as_deref(), Some("waits to land · 2nd"));
         assert_eq!(v[0].pr, None);
+    }
+
+    /// BISE-136, call 8: agents in a private worktree are in its place
+    /// (`pt:<path>`, a worktree, its branch the one read there), shared
+    /// when two are; an archived one leaves it; an agent of a hub
+    /// worktree that works in a private one leaves its box, the box
+    /// stays (its folder, its PR).
+    #[test]
+    fn a_private_worktree_is_a_place() {
+        let mut st = State::new("/w");
+        for n in ["a", "b", "c", "d"] {
+            st.test_task(n, "x");
+        }
+        st.agents.get_mut("a").unwrap().place = Some("/p/a-wt".into());
+        st.agents.get_mut("c").unwrap().place = Some("/p/a-wt".into());
+        st.agents.get_mut("c").unwrap().place_branch = Some("feat/x".into());
+        st.agents.get_mut("d").unwrap().ws = wt(Some("wt:d"), "/wt/d", "sb/d");
+        st.agents.get_mut("d").unwrap().place = Some("/p/d-wt".into());
+        let ps = places(&st, &BTreeMap::new());
+        let ids: Vec<&str> = ps.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["shared", "pt:/p/a-wt", "wt:d", "pt:/p/d-wt"]);
+        assert_eq!(ps[0].agents, ["main", "b"]);
+        assert_eq!((ps[1].kind, ps[1].path.as_str()), (PlaceKind::Worktree, "/p/a-wt"));
+        assert_eq!(ps[1].agents, ["a", "c"]);
+        // the first agent's read names it (they read the same folder)
+        assert_eq!(ps[1].branch, None);
+        assert!(ps[2].agents.is_empty() && ps[3].agents == ["d"]);
+        assert_eq!(id_of(&st.agents["c"]), "pt:/p/a-wt");
+        assert_eq!(private_path("pt:/p/a-wt"), Some("/p/a-wt"));
+        assert_eq!(private_path("wt:d"), None);
+        // archived: out of it, its id is its workspace's again
+        st.agents.get_mut("a").unwrap().lifecycle = Lifecycle::Archived;
+        let ps = places(&st, &BTreeMap::new());
+        assert_eq!(ps[1].agents, ["c"]);
+        assert_eq!(ps[1].branch.as_deref(), Some("feat/x"));
+        assert_eq!(id_of(&st.agents["a"]), "shared");
+        // the views: a worktree like any other
+        let v = views(&ps, &BTreeMap::new(), &BTreeMap::new());
+        assert!(v.iter().any(|p| p.id == "pt:/p/a-wt" && p.agents == ["c"]));
     }
 
     #[test]

@@ -81,6 +81,11 @@ pub struct Watch {
     pub path: String,
     /// The commit the branch started from (for `no PR yet · N commits`).
     pub base: Option<String>,
+    /// BISE-136: a private worktree (`gate.sh new`): follow what `path`
+    /// has checked out. `branch` is the one the hub last heard of (""
+    /// while detached: nothing to ask the forge); each round reads it
+    /// again, and its commits not on the trunk.
+    pub head: bool,
 }
 
 /// What the hub wants followed.
@@ -119,6 +124,10 @@ pub trait Git: Send {
     fn tip(&self, branch: &str) -> Option<String>;
     fn commits(&self, base: &str, branch: &str) -> Option<u32>;
     fn dirty(&self, worktree: &Path) -> Option<bool>;
+    /// BISE-136: what `worktree` has checked out, its branch (None:
+    /// detached), and its commits not on the trunk (the workspace's
+    /// HEAD). None: not a worktree (gone).
+    fn checkout(&self, worktree: &Path) -> Option<(Option<String>, Option<u32>)>;
 }
 
 /// The workspace's git.
@@ -143,6 +152,22 @@ impl Git for RepoGit {
         }
         crate::worktree::git(worktree, &["status", "--porcelain"]).ok().map(|s| !s.trim().is_empty())
     }
+    fn checkout(&self, worktree: &Path) -> Option<(Option<String>, Option<u32>)> {
+        if !worktree.exists() {
+            return None;
+        }
+        let head = crate::worktree::git(worktree, &["rev-parse", "--verify", "-q", "HEAD"]).ok()?;
+        let branch = crate::worktree::git(worktree, &["symbolic-ref", "-q", "--short", "HEAD"])
+            .ok()
+            .map(|b| b.trim().to_string())
+            .filter(|b| !b.is_empty());
+        let trunk = crate::worktree::git(&self.workspace, &["rev-parse", "--verify", "-q", "HEAD"]).ok();
+        let commits = trunk.and_then(|t| {
+            let range = format!("{}..{}", t.trim(), head.trim());
+            crate::worktree::git(worktree, &["rev-list", "--count", &range]).ok()?.trim().parse().ok()
+        });
+        Some((branch, commits))
+    }
 }
 
 /// The worker's state: what to follow, the cadence, the last answer, the
@@ -159,6 +184,9 @@ pub struct Watcher {
     /// Branch -> (tip, when it last moved, commits past the base).
     tips: BTreeMap<String, (Option<String>, u64, Option<u32>)>,
     tips_ms: Option<u64>,
+    /// BISE-136: place -> what its private worktree has checked out (its
+    /// branch, "" detached) and its commits not on the trunk.
+    heads: BTreeMap<String, (String, Option<u32>)>,
 }
 
 impl Watcher {
@@ -172,6 +200,7 @@ impl Watcher {
             prs: BTreeMap::new(),
             tips: BTreeMap::new(),
             tips_ms: None,
+            heads: BTreeMap::new(),
         }
     }
 
@@ -191,6 +220,7 @@ impl Watcher {
             .plan
             .watches
             .iter()
+            .filter(|w| !w.branch.is_empty())
             .filter(|w| self.prs.get(&w.branch).is_none_or(|p| p.state != PrState::Merged))
             .map(|w| w.branch.clone())
             .collect();
@@ -208,6 +238,17 @@ impl Watcher {
     fn read_tips(&mut self, now: u64) -> bool {
         let mut moved = false;
         for w in &self.plan.watches {
+            if w.head {
+                // what is checked out there now: a change is news for the
+                // hub (its branch, its held line), a first sight too
+                let (b, n) = self.git.checkout(Path::new(&w.path)).unwrap_or((None, None));
+                let now_head = (b.unwrap_or_default(), n);
+                moved |= self.heads.get(&w.place) != Some(&now_head);
+                self.heads.insert(w.place.clone(), now_head);
+            }
+            if w.branch.is_empty() {
+                continue;
+            }
             let tip = self.git.tip(&w.branch);
             let old = self.tips.get(&w.branch).cloned();
             match old {
@@ -225,6 +266,8 @@ impl Watcher {
         }
         let live: BTreeSet<&String> = self.plan.watches.iter().map(|w| &w.branch).collect();
         self.tips.retain(|b, _| live.contains(b));
+        let heads: BTreeSet<&String> = self.plan.watches.iter().filter(|w| w.head).map(|w| &w.place).collect();
+        self.heads.retain(|p, _| heads.contains(p));
         self.tips_ms = Some(now);
         moved
     }
@@ -235,9 +278,16 @@ impl Watcher {
             .iter()
             .map(|w| {
                 let (tip, _, commits) = self.tips.get(&w.branch).cloned().unwrap_or((None, 0, None));
+                // a private worktree: what it has checked out, as read
+                let (branch, commits) = match self.heads.get(&w.place).filter(|_| w.head) {
+                    Some((b, n)) => (b.clone(), *n),
+                    None => (w.branch.clone(), commits),
+                };
+                // the tip is the watched branch's: none for another one
+                let tip = tip.filter(|_| branch == w.branch);
                 Local {
                     place: w.place.clone(),
-                    branch: w.branch.clone(),
+                    branch,
                     tip,
                     commits,
                     dirty: merged.contains(&w.branch).then(|| self.git.dirty(Path::new(&w.path))).flatten(),
@@ -404,6 +454,15 @@ mod tests {
         fn dirty(&self, _w: &Path) -> Option<bool> {
             Some(false)
         }
+        /// `@<path>` in the tips: its branch ("" detached), `#<path>`:
+        /// its commit count.
+        fn checkout(&self, w: &Path) -> Option<(Option<String>, Option<u32>)> {
+            let t = self.tips.lock().unwrap();
+            let p = w.to_string_lossy();
+            let b = t.get(&format!("@{}", p))?.clone();
+            let n = t.get(&format!("#{}", p)).and_then(|n| n.parse().ok());
+            Some(((!b.is_empty()).then_some(b), n))
+        }
     }
 
     fn pr(branch: &str, n: u64, state: PrState, checks: Checks) -> PrSnapshot {
@@ -420,7 +479,7 @@ mod tests {
     }
 
     fn watch(b: &str) -> Watch {
-        Watch { place: format!("wt:{}", b), branch: b.into(), path: "/nowhere".into(), base: Some("base".into()) }
+        Watch { place: format!("wt:{}", b), branch: b.into(), path: "/nowhere".into(), base: Some("base".into()), head: false }
     }
 
     /// The thread and the real git: a repo with a branch 2 commits past
@@ -462,7 +521,7 @@ mod tests {
                 let _ = tx.send(r);
             }),
         );
-        let w = Watch { place: "wt:a".into(), branch: "sb/a".into(), path: root.to_string_lossy().into(), base: Some(base) };
+        let w = Watch { place: "wt:a".into(), branch: "sb/a".into(), path: root.to_string_lossy().into(), base: Some(base), head: false };
         p.plan(Plan { watches: vec![w], clients: true });
         let r = rx.recv_timeout(Duration::from_secs(10)).expect("a report");
         assert_eq!(r.local[0].tip.as_deref(), Some(tip.as_str()));
@@ -473,6 +532,49 @@ mod tests {
         p.plan(Plan { watches: p.last.clone().unwrap().watches, clients: true });
         drop(p);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// BISE-136: a private worktree's watch reads what it has checked
+    /// out each round: detached, nothing is asked of the forge, its count
+    /// goes to the hub; a branch checked out there is reported, and asked
+    /// once the hub's plan names it.
+    #[test]
+    fn a_private_worktree_is_followed_by_its_head() {
+        let answer = Arc::new(Mutex::new(Ok(vec![pr("feat/x", 7, PrState::Open, Checks::Pass)])));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let tips = Arc::new(Mutex::new(BTreeMap::from([("@/p/fix".to_string(), String::new()), ("#/p/fix".into(), "0".into())])));
+        let repo = RepoRef { host: "github.com".into(), owner: "o".into(), name: "r".into() };
+        let mut w = Watcher::new(
+            repo,
+            Box::new(Fake { answer: answer.clone(), calls: calls.clone() }),
+            Box::new(FakeGit { tips: tips.clone() }),
+        );
+        let head = |b: &str| Watch { place: "pt:/p/fix".into(), branch: b.into(), path: "/p/fix".into(), base: None, head: true };
+        w.plan(Plan { watches: vec![head("")], clients: true });
+        // a first sight: the hub hears it, the forge is not asked
+        let r = w.step(1_000).unwrap();
+        assert_eq!(r.prs, None);
+        assert_eq!((r.local[0].branch.as_str(), r.local[0].commits), ("", Some(0)));
+        assert!(calls.lock().unwrap().is_empty());
+        assert!(w.step(7_000).is_none(), "nothing moved");
+        // a commit: news
+        tips.lock().unwrap().insert("#/p/fix".into(), "2".into());
+        assert_eq!(w.step(13_000).unwrap().local[0].commits, Some(2));
+        // a branch checked out there: reported; the hub's next plan names it
+        tips.lock().unwrap().insert("@/p/fix".into(), "feat/x".into());
+        tips.lock().unwrap().insert("feat/x".into(), "t9".into());
+        let r = w.step(19_000).unwrap();
+        assert_eq!(r.local[0].branch, "feat/x");
+        assert_eq!(r.local[0].tip, None, "the tip is the watched branch's");
+        w.plan(Plan { watches: vec![head("feat/x")], clients: true });
+        let r = w.step(25_000).unwrap();
+        assert_eq!(calls.lock().unwrap().last().unwrap(), &["feat/x"]);
+        assert_eq!(r.prs.unwrap().unwrap()[0].number, 7);
+        assert_eq!(r.local[0].tip.as_deref(), Some("t9"));
+        // the worktree is gone: no branch, no count
+        tips.lock().unwrap().remove("@/p/fix");
+        let r = w.step(31_000).unwrap();
+        assert_eq!((r.local[0].branch.as_str(), r.local[0].commits), ("", None));
     }
 
     #[test]

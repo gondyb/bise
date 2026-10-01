@@ -713,6 +713,9 @@ struct Place {
     /// It came from `sb worktree` (gate.sh): the bash fallback no
     /// longer guesses for this agent.
     told: bool,
+    /// The branch checked out there, as the PR poller last read it
+    /// (None: detached, as `gate.sh new` makes it, or not read yet).
+    branch: Option<String>,
 }
 
 /// BISE-136 fallback: the linked git worktree a bash call starts in
@@ -985,9 +988,11 @@ impl Hub {
                 turn_started_ms: a["turn_ms"].as_u64(),
                 activity: self.activity.get(&name).cloned(),
                 place: None,
+                place_branch: None,
             };
             let mut agent = agent;
             agent.place = self.place_of(&agent);
+            agent.place_branch = self.place_branch_of(&agent);
             if self.on_you.contains(&agent.name) {
                 agent.waiting = true;
                 agent.waiting_on = Some("you".into());
@@ -1116,6 +1121,43 @@ impl Hub {
         (!p.is_empty() && *p != a.ws.path).then(|| p.clone())
     }
 
+    /// The branch checked out in `a`'s private worktree, as the PR
+    /// poller last read it (None: detached, or none read yet).
+    fn place_branch_of(&self, a: &Agent) -> Option<String> {
+        self.place_of(a)?;
+        self.places.get(&a.dir)?.branch.clone()
+    }
+
+    /// BISE-136: the PR poller read what private worktree `path` has
+    /// checked out (`branch` "": detached). A change: its agents' places
+    /// carry it (the views, the next plan asks the forge about it).
+    fn private_branch_in(&mut self, path: &str, branch: &str) {
+        let branch = (!branch.is_empty()).then(|| branch.to_string());
+        let mut changed = false;
+        for p in self.places.values_mut().filter(|p| p.path == path) {
+            if p.branch != branch {
+                p.branch = branch.clone();
+                changed = true;
+            }
+        }
+        if !changed {
+            return;
+        }
+        for a in self.st.agents.values_mut().filter(|a| a.place.as_deref() == Some(path)) {
+            a.place_branch = branch.clone();
+        }
+        self.dirty = true;
+    }
+
+    /// `id` is a private worktree with no branch checked out (as far as
+    /// the poller read).
+    fn detached_private(&self, id: &str) -> bool {
+        crate::place::private_path(id).is_some_and(|path| {
+            let mut ps = self.places.values().filter(|p| p.path == path).peekable();
+            ps.peek().is_some() && ps.all(|p| p.branch.is_none())
+        })
+    }
+
     /// Record where `agent` works; `told`: from `sb worktree` (else the
     /// bash fallback, ignored once the agent told).
     fn set_place(&mut self, agent: &str, path: String, told: bool) {
@@ -1125,11 +1167,14 @@ impl Hub {
         if !told && self.places.get(&dir).is_some_and(|p| p.told || p.path == path) {
             return;
         }
-        self.places.insert(dir, Place { path, told });
+        // the same folder keeps the branch read; another is read anew
+        let branch = self.places.get(&dir).filter(|p| p.path == path).and_then(|p| p.branch.clone());
+        self.places.insert(dir, Place { path, told, branch });
         if let Some(a) = self.st.agents.get(agent).cloned() {
-            let place = self.place_of(&a);
+            let (place, branch) = (self.place_of(&a), self.place_branch_of(&a));
             if let Some(a) = self.st.agents.get_mut(agent) {
                 a.place = place;
+                a.place_branch = branch;
             }
         }
         self.dirty = true;
@@ -1146,7 +1191,11 @@ impl Hub {
             .into_iter()
             .filter(|p| p.kind == crate::place::PlaceKind::Worktree)
             .filter_map(|p| {
-                Some(crate::forge::poll::Watch { branch: p.branch?, place: p.id, path: p.path, base: p.base })
+                // BISE-136: a private worktree is followed by what it has
+                // checked out (its branch "" while detached or not read)
+                let head = crate::place::private_path(&p.id).is_some();
+                let branch = if head { p.branch.unwrap_or_default() } else { p.branch? };
+                Some(crate::forge::poll::Watch { branch, place: p.id, path: p.path, base: p.base, head })
             })
             .collect()
     }
@@ -1156,18 +1205,36 @@ impl Hub {
     /// held line of a place with no PR yet, a merged PR's cleanup.
     fn prs_in(&mut self, fx: &mut Fx, env: &mut dyn Env, r: crate::forge::poll::Report) {
         use crate::forge::{self, PrEvent};
+        // BISE-136: what each private worktree has checked out first (its
+        // place's branch, the PR below is matched against it)
+        for l in &r.local {
+            if let Some(path) = crate::place::private_path(&l.place) {
+                self.private_branch_in(path, &l.branch);
+            }
+        }
         let places = crate::place::places(&self.st, &self.prs);
         let place = |id: &str| places.iter().find(|p| p.id == id && p.kind == crate::place::PlaceKind::Worktree);
         for l in &r.local {
             if place(&l.place).is_none() {
                 continue;
             }
-            if let Some(n) = l.commits {
-                let lid = forge::no_pr_lid(n);
-                if self.pr_lids.get(&l.place) != Some(&lid) {
-                    self.pr_lids.insert(l.place.clone(), lid);
-                    self.dirty = true;
+            // designer's call 8: a detached private worktree with no
+            // commit of its own has nothing to say (no held line)
+            let detached = crate::place::private_path(&l.place).is_some() && l.branch.is_empty();
+            match l.commits {
+                Some(0) if detached => {
+                    if self.pr_lids.remove(&l.place).is_some() {
+                        self.dirty = true;
+                    }
                 }
+                Some(n) => {
+                    let lid = forge::no_pr_lid(n);
+                    if self.pr_lids.get(&l.place) != Some(&lid) {
+                        self.pr_lids.insert(l.place.clone(), lid);
+                        self.dirty = true;
+                    }
+                }
+                None => {}
             }
         }
         let prs = match r.prs {
@@ -1210,7 +1277,10 @@ impl Hub {
                     }
                 }
             }
-            if let Some(pr) = new.filter(|pr| pr.state == crate::place::PrState::Merged) {
+            // a private worktree is its agent's (gate.sh done removes
+            // it): a merge archives no one there
+            let private = crate::place::private_path(&l.place).is_some();
+            if let Some(pr) = new.filter(|pr| pr.state == crate::place::PrState::Merged && !private) {
                 let agents = p.agents.clone();
                 self.pr_cleanup(fx, env, l, pr, &agents);
             }
@@ -1267,7 +1337,10 @@ impl Hub {
         // trunk flow: a branch lands on main, it never waits for a PR
         let no_pr = if self.flow == Some(crate::flow::FlowMode::Trunk) { &BTreeMap::new() } else { &self.pr_lids };
         for (id, l) in no_pr {
-            if !self.prs.contains_key(id) && self.pr_ok_ms.contains_key(id) {
+            // a detached private worktree (BISE-136) has no branch to ask
+            // the forge about: its count shows without an answer
+            let asked = self.pr_ok_ms.contains_key(id) || self.detached_private(id);
+            if !self.prs.contains_key(id) && asked {
                 lids.entry(id.clone()).or_insert_with(|| l.clone());
             }
         }
@@ -1305,7 +1378,8 @@ impl Hub {
                     // BISE-136: a private worktree (gate.sh new), else null
                     "place": a.place,
                     // dev-flow §3.1: the id of the place it is in (`places`)
-                    "place_id": a.ws.place_id(&a.dir),
+                    // (BISE-136: its private worktree's, `pt:<path>`)
+                    "place_id": crate::place::id_of(a),
                     "created_ms": a.created_ms,
                     "note": a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default(),
                     "report": a.last_report.as_ref().map(|r| clip(&one_line(&r.summary), 200)),

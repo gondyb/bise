@@ -197,6 +197,66 @@ fn a_worktree_with_nothing_to_say_is_not_shown() {
     assert!(r.iter().any(|l| l == "  3 ∿ login-fix     5m       ψ"), "{}", show(&r));
 }
 
+/// Designer's call 8 (BISE-136): a private worktree (`gate.sh new`, id
+/// `pt:<path>`) follows the one rule. Alone: a row with `ψ` dim; held,
+/// its count then `ψ <task folder>` (detached, no branch); no commit of
+/// its own: no held line. Shared by two agents: a box named by the
+/// folder. A branch checked out there replaces the folder everywhere,
+/// and its PR gets the `↑` like any worktree's.
+#[test]
+fn a_private_worktree_is_a_worktree() {
+    let path = "/u/.bise/worktrees/harness-3abb/fix/harness";
+    assert_eq!(places::folder_of(path), "fix");
+    assert_eq!(places::folder_of("/tmp/fix-wt/"), "fix-wt");
+    let private = |agents: &[&str], lid: Option<&str>| Place {
+        id: format!("pt:{path}"),
+        branch: None,
+        agents: agents.iter().map(|a| a.to_string()).collect(),
+        pr: None,
+        lid: lid.map(Into::into),
+    };
+    let mut app = mock();
+    app.sb.agents.push(Agent { place: path.into(), ..agent("fix", "idle", &format!("pt:{path}")) });
+    app.sb.places.push(private(&["fix"], Some("no PR yet · 2 commits")));
+    let r = rows(&app, panel_w(150), 30);
+    let fix = r.iter().position(|l| l.contains(" fix ")).unwrap_or_else(|| panic!("{}", show(&r)));
+    assert_eq!(r[fix], "  9 ○ fix                    ψ", "{}", show(&r));
+    assert!(r[fix - 1].contains("docs"), "with the solo rows, by number: {}", show(&r));
+    let (buf, _) = buffer(&app, panel_w(150), 30);
+    assert_eq!(buf[(panel_w(150) - 1, fix as u16)].fg, dim());
+    hold(&mut app);
+    let r = rows(&app, panel_w(150), 32);
+    let fix = r.iter().position(|l| l.contains(" fix ")).unwrap();
+    assert!(r[fix + 1].starts_with("      no PR yet · 2 commits"), "{}", show(&r));
+    let words = app.sb.places[6].words_line(Some("fix"), 60).unwrap();
+    let t: String = words.spans.iter().map(|s| s.content.to_string()).collect();
+    assert_eq!(t, "     no PR yet · 2 commits · ψ fix");
+    // detached, no commit of its own: nothing to say
+    assert!(private(&["fix"], None).words_line(Some("fix"), 60).is_none());
+    // the divider: the folder
+    app.sb.focus = "fix".into();
+    assert_eq!(panel::viewed_who(&app).place.as_deref(), Some("fix"));
+    // two agents in it: one box, the folder in its border
+    let mut app = mock();
+    for n in ["fix", "fix-2"] {
+        app.sb.agents.push(Agent { place: path.into(), ..agent(n, "working", &format!("pt:{path}")) });
+    }
+    app.sb.places.push(private(&["fix", "fix-2"], None));
+    let r = rows(&app, panel_w(150), 30);
+    let top = r.iter().position(|l| l.starts_with("╭─ ψ fix ")).unwrap_or_else(|| panic!("{}", show(&r)));
+    assert!(r[top].ends_with('─') && !r[top].contains('↑'), "{}", show(&r));
+    assert!(r[top + 1].starts_with("│ 9 ∿ fix") && r[top + 2].starts_with('╰') && r[top + 2].contains("fix-2"), "{}", show(&r));
+    assert!(!r.iter().any(|l| l.ends_with('ψ') && l.contains("fix")), "no ψ in the box's rows: {}", show(&r));
+    // a branch checked out there, with a PR: its name and its ↑
+    app.sb.places[6].branch = Some("feat/login".into());
+    app.sb.places[6].pr = Some(pr(420, "pending", "pass"));
+    let r = rows(&app, panel_w(150), 30);
+    assert!(r.iter().any(|l| l.starts_with("╭─ ψ feat/login ") && l.ends_with("↑ ─")), "{}", show(&r));
+    app.sb.focus = "fix".into();
+    let who = panel::viewed_who(&app);
+    assert_eq!((who.place.as_deref(), who.with.clone()), (Some("feat/login"), vec!["fix-2".to_string()]));
+}
+
 /// The marks' colors: ↑ red when checks fail, accent only through an
 /// inbox item (ready to merge), faint draft, dim open; ψ and … dim; the
 /// shared box's border unchanged.

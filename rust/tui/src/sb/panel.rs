@@ -223,7 +223,8 @@ pub(super) fn fit(s: &str, max: usize) -> String {
 /// BISE-136: where `a` works when it is not the shared checkout, for
 /// `ψ {label}`: its hub worktree's branch (`sb spawn --worktree`,
 /// `/isolate`), else the name of the private worktree it told the hub
-/// about (`gate.sh new`: `/tmp/<task>-wt`). None: the shared checkout,
+/// about ([`super::places::folder_of`]: `gate.sh new`'s task folder, or
+/// `/tmp/<task>-wt`'s last part). None: the shared checkout,
 /// which shows nothing (quiet is normal).
 pub(crate) fn place_label(a: &Agent) -> Option<String> {
     let base = |p: &str| p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string();
@@ -233,7 +234,7 @@ pub(crate) fn place_label(a: &Agent) -> Option<String> {
     if a.mode == "worktree" {
         return Some(base(&a.path));
     }
-    (!a.place.is_empty()).then(|| base(&a.place))
+    (!a.place.is_empty()).then(|| super::places::folder_of(&a.place))
 }
 
 /// The row of live agent `a`, entry `i` of the panel, number `num`
@@ -936,7 +937,7 @@ pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
         model: if a.model.is_empty() { String::new() } else { crate::models::long_name(&a.model) },
         effort: a.effort.clone(),
         tag: crate::models::tag(&a.model, &a.effort, &others),
-        place: box_of.and_then(|p| p.branch.clone()).or_else(|| place_label(a)),
+        place: box_of.and_then(|p| p.label()).or_else(|| place_label(a)),
         mode: sb.approvals.mode.clone(),
         flash: crate::keybar::flashing(&sb.approvals),
         with: box_of

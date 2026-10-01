@@ -2140,6 +2140,70 @@ fn an_agent_says_where_it_works() {
     let _ = std::fs::remove_dir_all(&wt);
 }
 
+/// Designer's call 8 (BISE-136): a private worktree is a place like any
+/// worktree (`pt:<path>`): the snapshot's `places` and its agents'
+/// `place_id`, one place for two agents, a watch on what it has checked
+/// out. Detached with commits: `no PR yet · 2 commits` with no forge
+/// answer (no branch to ask about); with none of its own: no held line.
+/// A branch read there names the place and is asked about; a merged PR
+/// archives no one in it.
+#[test]
+fn a_private_worktree_is_a_place() {
+    use crate::forge::poll::{Local, Report};
+    use crate::place::{Checks, PrSnapshot, PrState, Review};
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.spawn_task("api");
+    for a in ["docs", "api"] {
+        t.req(a, AgentReq::Worktree { path: "/p/docs-wt".into() });
+    }
+    let view = |t: &T| {
+        let snap = t.hub.snapshot(0);
+        snap["places"].as_array().unwrap().iter().find(|p| p["id"] == "pt:/p/docs-wt").cloned().unwrap_or(Value::Null)
+    };
+    let snap = t.hub.snapshot(0);
+    let docs = snap["agents"].as_array().unwrap().iter().find(|a| a["name"] == "docs").unwrap().clone();
+    assert_eq!(docs["place_id"], "pt:/p/docs-wt");
+    assert_eq!(view(&t)["agents"], json!(["docs", "api"]));
+    assert_eq!(view(&t)["branch"], Value::Null);
+    let w = t.hub.pr_watches();
+    assert_eq!(w.len(), 1, "{:?}", w);
+    assert!(w[0].head && w[0].branch.is_empty() && w[0].path == "/p/docs-wt");
+    let read = |branch: &str, commits: u32| {
+        let local = vec![Local { place: "pt:/p/docs-wt".into(), branch: branch.into(), tip: None, commits: Some(commits), dirty: None }];
+        Input::Prs(Report { at_ms: 1_000, prs: None, local })
+    };
+    t.go(read("", 2));
+    assert_eq!(view(&t)["lid"], "no PR yet · 2 commits");
+    t.go(read("", 0));
+    assert_eq!(view(&t)["lid"], Value::Null);
+    // a branch checked out there: the place's name, the forge's question
+    let fx = t.go(read("feat/x", 0));
+    assert!(fx.contains(&Effect::State), "{:?}", fx);
+    assert_eq!(view(&t)["branch"], "feat/x");
+    assert_eq!(t.hub.pr_watches()[0].branch, "feat/x");
+    // merged: its agents stay
+    let merged = PrSnapshot {
+        number: 9,
+        url: "u".into(),
+        branch: "feat/x".into(),
+        head_oid: "h".into(),
+        state: PrState::Merged,
+        review: Review::Approved,
+        checks: Checks::Pass,
+        updated_at: "t".into(),
+    };
+    let local = vec![Local { place: "pt:/p/docs-wt".into(), branch: "feat/x".into(), tip: Some("h".into()), commits: Some(0), dirty: Some(false) }];
+    let fx = t.go(Input::Prs(Report { at_ms: 2_000, prs: Some(Ok(vec![merged])), local }));
+    assert!(!format!("{:?}", fx).contains("\"drop\""), "{:?}", fx);
+    assert_eq!(view(&t)["agents"], json!(["docs", "api"]));
+    // none: back in the shared folder, the place goes
+    for a in ["docs", "api"] {
+        t.req(a, AgentReq::Worktree { path: String::new() });
+    }
+    assert_eq!(view(&t), Value::Null);
+}
+
 
 /// BISE-135: `/model` and `/reasoning` choose for the agent in view; the
 /// daemon checks and writes (Effect::Choose), nothing goes to a REPL.
@@ -2535,6 +2599,9 @@ mod prs {
         }
         fn dirty(&self, _w: &std::path::Path) -> Option<bool> {
             Some(false)
+        }
+        fn checkout(&self, _w: &std::path::Path) -> Option<(Option<String>, Option<u32>)> {
+            None
         }
     }
 

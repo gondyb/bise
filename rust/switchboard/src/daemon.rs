@@ -1007,7 +1007,7 @@ impl Shell {
             let section = devflow::main_section(flow.as_ref(), style.as_deref());
             return prompts::main_role(&self.hub.workspace, tmp, &section);
         }
-        let id = a.ws.place_id(&a.dir);
+        let id = crate::place::id_of(a);
         let others: Vec<String> = crate::place::places(&self.hub.st, &self.hub.prs)
             .into_iter()
             .find(|p| p.id == id)

@@ -154,6 +154,19 @@ fn no_color() -> bool {
 }
 
 impl Place {
+    /// Its name in a border, a divider, a words line: its branch; a
+    /// private worktree with none (BISE-136, `gate.sh new` detaches it,
+    /// id `pt:<path>`) its folder, the path's last part (designer's call
+    /// 8). None: a hub worktree with no branch.
+    pub(crate) fn label(&self) -> Option<String> {
+        self.branch.clone().or_else(|| self.folder())
+    }
+
+    /// The folder of a private worktree with no branch checked out.
+    fn folder(&self) -> Option<String> {
+        Some(folder_of(self.id.strip_prefix("pt:")?)).filter(|f| !f.is_empty())
+    }
+
     /// The PR when it is open or a draft.
     pub(crate) fn live_pr(&self) -> Option<&Pr> {
         self.pr.as_ref().filter(|p| p.live())
@@ -188,7 +201,7 @@ impl Place {
         let tail = if right.is_empty() { 0 } else { right_w + 3 };
         let fixed = 3 + theme::glyph(G_WORKTREE).width() + 1 + 1 + tail;
         let room = w.saturating_sub(fixed + 1);
-        let branch = match &self.branch {
+        let branch = match &self.label() {
             Some(b) if room >= 2 => panel::fit(b, room),
             _ => String::new(),
         };
@@ -258,6 +271,13 @@ impl Place {
                 spans.push(Span::styled(format!("{} {}", theme::glyph(G_WORKTREE), b), d));
             }
         }
+        // a detached private worktree: its folder, only after something
+        // to say (no commit of its own: no line, designer's call 8)
+        if let (Some(_), None, Some(f)) = (name, &self.branch, self.folder()) {
+            if !spans.is_empty() {
+                spans.push(Span::styled(format!(" · {} {}", theme::glyph(G_WORKTREE), f), d));
+            }
+        }
         if spans.is_empty() {
             return None;
         }
@@ -272,7 +292,7 @@ impl Place {
     pub(crate) fn orphan_row(&self, asks: bool, w: usize) -> Line<'static> {
         let mark = self.row_mark(asks);
         let room = w.saturating_sub(5 + 3 + 1);
-        let branch = panel::fit(self.branch.as_deref().unwrap_or(&self.id), room);
+        let branch = panel::fit(&self.label().unwrap_or_else(|| self.id.clone()), room);
         let pad = w.saturating_sub(5 + branch.width() + 3 + 1);
         Line::from(vec![
             Span::raw("     "),
@@ -319,6 +339,18 @@ pub(crate) fn fit_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'stat
         break;
     }
     out
+}
+
+/// The name of a private worktree's folder (BISE-136): the task's name
+/// for `gate.sh new`'s `<bise home>/worktrees/<project>/<name>/<repo>`
+/// (its last part is the repo's, the same for every task), else the
+/// path's last part (`/tmp/fix-wt`).
+pub(crate) fn folder_of(path: &str) -> String {
+    let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+    match parts.iter().rposition(|p| *p == "worktrees") {
+        Some(i) if parts.len() == i + 4 => parts[i + 2].to_string(),
+        _ => parts.last().copied().unwrap_or(path).to_string(),
+    }
 }
 
 /// The header's held count: the worktrees with an open PR (`↑ 2 PRs`).
