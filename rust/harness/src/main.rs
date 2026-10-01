@@ -765,7 +765,10 @@ fn main() -> std::io::Result<()> {
     // screen; appended here, it survives every generation.
     let err_path = log_dir.join(format!("harness-{}.err", std::process::id()));
 
-    let tools_note = switchboard::tools_env::tools_note_for(&std::env::var("PATH").unwrap_or_default());
+    let tools_note = switchboard::tools_env::session_note(
+        &std::env::var("PATH").unwrap_or_default(),
+        &std::env::current_dir().unwrap_or_default(),
+    );
     let mut reloads = 0usize;
     // a crashed REPL respawns on the checkpointed session (written
     // before every provider call, so the turn's history up to its last

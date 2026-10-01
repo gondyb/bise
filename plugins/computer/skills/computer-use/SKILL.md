@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Drive the user's web browser (Chrome, Edge, Brave, Vivaldi, Opera, Arc) and Mac apps in the background, with his logins, from run_typescript - open pages in your own tab group, read them, click, type, fill forms, check boxes, take screenshots, and drive apps like Figma, Notes or TextEdit through Accessibility. Load it whenever a task needs a browser, a website, a web app with no connector, or a desktop app - looking something up on a site, checking a page or a deploy, filling a form, reading a dashboard, testing a local web page, or anything the user would otherwise do by hand in a browser or an app.
+description: Computer use - you can drive the user's own browser (Chrome, Edge, Brave, Vivaldi, Opera, Arc) in the background, with his logins, and control his Mac apps (Notes, TextEdit, Figma...) through Accessibility, from run_typescript - open pages in your own tab group, read them, click, type, fill forms, check boxes, take screenshots of a tab or an app window. Load it when the user says computer use, or asks about his browser, his tabs, Chrome, a web page or an app, or when a task needs to see, read, click or type in one - looking something up on a site, checking a page or a deploy, filling a form, reading a dashboard, testing a local web page, or anything the user would otherwise do by hand in a browser or an app. The shell (open, osascript) can only launch a URL or list tab titles: it cannot read or act in a page.
 ---
 
 # Computer use

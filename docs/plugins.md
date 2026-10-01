@@ -207,7 +207,14 @@ agent goes idle, it compares: a REPL whose fingerprint moved relaunches
 at its next idle, same session and port (the path a key change and a
 version switch take, `switch_idle_repls`); a busy one finishes its turn
 first. The new REPL starts a fresh bridge and lists the new skills in its
-prompt. Only REPLs restart: the TUI and the hub keep running. Test:
+prompt: a restored session keeps its saved system prompt (prompt cache,
+BISE-268) unless the hub sets `BEND_FRESH_PROMPT=1`, which it does when
+the plugins fingerprint differs from the one its prompt was last built
+with (`<agent dir>/prompt-plugins.fp`; a version switch or a TUI restart
+counts too). The prompt's `## Plugins` section (BEND_TOOLS_NOTE,
+`tools_env::session_note`) names each loaded plugin, its description and
+its skills, so an agent knows what a plugin is for before it searches.
+Only REPLs restart: the TUI and the hub keep running. Test:
 `tests/plugins_reload_e2e.py` (install → relaunch at idle, the
 conversation kept, the plugin loaded; nothing changes → no relaunch; a
 disable → a relaunch).

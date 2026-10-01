@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "computer",
   "version": "0.1.0",
-  "description": "computer use: your browser (Chrome, Edge, Brave, Vivaldi, Opera, Arc) and Mac apps, in the background (/computer-use sets it up)",
+  "description": "computer use: you can drive the user's own browser (Chrome, Edge, Brave, Vivaldi, Opera, Arc) in background tabs of your own tab group, with his logins (open pages, read them, click, type, fill forms, take screenshots), and control his Mac apps (Notes, TextEdit, Figma...) through Accessibility, without taking his screen or his active tab. Use it when the user says computer use, or when a task needs to see or act in a web page, a tab or an app; /computer-use sets it up",
   "homepage": "https://bise.dev",
   "license": "Apache-2.0"
 }

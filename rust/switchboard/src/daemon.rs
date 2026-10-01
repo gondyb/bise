@@ -1307,6 +1307,7 @@ impl Shell {
                     .to_string(),
             )
             .env_remove("BEND_CONTINUE")
+            .env_remove("BEND_FRESH_PROMPT")
             .env_remove("BEND_CRASH_NOTE")
             // this hub's sb-core is not the agents' business (a hub an
             // agent starts picks its own)
@@ -1332,7 +1333,14 @@ impl Shell {
         crate::procs::own_session(&mut cmd);
         if resume && cont && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
+            // its plugins changed since its prompt was built: the restored
+            // session takes this start's prompt (runtime/persist.bend
+            // with_cfg), else it never learns of a new plugin
+            if prompt_is_stale(&adir, fp) {
+                cmd.env("BEND_FRESH_PROMPT", "1");
+            }
         }
+        let _ = std::fs::write(adir.join(PROMPT_PLUGINS_FILE), fp.to_string());
         if let Some(n) = crash_note {
             cmd.env("BEND_CRASH_NOTE", n);
         }
@@ -1346,10 +1354,11 @@ impl Shell {
             stall_for_tests();
             // sb, the hub's PATH, the user's login-shell PATH, the
             // standard dirs; the model is told once whether rg and git
-            // are there (BISE-166). Here, off the hub's loop: the first
-            // spawn may wait for the login shell (read once, at most 3 s)
+            // are there (BISE-166), then which plugins it has and what
+            // for. Here, off the hub's loop: the first spawn may wait for
+            // the login shell (read once, at most 3 s)
             let agent_path = crate::tools_env::hub_agent_path(&paths.bin_dir());
-            cmd.env("BEND_TOOLS_NOTE", crate::tools_env::tools_note_for(&agent_path))
+            cmd.env("BEND_TOOLS_NOTE", crate::tools_env::session_note(&agent_path, &workdir))
                 .env("PATH", agent_path);
             // the AGENTS.md files of its working folder (a task: its
             // worktree's), read again at each start and /reload (BISE-232)
@@ -2385,6 +2394,17 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
 /// A hash of a REPL's spawn keys (never the keys themselves, kept).
 /// The plugins fingerprint of a workspace's roots (built-in, user,
 /// `<ws>/.agents/plugins`, the enable state).
+/// In an agent's dir: the plugins fingerprint its REPL's prompt was
+/// last built with.
+const PROMPT_PLUGINS_FILE: &str = "prompt-plugins.fp";
+
+/// Whether a session's prompt predates its plugins: the fingerprint of
+/// its last start differs from `fp` (none recorded: a session from
+/// before this file, its prompt rebuilt once).
+fn prompt_is_stale(adir: &Path, fp: u64) -> bool {
+    std::fs::read_to_string(adir.join(PROMPT_PLUGINS_FILE)).map(|s| s.trim() != fp.to_string()).unwrap_or(true)
+}
+
 fn plugins_fingerprint(ws: &Path) -> u64 {
     bend_plugins::resolve::fingerprint(&bend_plugins::resolve::Roots::standard(Some(ws)))
 }

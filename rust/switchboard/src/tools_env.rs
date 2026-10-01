@@ -286,6 +286,62 @@ pub fn tools_note_for(path: &str) -> String {
     }
 }
 
+/// The loaded plugins of a workspace, as (name, description, skills)
+/// for [`plugins_note`]: built-in, user and workspace ones, the enable
+/// state applied (`bend_plugins::resolve`).
+pub fn loaded_plugins(workspace: &Path) -> Vec<(String, String, Vec<String>)> {
+    let res = bend_plugins::resolve::resolve(&bend_plugins::resolve::Roots::standard(Some(workspace)));
+    res.loaded()
+        .map(|p| {
+            let skills = p.skills.iter().map(|s| format!("{}:{}", p.namespace, s.name)).collect();
+            (p.name.clone(), p.description.clone().unwrap_or_default(), skills)
+        })
+        .collect()
+}
+
+/// The prompt section naming the session's plugins and what each one
+/// is for (None: no plugin). The tool groups line only says `computer
+/// (7 functions)` and a skill is one entry among many: without this an
+/// agent with computer use answered "i can't see your browser" and ran
+/// `open -a` (cu-try, 2026-10-01).
+pub fn plugins_note(plugins: &[(String, String, Vec<String>)]) -> Option<String> {
+    if plugins.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = plugins
+        .iter()
+        .map(|(name, desc, skills)| {
+            let mut line = format!("- `{}`", name);
+            let desc = desc.trim();
+            if !desc.is_empty() {
+                line.push_str(&format!(": {}", desc));
+            }
+            if !skills.is_empty() {
+                let names: Vec<String> = skills.iter().map(|s| format!("`{}`", s)).collect();
+                line.push_str(&format!(" (skills: {})", names.join(", ")));
+            }
+            line
+        })
+        .collect();
+    Some(format!(
+        "## Plugins
+
+What this session can do besides the shell and the connectors. Their tools are in `tools.<group>`, their skills in `<available-skills>`. When a request matches a plugin, it is an option: load its skill and use it.
+
+{}",
+        lines.join("\n")
+    ))
+}
+
+/// The whole BEND_TOOLS_NOTE: the shell tools, then the plugins.
+pub fn session_note(path: &str, workspace: &Path) -> String {
+    let note = tools_note_for(path);
+    match plugins_note(&loaded_plugins(workspace)) {
+        Some(p) => format!("{}\n\n{}", note, p),
+        None => note,
+    }
+}
+
 /// The agent's folders in its tool env (approvals-design.md §7.1):
 /// `TMPDIR`, `TMP`, `TEMP` and `TMUX_TMPDIR` are its `tmp/` (mktemp,
 /// python tempfile, tmux sockets land there, never in /tmp); its
@@ -552,6 +608,34 @@ mod tests {
         assert!(note.ends_with("\n- Also installed: `jq`."), "{}", note);
         let empty = tmp("clis-none");
         assert!(!tools_note_for(empty.to_str().unwrap()).contains("Also installed"));
+    }
+
+    #[test]
+    fn the_plugins_note_names_each_plugin_its_use_and_skills() {
+        assert_eq!(plugins_note(&[]), None);
+        let note = plugins_note(&[
+            ("computer".into(), "computer use: the user's browser and Mac apps".into(), vec!["computer:computer-use".into()]),
+            ("hn".into(), " ".into(), vec![]),
+        ])
+        .unwrap();
+        assert!(note.starts_with("## Plugins\n\n"), "{}", note);
+        assert!(
+            note.contains("\n- `computer`: computer use: the user's browser and Mac apps (skills: `computer:computer-use`)\n- `hn`"),
+            "{}",
+            note
+        );
+        assert!(note.ends_with("- `hn`"), "{}", note);
+    }
+
+    #[test]
+    fn the_built_in_computer_plugin_says_it_drives_the_browser_and_apps() {
+        // the repo's own plugins/ (the built-in root of a dev build)
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/computer/plugin.json");
+        let m: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(root).unwrap()).unwrap();
+        let d = m["description"].as_str().unwrap().to_lowercase();
+        for w in ["computer use", "browser", "tab", "mac apps", "click", "type"] {
+            assert!(d.contains(w), "{} not in {}", w, d);
+        }
     }
 
     #[test]

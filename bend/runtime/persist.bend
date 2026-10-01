@@ -188,57 +188,69 @@ def load.greeted(+sess: T.Session) -> IO(Load):
 # (BISE-268: the checkpoint cuts each tool's text to its first line, so
 # a restored session sent other tool texts than the fresh one; tools
 # come first in the prompt cache, so every restart, a version switch or
-# a crash, missed the whole cache, and the model read the cut texts)
-def with_cfg.merge(+saved: T.Cfg, +c: T.Cfg) -> T.Cfg:
+# a crash, missed the whole cache, and the model read the cut texts).
+# BEND_FRESH_PROMPT=1 (the hub: its plugins changed since the session's
+# prompt was built) takes this start's system prompt too: a session born
+# before a plugin never knew it had one (cu-try: "i can't see your
+# browser" with computer use loaded). One cache miss, only then.
+def with_cfg.sys(fresh: Bool, +saved: String, +now: String) -> String:
+  match fresh:
+    case True{}:
+      now
+    case False{}:
+      saved
+
+def with_cfg.merge(+saved: T.Cfg, +c: T.Cfg, fresh: Bool) -> T.Cfg:
   match saved:
     case T.Cfg{_, _, _, +sys, _}:
       match c:
-        case T.Cfg{+th, +sel, +nulls, _, +tools}:
-          T.Cfg{th, sel, nulls, sys, tools}
+        case T.Cfg{+th, +sel, +nulls, +now, +tools}:
+          T.Cfg{th, sel, nulls, with_cfg.sys(fresh, sys, now), tools}
 
-def with_cfg(+s: T.Session, +c: T.Cfg) -> T.Session:
+def with_cfg(+s: T.Session, +c: T.Cfg, fresh: Bool) -> T.Session:
   match s:
     case T.Sess{+saved, +h, +i, +a, +t, +p, +q, +no}:
-      T.Sess{with_cfg.merge(saved, c), h, i, a, t, p, q, no}
+      T.Sess{with_cfg.merge(saved, c, fresh), h, i, a, t, p, q, no}
 
 def fresh_cfg(+fresh: T.Session) -> T.Cfg:
   match fresh:
     case T.Sess{+cfg, _, _, _, _, _, _, _}:
       cfg
 
-def load.chk(c: Maybe<&2, K.Checkpoint>, +fresh: T.Session) -> IO(Load):
+def load.chk(c: Maybe<&2, K.Checkpoint>, +fresh: T.Session, fs: Bool) -> IO(Load):
   match c:
     case None{}:
       IO.pure(Load, LD{fresh, None{}})
     case Some{+chk}:
-      load.greeted(with_cfg(K.restore(chk), fresh_cfg(fresh)))
+      load.greeted(with_cfg(K.restore(chk), fresh_cfg(fresh), fs))
 
-def load.content(m: Maybe<&2, String>, +fresh: T.Session) -> IO(Load):
+def load.content(m: Maybe<&2, String>, +fresh: T.Session, fs: Bool) -> IO(Load):
   match m:
     case None{}:
       IO.pure(Load, LD{fresh, None{}})
     case Some{+content}:
-      load.chk(K.from_text(content), fresh)
+      load.chk(K.from_text(content), fresh, fs)
 
-def load.path(unset: Bool, +path: String, +fresh: T.Session) -> IO(Load):
+def load.path(unset: Bool, +path: String, +fresh: T.Session, fs: Bool) -> IO(Load):
   match unset:
     case True{}:
       IO.pure(Load, LD{fresh, None{}})
     case False{}:
       do IO<Load>:
         m : Maybe<&2, String> <- read_file(path)
-        load.content(m, fresh)
+        load.content(m, fresh, fs)
 
-def load.want(want: Bool, +path: String, +fresh: T.Session) -> IO(Load):
+def load.want(want: Bool, +path: String, +fresh: T.Session, fs: Bool) -> IO(Load):
   match want:
     case False{}:
       IO.pure(Load, LD{fresh, None{}})
     case True{}:
-      load.path(String.is_empty(path), path, fresh)
+      load.path(String.is_empty(path), path, fresh, fs)
 
 def load(+fresh: T.Session) -> IO(Load):
   do IO<Load>:
     cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CONTINUE")
     fr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_SESSION_FILE")
     +path : String <- IO.pure(String, env_or(fr, ""))
-    load.want(String.eq(env_or(cr, ""), "1"), path, fresh)
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_FRESH_PROMPT")
+    load.want(String.eq(env_or(cr, ""), "1"), path, fresh, String.eq(env_or(pr, ""), "1"))

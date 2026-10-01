@@ -60,6 +60,15 @@ def main():
         reqs = E.fake_requests()
         last = json.dumps(reqs[-1]) if reqs else ""
         check("hello before" in last, "the next request still holds the conversation")
+        # the prompt says what each plugin is for (the built-in computer
+        # plugin: browser and Mac apps), the new one included
+        first = json.dumps(reqs[0]) if reqs else ""
+        check("## Plugins" in first and "- `computer`: computer use" in first,
+              "the first prompt names the computer plugin and what it does")
+        check("Mac apps" in first and "computer:computer-use" in first,
+              "... its Mac apps and its skill")
+        check("- `hello-plugin`: Test fixture" in last and "- `hello-plugin`" not in first,
+              "the relaunched prompt names the new plugin")
         # the new REPL loaded the plugin: its skill is in the run's index
         runs = [os.path.join(dp, f) for dp, _, fs in os.walk(E.tmp) for f in fs if f == "report.txt"]
         loaded = any("hello-plugin" in open(p).read() for p in runs)
