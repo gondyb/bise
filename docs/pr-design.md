@@ -155,7 +155,7 @@ agent or main), rare.
 | Event | Goes to | Then |
 |---|---|---|
 | PR opened (seen first) | main (level 3) | main: `:* dark-mode opened #412: …` |
-| review: changes requested, or new comments | **the owning agent**, main copied | the agent fixes, pushes, reports; main: one line |
+| review: changes requested, or new comments | **the owning agent**, main copied. A PR belongs to its branch, and several agents may share it ([dev-flow.md](dev-flow.md) §3.1): "owning" = the agent that pushed the commit the review is about, else the one that opened the PR, else main picks | the agent fixes, pushes, reports; main: one line |
 | checks fail | the owning agent (failing check names + the log's last 60 lines, `gh run view --log-failed`) | same; after 2 tries on the same check, main asks you (inbox) |
 | approved, checks pass | the hub opens an inbox item (§6.3) | pink cell |
 | merged | main | `✓ perf's #401 merged · perf archived, its worktree removed` |

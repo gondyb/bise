@@ -8,6 +8,19 @@ use case for what this repo does: no PR, everyone lands on main. What is
 the best flow, and what changes in the agents' instructions besides the
 UI?
 
+## 0. The user's answers (2026-10-01)
+
+- **Q1 yes**: PR flow as soon as someone else committed in 90 days.
+- **Q2: main decides** whether a task needs a worktree, not a fixed rule.
+  And **places are shared, not owned**: several agents may work in the
+  same worktree, and in PR flow on the same branch. An agent is never
+  locked to one branch. Isolation stays, and it must show on screen
+  (§3.1).
+- **Q4 yes**: in PR flow the agents stay alive until the merge.
+- **Q5: the user chooses** one PR or a PR per phase; bise doesn't
+  prescribe. Main asks when it matters and the user hasn't said.
+- Q3 (push after each land in trunk flow) is still open.
+
 ## 1. The answer in short
 
 Two flows, one per repo, picked once and saved:
@@ -54,16 +67,53 @@ Saved in the repo's `.switchboard/config.toml` (`[flow] mode = "pr" |
 question, one line from main the first time ("main is protected here:
 every agent opens a PR").
 
-## 3. Which tasks get a branch
+## 3. Where each task works (main decides)
 
-The flow decides where code goes. Many tasks write no code at all.
+The flow says where code ends up (a PR, or main). Main decides where
+each task works, the way it decides who takes what: it knows the files,
+the other agents and how big the change is. Many tasks write no code at
+all.
 
 | Task | PR flow | Trunk flow |
 |---|---|---|
-| read-only: investigate, review, answer, plan, research | no branch, the shared folder | same |
-| docs, notes, small config | a PR (it's still a change to a shared repo) | a commit on main from the shared folder |
-| a code change | worktree `sb/<name>` from `origin/<default>`, a PR | small and alone: the shared folder, commits on main. Bigger, or another agent works in the same files, or the build must not see half-done edits: a worktree, then *land* (§5) |
-| a long feature (several phases, like approvals) | a draft PR early, or one PR per phase stacked on each other | a local branch (`approvals`), then a review item for you before it lands |
+| read-only: investigate, review, answer, plan, research | the shared folder, no branch | same |
+| docs, notes, small config | a branch and a PR (it's still a change to a shared repo) | a commit on main from the shared folder |
+| a code change | a branch from `origin/<default>` in a worktree, a PR. A new one, or the place of agents already on that change | the shared folder when it's small and nobody else edits those files; else a worktree (new or shared), then *land* (§5) |
+| a change next to another agent's (the same feature, a test for it, a review fix) | main may put it **in the same worktree, on the same branch**: one PR, several agents | same: one worktree, several agents, one land |
+| a long feature (several phases) | one PR or a PR per phase: **you choose**; main asks if you haven't said | a local branch, then a review item for you before it lands |
+
+What main weighs to isolate (in its prompt as hints, not rules): two
+agents in the same files, a build or tests that must not see another
+agent's half-done edits, a change long enough to be reviewed on its own,
+a risky change you may throw away. What it weighs to share a place: the
+work belongs in the same PR, or one agent needs the other's code right
+now.
+
+### 3.1 Places are shared, not owned
+
+A **place** is where agents work: the shared folder, or a worktree (a
+folder and its branch). Today each agent has its own `ws` (RFC 0002);
+here a place is its own thing in the hub, and agents join it:
+
+- `sb spawn x --place new` (a new worktree, branch `sb/x`), `--place
+  dark-mode` (the place of agent dark-mode, or a branch name), or
+  nothing (the shared folder). `sb move <agent> <place>` moves an agent
+  that has changed nothing yet (today's `/isolate`, generalized).
+- A place lives as long as one agent is in it or its PR is open. The
+  worktree is removed when the last agent leaves and nothing is lost
+  (RFC 0002's drop rules, counted per place, not per agent).
+- Several agents in one worktree have the shared folder's rules there:
+  each commits only its own files (§5, `sb land`), overlaps (⇄) are
+  flagged, nobody rewrites the branch while another works on it.
+- **A PR belongs to the branch, not to an agent.** Every agent in that
+  place sees it; GitHub's news go to the agent that pushed the commit the
+  review is about, else the one that opened the PR, else main picks
+  (pr-design §6.1).
+- **On screen**: the sidebar groups the agents that share a worktree
+  under one line, `ψ sb/dark-mode` with the PR mark on it (mock: "the
+  flow" section, variants A and B). An agent alone in its worktree keeps
+  today's row (ψ, or ↑ once its PR is open). The divider of an agent in
+  a shared place says who else is there: `ψ sb/dark-mode with i18n`.
 | you say "open a PR" | — | a PR, even here |
 | you say "just commit it" | refused if main is protected; else main asks once ("main is shared here, sure?") | — |
 
@@ -81,22 +131,26 @@ Rules that hold in both flows:
 
 ## 4. PR flow, step by step
 
-1. Main spawns the task with `--pr`: a worktree on `sb/<name>` from a
-   fresh `origin/<default>` (not your local HEAD: it would carry your
-   unpushed commits), plus the brief's "done when: its PR is open".
+1. Main spawns the task with `--pr`, in a new place (a worktree on
+   `sb/<name>` from a fresh `origin/<default>`, not your local HEAD: it
+   would carry your unpushed commits) or in the place of agents already
+   on that change; the brief says "done when: its PR is open" or "your
+   part is on the branch".
 2. The agent works and commits small; runs the check.
 3. It pushes its branch and opens the PR with `gh pr create` (or `glab mr
    create`): the repo's template if there is one, else what changed, why,
    and how it was tested, in the repo's style. Ready for review unless
    you said draft, or the task is long (draft until its last phase).
-4. **It owns the PR until it is merged**: review comments, red checks,
-   conflicts (`mergeStateStatus` DIRTY or BEHIND: it rebases on the base
-   and pushes with `--force-with-lease`). It stays alive (idle costs
-   nothing) instead of being archived when the PR opens.
+4. **The agents of the branch stay alive until it is merged** (the
+   user's Q4): review comments, red checks, conflicts (`mergeStateStatus`
+   DIRTY or BEHIND: one of them rebases on the base and pushes with
+   `--force-with-lease`, the hub holding the branch's other lands
+   meanwhile). Idle costs nothing.
 5. It never merges, approves, closes, or writes on GitHub (comments,
    replies, resolving threads) unless you allowed it (pr-design §11 Q3).
-6. Merged: the hub archives it and removes its worktree. Closed without
-   merge: main tells you; the branch stays.
+6. Merged: the hub archives the branch's agents and removes the
+   worktree (an agent that also works elsewhere just leaves this place).
+   Closed without merge: main tells you; the branch stays.
 
 ## 5. Trunk flow, step by step
 
@@ -116,15 +170,22 @@ the shared tree"), made a command so no agent has to get it right alone:
 3. A file changed by two agents (an overlap, ⇄): `sb land` refuses and
    main asks who takes it.
 
-**From a worktree** (bigger change):
+**From a worktree** (bigger change, one agent or several):
 
-1. The agent commits on its branch, runs the check.
-2. `sb land`: the hub rebases the branch on the current main, runs the
+1. Each agent commits its own files on the place's branch with `sb land
+   --here` (the same private-index commit as above, on the worktree's
+   branch instead of main: two agents in one worktree never commit each
+   other's half-done files). It runs the check.
+2. `sb land` (when the place's work is done: main or the last agent
+   says so): the hub rebases the branch on the current main, runs the
    check again if main moved, then fast-forwards main. One land at a
-   time (a queue in the hub: no two agents race for main). A conflict:
-   back to the agent, with the files.
-3. The worktree is then removed and the agent archived (or it keeps it
-   for its next commit series).
+   time (a queue in the hub: no two places race for main). A conflict:
+   back to the place's agents, with the files.
+3. The worktree is removed when its last agent leaves.
+
+In PR flow the same `sb land --here` commits on the branch, then the
+hub pushes it (one push at a time per branch): several agents on one
+branch never race each other's pushes.
 
 **A long feature branch**: the agent says it's ready; the hub opens a
 review item for you (`approvals is ready to land: 14 commits, +3,120
@@ -150,32 +211,44 @@ config, so a brief no longer has to.
 
 **Main's prompt**
 
+- Places (the user's Q2): "You decide where each task works: the shared
+  folder, a new worktree, or the worktree of agents already on that
+  change (`--place new|<agent>`). Isolate when two agents would edit the
+  same files, when a build must not see another's half-done edits, or
+  when the change will be reviewed or thrown away on its own. Share a
+  place when the work belongs in the same PR or needs the other agent's
+  code now. Say it in your routing line: `dark-mode takes a worktree;
+  i18n joins it`."
 - PR flow: "This repo ships through pull requests (base `main`). A task
-  that changes code: spawn it with `--pr`. Read-only tasks: no branch.
+  that changes code ends in a PR: `--pr` (a new branch) or in the place
+  of the PR it belongs to. One PR or one per phase: the user chooses;
+  ask when they haven't said. Read-only tasks: no branch.
   You never merge; the user does (the inbox asks them when a PR is
   approved with checks passing). GitHub's news about a PR go to the
   agent that owns it; you get a copy: escalate only product calls and
   checks still failing after 2 tries."
-- Trunk flow: "This repo ships straight to `main`, through `sb land`.
-  Small changes from the shared folder; a worktree (`--worktree`) when
-  the change is big, risky, or another agent works in the same files. A
+- Trunk flow: "This repo ships straight to `main`, through `sb land`. A
   long feature: a branch, then the user approves the land."
-- Both: the worktree rule changes from "only when the user asks" to
-  "when the flow says so, or the user asks"; "never push or merge" stays
-  except what the flow does itself (`sb land`, the PR's own branch).
+- Both: "use `--worktree` ONLY when the user explicitly asks" goes
+  (main decides, above); "never push or merge" stays except what the
+  flow does itself (`sb land`, the PR's own branch).
 - The user's words win for one task: "open a PR", "just commit it".
 
 **A task's prompt** (its place line, by flow and place)
 
-- PR flow, worktree: "branch `sb/x` from `origin/main`. Commit small; run
-  `<check>` before you push. Push only this branch. Open the PR with gh
-  (the repo's template). You own it until it is merged: fix reviews and
-  red checks, rebase when it conflicts (`--force-with-lease`, this
-  branch only). Never merge, approve, close, or write on GitHub."
+- PR flow, worktree: "branch `sb/x` from `origin/main`, shared with
+  <agents> (or: yours alone for now; others may join). Commit only your
+  files, with `sb land --here`; run `<check>` first. Open the PR with gh
+  (the repo's template) if nobody has; the hub pushes. You stay until it
+  is merged: fix the reviews and red checks sent to you, rebase when it
+  conflicts (`--force-with-lease`, this branch only, after telling the
+  branch's other agents). Never merge, approve, close, or write on
+  GitHub."
 - Trunk flow, shared folder: "commit nothing by hand: run `<check>`, then
   `sb land "<message>"`. Never `git add -A`, stash, reset, rebase or
   amend here."
-- Trunk flow, worktree: "commit on your branch; run `<check>`; `sb land`
+- Trunk flow, worktree: "commit your files on the branch with `sb land
+  --here`; run `<check>`; when the place's work is done, `sb land`
   rebases it on main and moves main."
 - Both: the commit message style (from the repo's AGENTS.md or the last
   50 commits: this repo writes long, detailed subject lines), and the
@@ -201,9 +274,12 @@ repeating the git rules (private index, gate, push).
 Most of it is in [pr-design.md](pr-design.md) (PR flow). For the trunk
 flow, and the choice:
 
-- **Sidebar**: nothing new in trunk flow (ψ while the agent has a
-  worktree). Waiting to land: the row's glyph is today's `…` (waiting),
-  and ctrl held says `waits to land · 2nd`.
+- **Sidebar, places**: agents that share a worktree are grouped under
+  one faint line, `ψ sb/dark-mode` (with `↑` when it has a PR), their
+  rows indented under it; numbers never change (§3.1, mock variants A
+  and B). An agent alone in a worktree keeps one row.
+- **Sidebar, trunk flow**: waiting to land, the row's glyph is today's
+  `…` (waiting), and ctrl held says `waits to land · 2nd`.
 - **Main's feed**: `✓ dark-mode landed 3 commits on main (a1b2c3)` (and
   `· pushed` when it pushed); a refused land: `dark-mode can't land:
   login.rs changed on main too. it's rebasing.`
@@ -224,16 +300,18 @@ flow, and the choice:
 - The flow goes into the prompts from the config; briefs stop carrying
   git rules.
 
+- Main decides the places; a place (a worktree and its branch) can hold
+  several agents, and a PR belongs to the branch. That changes the hub's
+  model (a place table instead of one `ws` per agent): phase 0b.
+
 ## 9. Open questions (for the user)
 
-1. PR flow as soon as one other person committed in 90 days: right
-   threshold? (Or any collaborator on the GitHub repo.)
-2. Trunk flow: shared folder for small changes and a worktree only when
-   needed (today), or a worktree for every code task (cleaner, but a
-   cold build per worktree: minutes and GBs for Rust)?
+Answered: Q1, Q2, Q4, Q5 (§0). Still open:
+
 3. Trunk flow: push main after every land (what this repo does), or only
    when you ask?
-4. In PR flow, does the agent stay alive until the merge (it owns the
-   PR) or archive at "PR open" and come back on the first review?
-5. A long feature in PR flow: one draft PR that grows, or one PR per
-   phase, stacked?
+6. The sidebar for a shared worktree: grouped under one line (A) or
+   flat rows with the branch on the held line (B)? (mock, "the flow")
+7. Several agents on one branch: who commits the rebase when it
+   conflicts? My pick: the agent the conflict's files belong to, the
+   others' lands held meanwhile; main picks when it's several.
