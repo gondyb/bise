@@ -298,9 +298,11 @@ flow, and the choice:
   login.rs changed on main too. it's rebasing.`
 - **Inbox**: the flow question (once per repo); a long branch ready to
   land; a "just commit it" on a shared repo.
-- **Header, ctrl held**: the flow after the folder, `~/acme · PRs` or
-  `~/acme · main`, so you know what an agent will do with your request.
-- `/flow`: shows the flow, why (the signal), and switches it.
+- **Header, ctrl held**: what happens to the work, after the folder:
+  `~/acme · lands via PRs` or `~/acme · lands on main` (designer: "PRs"
+  alone reads like a count next to `↑ 3 PRs`).
+- `/flow`: shows the flow in the same words, why (the signal), and
+  switches it.
 
 ## 8. Recommendation
 

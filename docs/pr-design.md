@@ -20,10 +20,11 @@ An agent that ships code works on its own branch (a hub worktree,
 `sb/<name>`) and opens its PR itself with `gh`, as you would. The hub
 finds the PR by its branch (nothing to declare) and follows it by polling
 GitHub through `gh api graphql`, with your gh login: no new sign-in, bise
-never reads the token. At rest, the PR is one cell in the sidebar, after
-ψ: `↑`, dim; red when checks fail; pink only when an inbox item asks you.
-Ctrl held: its number and state in words, on a line under the row. The
-divider of the agent you view links the PR. GitHub's news (a review,
+never reads the token. In the sidebar every worktree is a small box
+(§4.1): the PR's `↑` sits in its top border, dim, red when checks fail,
+never pink (pink stays on the inbox item). Ctrl held: its number in the
+border and its state on one lid line in the box. The divider of the
+agent you view links the PR. GitHub's news (a review,
 red checks) go to the agent that owns the PR, main reads them and says it
 in one line; main escalates only what is yours (a product call in a
 review, checks that still fail after two tries). Approved with checks
@@ -51,34 +52,30 @@ pane (the feed and the inbox already exist), webhooks (§7).
 ## 4. Where the PR shows
 
 Rule (designer, book §5): color means attention. Dim when nothing is for
-you, red only for failing checks, pink only through the inbox, never
-green.
+you, red only for failing checks, pink only on the inbox item itself
+(never on `↑`), never green.
 
 | Place | At rest | Ctrl held |
 |---|---|---|
-| **sidebar row** | in ψ's column (` N G name …… TTT  PPP  ↑ `): `↑` dim (open), faint (draft), red (checks fail), pink (an inbox item about this PR waits) | a faint line under the row, under the name: `↑ #412 changes asked`, `↑ #415 checks fail` (the feed names the check), `↑ #409 approved · checks pass` (never "green": the brand has no green); cut with `…` before the panel's border; no PR yet: `sb/emoji-csv · no PR yet` |
-| **divider** (the agent you view) | the approved order model · effort · mode · gust, it has room, so both, the branch first, after the mode, before the gust (the gust is the status, it stays last): `you → dark-mode · sonnet · high · yolo · ψ sb/dark-mode · ↑ #412 · ∿∿∿` (the number is a link), the context short on the right `31k · 15%`. Short on room (designer): the branch name goes first (`ψ · ↑ #412`), then ψ, then the number (`↑`), the mode last | `… · ψ sb/dark-mode · ↑ #412 changes asked · checks pass · ∿∿∿ working · 3m`, right `31k / 200k tokens · 15%`; the sidebar row shows ψ again |
+| **sidebar** | **§4.1, the worktree boxes** (this replaces the earlier "cell in ψ's column": every PR has a branch, so every PR agent sits in a box) | §4.1 |
+| **divider** (the agent you view) | the approved order model · effort · mode · gust, it has room, so both, the branch first, after the mode, before the gust (the gust is the status, it stays last): `you → dark-mode · sonnet · high · yolo · ψ sb/dark-mode · ↑ #412 · ∿∿∿` (the number is a link), the context short on the right `31k · 15%`. Short on room (designer): the branch name goes first (`ψ · ↑ #412`), then ψ, then the number (`↑`), the mode last | `… · ψ sb/dark-mode · ↑ #412 changes asked · checks pass · ∿∿∿ working · 3m`, right `31k / 200k tokens · 15%` |
 | **header** | nothing new (the folder and the inbox count) | `↑ 3 PRs` with the other counts |
 | **main's feed** | one level-2 line per event: opened, changes asked (and who is on it), checks fail, back in review, merged / closed (dim) | — |
 | **inbox** | only: ready to merge (§6.3), a review question main can't answer, checks that still fail after two tries | — |
 | **`/prs`** | a list in the feed: every open PR of this repo's agents, plus the one on your own branch | — |
 
-**In ψ's column, not after it.** The approved row is full at the panel's
-31 columns (main's `✉ 2`, a pink `•` after a name, one column of
-margin): a cell after ψ would cost 2 columns and cut every name. A PR
-implies a branch, so `↑` takes ψ's column while the PR is open; ψ shows
-while there is a branch and no PR, and comes back on the row while ctrl
-is held (the PR then on the line under it). Nothing moves, nothing is
-cut. With sidebar C (an activity line under working agents), the held PR
-line replaces it while ctrl is down: never two lines under a row. Forbidden in the cell: every glyph the
-row already uses (`✓ ? ✗ ∿ ○ · :* ψ @ $ ƒ ▸`).
+*(Replaced by §4.1: the earlier "↑ in ψ's column of the row, pink when
+an inbox item waits, a faint line under the row when held" is gone. Do
+not build it.)*
 
 **The glyph.** `↑` (U+2191): in SF Mono, JetBrains Mono and Menlo
 (checked with fontTools on this Mac); nothing in the panel or the divider
 uses it (it shows only in key hints, always next to a word). Designer's
 first idea `⇡` / `⇣` is missing from SF Mono and JetBrains Mono (a
-fallback font draws it). ASCII (`BISE_ASCII=1`): `#`. It joins §6
-("marks") and the legend: `↑ a pull request (dim open, red checks fail)`.
+fallback font draws it). ASCII (`BISE_ASCII=1`): `P` (designer: `#` is
+`▣`'s, `^` is `▲`'s, and every ASCII form must be distinct). It joins §6
+("marks") and the legend: `↑ a pull request (dim open, faint draft, red
+checks fail)`.
 The user keeps ψ for worktrees.
 
 **Variants in the mock**: the cell A `↑` (my pick), B `⇡ ⇣`, C the
@@ -119,8 +116,11 @@ worktree; agents in the shared folder never had one.
    inbox section stays a plain dim title with rows, never a box: boxes
    mean git only. Numbers never change; the order follows the blocks.
 2. **Colors**: the border's lines, the rail `│` and the closing `╰` in
-   the rule color; ψ and the branch dim; `↑` follows the PR rules (dim,
-   red when checks fail, never pink, never green).
+   the rule color; ψ and the branch dim; `↑` follows the PR rules (dim
+   open, faint draft, red when checks fail, never pink: pink stays on
+   the inbox item; never green). In trunk flow a box waiting to land
+   shows `…` in its border (the border is git only, so it can't read as
+   an agent waiting), and its held lid says `waits to land · 2nd`.
 3. **Short on room** (the 24-column panel at 90-99 columns): the branch
    name is cut with `…` first; ψ and `↑` stay. A border never wraps.
 4. **Every worktree gets a box**, even with one agent: the rule stays
@@ -209,7 +209,7 @@ agent or main), rare.
 | PR opened (seen first) | main (level 3) | main: `:* dark-mode opened #412: …` |
 | review: changes requested, or new comments | **the owning agent**, main copied. A PR belongs to its branch, and several agents may share it ([dev-flow.md](dev-flow.md) §3.1): "owning" = the agent that pushed the commit the review is about, else the one that opened the PR, else main picks | the agent fixes, pushes, reports; main: one line |
 | checks fail | the owning agent (failing check names + the log's last 60 lines, `gh run view --log-failed`) | same; after 2 tries on the same check, main asks you (inbox) |
-| approved, checks pass | the hub opens an inbox item (§6.3) | pink cell |
+| approved, checks pass | the hub opens an inbox item (§6.3) | the item is pink in the inbox; the box's `↑` stays dim |
 | merged | main | `✓ perf's #401 merged · perf archived, its worktree removed` |
 | closed without merge | main | dim line; the agent and its branch stay |
 | owning agent archived or dropped | main | main restores it (`/restore`) or answers itself |

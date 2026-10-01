@@ -51,7 +51,7 @@ agent, plus main's one line.
   open → changes requested → checks fail → pass → approved → merged;
   `gh` missing; 401; rate limit (back-off); a PR on an unknown branch.
 - Panel snapshots (`panel.rs` tests): the cell's 4 states, draft, held
-  line cut with `…` at 28 and 31 columns, ASCII `#`, NO_COLOR.
+  line cut with `…` at 24 and 31 columns, ASCII `P`, NO_COLOR.
 - tmux test (like `tui_approvals_tmux`): a PR goes from dim to red to
   pink, the inbox item, `1` calls the fake `gh pr merge`, the row turns
   ✓ and leaves.
