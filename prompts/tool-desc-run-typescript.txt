@@ -29,7 +29,7 @@ The `run_typescript` tool executes TypeScript code in a V8 isolate (types are st
 ## Returning images
 
 - To show images to the model, return a non-empty ARRAY of content blocks: `{ type: 'text', text }`, `{ type: 'image', data: '<base64>', mimeType: 'image/png' }`, or `{ type: 'image', path: '/abs/file.png' }` (a local PNG/JPEG/GIF/WebP file, e.g. a screenshot taken with `bash`). The blocks replace the result: the images reach the model as images, not as text.
-  Example: `await bash('screencapture -x /tmp/s.png'); return [{ type: 'image', path: '/tmp/s.png' }];`
+  Example: `await bash('screencapture -x /tmp/s.png'); return self.readImages('/tmp/s.png');`
 
 ## Replay model (IMPORTANT)
 
@@ -43,6 +43,7 @@ The `run_typescript` tool executes TypeScript code in a V8 isolate (types are st
 
 Available: standard JS built-ins (JSON, Math, Date, Promise, Object, Array, Map, Set, RegExp, Error classes, Symbol, Proxy, Reflect, WeakMap/WeakSet/WeakRef, BigInt, typed arrays, Intl, Temporal), async/await, generators, async generators, for-await, spread/destructuring, optional chaining, `encodeURIComponent`/`decodeURIComponent`.
 Also available as bare identifiers (no `tools.` prefix needed, dotted paths compose): `tools.<group>.<function>` connector functions, `search_tool_functions`, `bash` (call with the command string as the single argument), `skill` (call with `{ name: "<exact name>" }`), `self.compact`/`self.reload` (ack immediately, run at the end of the turn), `self.sleep` (call with the seconds: `await self.sleep(10)` or `await self.sleep({ seconds: 10 })`; bounds 0 < s < 20; the HOST sleeps once between replay rounds, the result replays by position).
+`self.readImages(paths)` (alias `self.readImage`) shows local image files to the model: give one path or an array of paths (absolute, `~/`, or relative to your working directory); it checks each file exists and is a PNG/JPEG/GIF/WebP, and returns the `{ type: 'image', path }` blocks for your `return`. A missing file or another type throws with the reason. It runs locally: no tool call, nothing to replay. Examples: `return self.readImages(['shots/a.png', 'shots/b.png']);`, or with text: `return [{ type: 'text', text: 'before / after' }, ...self.readImages(['before.png', 'after.png'])];`
 
 ## What does NOT exist (and the traps)
 

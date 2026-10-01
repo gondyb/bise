@@ -76,6 +76,21 @@ def run_session(env, codes):
 
 def main():
     home = tempfile.mkdtemp(prefix="sb-scripted-ts-")
+    session = check_programs(home, PROGRAMS)
+    print("scripted run_typescript: %d programs on V8 (bend-jsrt)" % len(PROGRAMS))
+    # one session each: the scripted session compacts past ~400 tokens (its
+    # CFG), an image or two long temp paths are more than that, and a
+    # compaction drops the earlier results
+    images_home = tempfile.mkdtemp(prefix="sb-scripted-ts-images-")
+    for i, program in enumerate(read_images_programs(images_home)):
+        check_programs(os.path.join(images_home, str(i)), [program])
+    print("self.readImages: an image, a missing file, a text file")
+    check_read_images_prompt()
+    check_atomic_save(home, session)
+
+def check_programs(home, programs):
+    """One scripted session runs the programs; each tool result must start
+    with its expected text. Returns the session file."""
     env = dict(os.environ, HOME=home, BISE_HOME=os.path.join(home, "bise"),
                BEND_SESSIONS_DIR=os.path.join(home, "sessions"), **jsrt_env())
     # run from an agent's shell, the env names that agent's live session
@@ -85,21 +100,54 @@ def main():
     # the stamp of the paths the hub exported for ITS home: with our HOME
     # it would mark BEND_SESSIONS_DIR above as stale too (bise_home)
     env.pop("BISE_EXPORTS_FOR", None)
-    run_session(env, [code for code, _ in PROGRAMS])
+    run_session(env, [code for code, _ in programs])
     sessions = glob.glob(os.path.join(home, "sessions", "*.txt"))
     if len(sessions) != 1:
         sys.exit("FAIL %d session files" % len(sessions))
     results = [l.split(" : ", 1)[1] for l in open(sessions[0]).read().splitlines()
                if l.startswith("MSG False tool : ")]
     bad = 0
-    for (code, want), got in zip(PROGRAMS, results + [""] * len(PROGRAMS)):
+    for (code, want), got in zip(programs, results + [""] * len(programs)):
         ok = got.startswith(want)
         bad += not ok
         print("%s %s -> %s" % ("ok  " if ok else "FAIL", code, got[:120]))
-    if bad or len(results) != len(PROGRAMS):
-        sys.exit("FAIL %d of %d programs (%d results)" % (bad, len(PROGRAMS), len(results)))
-    print("scripted run_typescript: %d programs on V8 (bend-jsrt)" % len(PROGRAMS))
-    check_atomic_save(home, sessions[0])
+    if bad or len(results) != len(programs):
+        sys.exit("FAIL %d of %d programs (%d results)" % (bad, len(programs), len(results)))
+    return sessions[0]
+
+# a 1x1 PNG
+PNG_1X1 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000d49444154789c63f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
+
+def read_images_programs(home):
+    """self.readImages: a file that is there reaches the model as an image
+    marker; a missing file and a text file named .png fail the program
+    with the reason (absolute paths: the headless REPL has no BEND_WORKDIR)."""
+    shot, notes = os.path.join(home, "shot.png"), os.path.join(home, "notes.png")
+    open(shot, "wb").write(PNG_1X1)
+    open(notes, "w").write("not an image")
+    return [
+        ("return self.readImages(['%s'])" % shot,
+         'tool run_typescript ok: <image name="[Image #1]" path="%s" mime="image/png"' % shot),
+        ("return self.readImage('%s')" % os.path.join(home, "gone.png"),
+         "tool run_typescript failed: self.readImages: no file at %s" % os.path.join(home, "gone.png")),
+        ("return self.readImages('%s')" % notes,
+         "tool run_typescript failed: self.readImages: %s is not a PNG, JPEG, GIF or WebP image" % notes),
+    ]
+
+def check_read_images_prompt():
+    """The model learns self.readImages from run_typescript's description,
+    next to self.compact / self.reload."""
+    text = open(os.path.join(ROOT, "prompts", "tool-desc-run-typescript.txt")).read()
+    for want in ("`self.readImages(paths)` (alias `self.readImage`)",
+                 "return self.readImages('/tmp/s.png');",
+                 "...self.readImages(['before.png', 'after.png'])"):
+        if want not in text:
+            sys.exit("FAIL tool-desc-run-typescript.txt lacks %r" % want)
+    if text.index("`self.compact`/`self.reload`") > text.index("`self.readImages(paths)`"):
+        sys.exit("FAIL self.readImages is not described after self.compact / self.reload")
+    print("prompt: self.readImages described next to self.compact / self.reload")
 
 def atomic_script():
     """The shell line runtime/persist.bend saves the checkpoint with."""

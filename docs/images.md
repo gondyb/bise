@@ -178,6 +178,10 @@ tool results), not the raw tag.
   image reuses the free number.
 - `run_typescript`: `return [{type:'image', path:'/tmp/s.png'}]` or
   `[{type:'image', data, mimeType}]`, text blocks allowed around.
+  `self.readImages(paths)` (alias `self.readImage`, jsrt's prelude) builds
+  the path blocks: one path or an array, relative to BEND_WORKDIR, each
+  file checked (exists, PNG/JPEG/GIF/WebP by its bytes) or the program
+  throws the reason; local, no tool call.
 
 ## Tests
 

@@ -70,6 +70,23 @@ function __tool(name, args) {
     : JSON.stringify(args);
   __request_tool(name, payload);
 }
+// self.readImages(paths) (alias self.readImage): the image blocks of local
+// files, to put in the program's returned array. Each file is checked here
+// (it exists, it is a PNG, JPEG, GIF or WebP); a relative path is the
+// agent's working dir's (BEND_WORKDIR), ~/ is HOME. Local: no tool call,
+// no replay position; a bad path throws (the program fails with the reason).
+const __readImages = (paths) => {
+  const list = Array.isArray(paths) ? paths : [paths];
+  if (list.length === 0 || !list.every((p) => typeof p === 'string' && p.trim() !== '')) {
+    throw new Error('self.readImages: give a file path or an array of file paths (strings)');
+  }
+  return list.map((p) => {
+    const r = __image_check(p);
+    if (r.startsWith('error:')) throw new Error('self.readImages: ' + r.slice(6));
+    return { type: 'image', path: r.slice(3) };
+  });
+};
+const __selfLocal = { readImages: __readImages, readImage: __readImages };
 const __skip = ['then', 'toString', 'valueOf', 'inspect', 'constructor', 'prototype'];
 const __gh = {
   has: () => true,
@@ -79,6 +96,7 @@ const __gh = {
     return new Proxy(function () {}, {
       get: (t2, k) => {
         if (typeof k !== 'string' || __skip.includes(k)) return undefined;
+        if (name === 'self' && Object.hasOwn(__selfLocal, k)) return __selfLocal[k];
         const sub = name + '.' + k;
         return new Proxy(function (...a) { return __tool(sub, a[0]); }, {
           get: (t3, k2) => {
@@ -236,6 +254,17 @@ unsafe extern "C" fn native_call(
                 rv.set(v.into());
             }
         }
+        "__image_check" => {
+            let path = to_rust_string(&mut scope, args.get(0));
+            let text = match image_check(&path) {
+                Ok(abs) => format!("ok:{}", abs.display()),
+                Err(e) => format!("error:{e}"),
+            };
+            if let Some(v) = v8::String::new(&scope, &text) {
+                let mut rv = v8::ReturnValue::from_function_callback_info(info);
+                rv.set(v.into());
+            }
+        }
         _ => {
             let line = to_rust_string(&mut scope, args.get(0));
             eprintln!("[program] {line}");
@@ -262,6 +291,55 @@ fn image_marker(data: &str, mime: &str, path: &str, name: &str) -> String {
         }
         Err(e) => format!("[image not attached: {e}]"),
     }
+}
+
+// a path of self.readImages -> absolute: ~/ is HOME, a relative path is
+// the agent's working dir's (BEND_WORKDIR, where its bash runs), else
+// this process's cwd
+fn resolve_path(path: &str) -> std::path::PathBuf {
+    let env_dir = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = env_dir("HOME") {
+            return home.join(rest);
+        }
+    }
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    let base = env_dir("BEND_WORKDIR")
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default();
+    base.join(p)
+}
+
+// self.readImages's check of one file: it exists, it is a file, not too
+// large, and its first bytes say PNG, JPEG, GIF or WebP (the content, not
+// the extension). Ok: the absolute path.
+fn image_check(path: &str) -> Result<std::path::PathBuf, String> {
+    use std::io::Read;
+    let abs = resolve_path(path.trim());
+    let meta = match std::fs::metadata(&abs) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!("no file at {}", abs.display()));
+        }
+        Err(e) => return Err(format!("{}: {e}", abs.display())),
+    };
+    if !meta.is_file() {
+        return Err(format!("{} is not a file", abs.display()));
+    }
+    if meta.len() > bend_images::MAX_INPUT_BYTES as u64 {
+        return Err(format!("{} is too large ({} bytes)", abs.display(), meta.len()));
+    }
+    let mut head = Vec::with_capacity(16);
+    std::fs::File::open(&abs)
+        .and_then(|f| f.take(16).read_to_end(&mut head))
+        .map_err(|e| format!("{}: {e}", abs.display()))?;
+    if bend_images::sniff(&head).is_none() {
+        return Err(format!("{} is not a PNG, JPEG, GIF or WebP image", abs.display()));
+    }
+    Ok(abs)
 }
 
 fn set_global(
@@ -331,6 +409,7 @@ fn run(program: &str, results: &str) -> ! {
     set_global(tc, &context, "__fail");
     set_global(tc, &context, "__log");
     set_global(tc, &context, "__image");
+    set_global(tc, &context, "__image_check");
 
     let code = match v8::String::new(tc, &source) {
         Some(code) => code,
