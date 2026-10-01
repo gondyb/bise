@@ -329,3 +329,149 @@ fn lit_styles() {
     assert_eq!(lit_style(LitState::ToSay).fg, Some(theme::dim()));
     assert_eq!(lit_style(LitState::Cut).fg, Some(theme::faint()));
 }
+
+// ---- the work, minified (round 2) ----
+
+fn work() -> Vec<Work> {
+    let w = |kind, text: &str, state| Work { kind, text: text.into(), state };
+    vec![
+        w(WorkKind::Thinking, "the signup's bundle first", WorkState::Done),
+        w(WorkKind::Tool, "read src/signup/Hero.tsx", WorkState::Done),
+        w(WorkKind::Tool, "bash npm test -- signup", WorkState::Failed),
+        w(WorkKind::Message, "the test needs the fixture; adding it", WorkState::Done),
+        w(WorkKind::Tool, "edit src/signup/fixture.ts", WorkState::Done),
+        w(WorkKind::Thinking, "", WorkState::Done),
+        w(WorkKind::Tool, "bash cargo test -p bend-tui and a very long tail of arguments that never fits", WorkState::Running),
+    ]
+}
+
+#[test]
+fn the_work_column_right_of_the_captions_newest_on_the_status_row() {
+    for phase in [Phase::Working, Phase::Speaking, Phase::HoldToTalk] {
+        let mut v = view(phase.clone());
+        v.work = work();
+        let (rows, _) = draw_text(&v, 148, 19, 0, STILL);
+        let wx = CAPS_X as usize + CAPTION_W + WORK_GAP as usize;
+        let (ry, rx) = find(&rows, "∿ bash cargo test").unwrap_or_else(|| panic!("{phase:?}: {rows:#?}"));
+        assert_eq!(rx, wx, "{phase:?}");
+        // the last ones that fit, oldest on top
+        let (fy, _) = find(&rows, "· the signup's bundle first").expect("the oldest fits: 7 of 9");
+        assert_eq!(ry - fy, 6);
+        assert!(find(&rows, "· read src/signup/Hero.tsx ✓").is_some(), "{rows:#?}");
+        assert!(find(&rows, "· bash npm test -- signup ✗").is_some());
+        assert!(find(&rows, "· the test needs the fixture; adding it").is_some());
+        assert!(find(&rows, "· thinking").is_some());
+        // cut at the column's width with an ellipsis, inside the pane
+        assert!(rows[ry].ends_with('…'), "{:?}", rows[ry]);
+        assert!(rows[ry].width() - wx <= WORK_W as usize, "{:?}", rows[ry]);
+        // the kiss and the captions keep their places (working: the
+        // captions' placeholder goes, the kiss and the title stay)
+        let mut plain = view(phase.clone());
+        plain.work.clear();
+        let (before, _) = draw_text(&plain, 148, 19, 0, STILL);
+        let keep = if phase == Phase::Working { CAPS_X as usize } else { wx };
+        for (a, b) in rows.iter().zip(&before) {
+            let cut = |r: &str| r.chars().take(keep).collect::<String>().trim_end().to_string();
+            assert_eq!(cut(a), cut(b), "{phase:?}");
+        }
+    }
+    // the status row and the newest row: the same row
+    let mut v = view(Phase::Working);
+    v.work = work();
+    let (rows, _) = draw_text(&v, 148, 19, 0, STILL);
+    let (sy, _) = find(&rows, "main is on it").unwrap();
+    let (ry, _) = find(&rows, "∿ bash cargo test").unwrap();
+    assert_eq!(sy, ry);
+    // designer: with the column, the captions' place is blank (the
+    // placeholder would point away from the work beside it)
+    assert!(find(&rows, "what it does shows").is_none(), "{rows:#?}");
+    assert!(find(&rows, "thread above").is_none());
+}
+
+#[test]
+fn more_work_than_rows_keeps_the_last_ones() {
+    let mut v = view(Phase::Working);
+    v.work = (0..20).map(|i| Work { kind: WorkKind::Tool, text: format!("bash step {i:02}"), state: WorkState::Done }).collect();
+    let (rows, _) = draw_text(&v, 148, 19, 0, STILL);
+    assert!(find(&rows, "bash step 19 ✓").is_some());
+    assert!(find(&rows, "bash step 11 ✓").is_some(), "9 rows: 11..=19");
+    assert!(find(&rows, "bash step 10").is_none());
+}
+
+#[test]
+fn no_column_while_you_talk_or_with_no_work() {
+    // cutting in is you talking (designer): the pane is yours
+    for phase in [Phase::Listening, Phase::Hearing, Phase::AboutToAnswer { fill: 0.4 }, Phase::Holding, Phase::CutIn, Phase::Muted, Phase::Typing] {
+        let mut v = view(phase.clone());
+        v.work = work();
+        let (rows, _) = draw_text(&v, 148, 19, 0, STILL);
+        assert!(find(&rows, "bash cargo test").is_none(), "{phase:?}: {rows:#?}");
+    }
+    let (rows, _) = draw_text(&view(Phase::Working), 148, 19, 0, STILL);
+    assert!(find(&rows, "what it does shows in the").is_some(), "no work yet: the placeholder");
+}
+
+#[test]
+fn too_narrow_for_the_column_the_work_takes_the_captions_place_while_it_works() {
+    for w in [93u16, 78] {
+        let mut v = view(Phase::Working);
+        v.work = work();
+        let (rows, _) = draw_text(&v, w, 19, 0, STILL);
+        assert!(find(&rows, "what it does shows").is_none(), "{w}");
+        let (y, x) = find(&rows, "∿ bash cargo").unwrap_or_else(|| panic!("{w}: {rows:#?}"));
+        assert_eq!(x as u16, CAPS_X);
+        let (ty, _) = find(&rows, ":* main").unwrap();
+        // the 6 caption lines (one blank row under the title): the last 6 of the work
+        assert_eq!(y, ty + 1 + CAPTION_LINES);
+        assert!(find(&rows, "the signup's bundle").is_none(), "only the last 6");
+        assert!(rows.iter().all(|r| r.width() <= (CAPS_X as usize + CAPTION_W).max(w as usize - 1)), "{rows:#?}");
+        for r in &rows[ty + 2..=y] {
+            assert!(r.width() <= CAPS_X as usize + CAPTION_W, "{r:?}");
+        }
+        // talking: the captions, nothing new
+        let mut v = view(Phase::Speaking);
+        v.work = work();
+        let (rows, _) = draw_text(&v, w, 19, 0, STILL);
+        assert!(find(&rows, "bash cargo").is_none() && find(&rows, "on it. perf").is_some(), "{w}");
+    }
+}
+
+#[test]
+fn the_lanes_draw_no_work() {
+    let mut v = view(Phase::Working);
+    v.work = work();
+    for w in [148u16, 93, 78] {
+        let (rows, _) = draw_text(&v, w, LANES_H, 0, STILL);
+        assert!(find(&rows, "bash").is_none(), "{w}: {rows:#?}");
+    }
+}
+
+#[test]
+fn the_work_rows_styles() {
+    let lines = work_lines(&work(), 40, 9, 0, STILL);
+    let span = |i: usize, s: &str| lines[i].spans.iter().find(|x| x.content.contains(s)).cloned().unwrap_or_else(|| panic!("{s:?} in {:?}", lines[i]));
+    // done: dim text, faint mark and ✓
+    assert_eq!(span(1, "read").style.fg, Some(theme::dim()));
+    assert_eq!(span(1, "✓").style.fg, Some(theme::faint()));
+    // failed (designer): dim like a done row, only the ✗ in the error color
+    assert_eq!(span(2, "bash npm").style.fg, Some(theme::dim()));
+    assert_eq!(span(2, "✗").style.fg, Some(theme::error()));
+    assert_eq!(span(2, "·").style.fg, Some(theme::faint()));
+    // thinking in italics, no ✓; a message no ✓ either
+    assert!(span(0, "bundle").style.add_modifier.contains(Modifier::ITALIC));
+    assert!(!lines[0].to_string().contains('✓') && !lines[3].to_string().contains('✓'));
+    // running: lit
+    assert_eq!(span(6, "bash cargo").style.fg, Some(theme::text()));
+    // a running thinking: `∿ thinking…`
+    let t = Work { kind: WorkKind::Thinking, text: String::new(), state: WorkState::Running };
+    assert_eq!(work_lines(&[t], 40, 1, 0, STILL)[0].to_string(), "∿ thinking…");
+    // NO_COLOR: running bold, done dim
+    let nc = Form { still: true, no_color: true, ascii: false };
+    let lines = work_lines(&work(), 40, 9, 0, nc);
+    assert!(lines[6].spans[2].style.add_modifier.contains(Modifier::BOLD));
+    assert!(lines[1].spans[2].style.add_modifier.contains(Modifier::DIM));
+    // every row fits its width
+    for w in [10usize, 24, 44] {
+        assert!(work_lines(&work(), w, 9, 0, MOVING).iter().all(|l| l.width() <= w), "{w}");
+    }
+}

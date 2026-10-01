@@ -19,7 +19,7 @@
 //! #` (the frame's asciify does the glyphs; block elements stay).
 
 use super::kiss::{self, Pose};
-use super::{LitState, PaneView, Phase, Route, Who, WordState};
+use super::{LitState, PaneView, Phase, Route, Who, WordState, Work, WorkKind, WorkState};
 use crate::theme;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -122,17 +122,97 @@ fn draw_big(buf: &mut Buffer, area: Rect, v: &PaneView, t_ms: u64, form: Form) {
     let cx = area.x + CAPS_X;
     let cw = (area.right().saturating_sub(cx + 1) as usize).min(CAPTION_W);
     put(buf, cx, top + 1, area.right(), &speaker(v, form));
-    let caps: Vec<Line<'static>> = if v.phase == Phase::Working {
-        let st = fg(theme::faint(), form);
-        vec![Line::from(Span::styled("what it does shows in the", st)), Line::from(Span::styled("thread above", st))]
-    } else {
-        captions(&v.words, cw, form)
+    // the work: its own column right of the captions when the pane has
+    // room for it (the captions' place stays blank while it works: the
+    // placeholder would point away from it); else, while the agent works,
+    // in the captions' place (they are empty then)
+    let wx = cx + CAPTION_W as u16 + WORK_GAP;
+    let column = work_shows(v) && area.right() > wx + WORK_MIN_W;
+    let caps: Vec<Line<'static>> = match v.phase {
+        Phase::Working if column => Vec::new(),
+        Phase::Working if work_shows(v) => work_lines(&v.work, cw, CAPTION_LINES, t_ms, form),
+        Phase::Working => {
+            let st = fg(theme::faint(), form);
+            vec![Line::from(Span::styled("what it does shows in the", st)), Line::from(Span::styled("thread above", st))]
+        }
+        _ => captions(&v.words, cw, form),
     };
     let skip = caps.len().saturating_sub(CAPTION_LINES);
     for (i, l) in caps.into_iter().skip(skip).enumerate() {
         put(buf, cx, top + 3 + i as u16, area.right(), &l.spans);
     }
     put(buf, cx, top + kiss::H, area.right(), &status(v, t_ms, form, STATUS_WAVE));
+    if column {
+        // from the title row to the status row, the newest on the status row
+        let ww = (area.right() - wx - 1).min(WORK_W) as usize;
+        let rows = work_lines(&v.work, ww, kiss::H as usize, t_ms, form);
+        let first = top + kiss::H + 1 - rows.len() as u16;
+        for (i, l) in rows.into_iter().enumerate() {
+            put(buf, wx, first + i as u16, area.right(), &l.spans);
+        }
+    }
+}
+
+// ---- the work, minified (round 2, the user: the mocks' D history) ----
+
+/// The work column: this many cells after the captions' 28.
+const WORK_GAP: u16 = 4;
+/// The narrowest work column (else the work goes in the captions' place
+/// while the agent works, and nowhere while it talks).
+pub const WORK_MIN_W: u16 = 24;
+/// The widest work column (the mocks' D).
+pub const WORK_W: u16 = 44;
+
+/// The work shows while the agent works and talks (not while you talk,
+/// cutting in included: the pane is yours, the kiss and your words).
+fn work_shows(v: &PaneView) -> bool {
+    !v.work.is_empty() && matches!(v.phase, Phase::Working | Phase::Speaking | Phase::HoldToTalk)
+}
+
+/// The last `n` rows of `work`, one per line, cut at `w` cells, the newest
+/// last: `∿ bash cargo test` running (lit, the mark moves), `· bash cargo
+/// test ✓` done (dim, `✓` faint), `· bash cargo test ✗` failed (dim,
+/// only the `✗` in the error color, as in the thread),
+/// thinking in italics (`· thinking…` when it has no words yet).
+/// `NO_COLOR`: running bold, done dim, failed by its `✗`.
+pub fn work_lines(work: &[Work], w: usize, n: usize, t_ms: u64, form: Form) -> Vec<Line<'static>> {
+    let skip = work.len().saturating_sub(n);
+    work[skip..].iter().map(|x| work_line(x, w.max(4), t_ms, form)).collect()
+}
+
+fn work_line(x: &Work, w: usize, t_ms: u64, form: Form) -> Line<'static> {
+    let text = x.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = match (x.kind, text.is_empty()) {
+        (WorkKind::Thinking, true) => "thinking".to_string(),
+        (_, _) => text,
+    };
+    let text = if x.kind == WorkKind::Thinking && x.state == WorkState::Running { format!("{text}…") } else { text };
+    let (mark, mark_st, text_st, end) = match x.state {
+        WorkState::Running => {
+            let (g, c) = if form.still { (theme::glyph(theme::G_WORKING), theme::text()) } else { theme::working_frame((t_ms / 100) as u32) };
+            let lit = fg(theme::text(), form);
+            let lit = if form.no_color { lit.add_modifier(Modifier::BOLD) } else { lit };
+            (g, fg(c, form), lit, None)
+        }
+        WorkState::Done => {
+            let end = (x.kind == WorkKind::Tool).then(|| (theme::glyph(theme::G_DONE), dimmed(theme::faint(), form)));
+            ("·", dimmed(theme::faint(), form), dimmed(theme::dim(), form), end)
+        }
+        WorkState::Failed => {
+            let e = fg(theme::error(), form);
+            let e = if form.no_color { e.add_modifier(Modifier::BOLD) } else { e };
+            ("·", dimmed(theme::faint(), form), dimmed(theme::dim(), form), Some((theme::glyph(theme::G_FAILED), e)))
+        }
+    };
+    let text_st = if x.kind == WorkKind::Thinking { text_st.add_modifier(Modifier::ITALIC) } else { text_st };
+    // the mark, a blank, the text, then ` ✓` / ` ✗`: the text is cut first
+    let room = w.saturating_sub(2 + end.map_or(0, |(g, _)| g.width() + 1));
+    let shown = if text.width() > room { format!("{}…", cut(&text, room.saturating_sub(1))) } else { text };
+    let mut s = vec![Span::styled(mark.to_string(), mark_st), Span::raw(" "), Span::styled(shown, text_st)];
+    if let Some((g, st)) = end {
+        s.extend([Span::raw(" "), Span::styled(g.to_string(), st)]);
+    }
+    Line::from(s)
 }
 
 /// The kiss's pose and color for the phase.

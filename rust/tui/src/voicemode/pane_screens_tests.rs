@@ -163,8 +163,24 @@ fn sample(phase: Phase) -> PaneView {
         elapsed: Duration::from_secs(134),
         route: Route::Headphones,
         heard_answer: None,
-        work: Vec::new(),
+        work: sample_work(),
     }
+}
+
+/// A turn's work (round 2): the column right of the captions.
+fn sample_work() -> Vec<crate::voicemode::Work> {
+    use crate::voicemode::{Work, WorkKind as K, WorkState as S};
+    let w = |kind, text: &str, state| Work { kind, text: text.into(), state };
+    vec![
+        w(K::Thinking, "the signup is slow: the bundle or the images", S::Done),
+        w(K::Tool, "read src/signup/Hero.tsx", S::Done),
+        w(K::Tool, "bash npm run build -- --stats", S::Done),
+        w(K::Tool, "bash npm test -- signup", S::Failed),
+        w(K::Message, "the test needs its fixture; adding it", S::Done),
+        w(K::Tool, "edit src/signup/fixture.ts", S::Done),
+        w(K::Thinking, "", S::Done),
+        w(K::Tool, "bash npm test -- signup", S::Running),
+    ]
 }
 
 #[test]
