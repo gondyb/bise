@@ -38,6 +38,8 @@ fn cases() -> Vec<Vec<&'static str>> {
         vec!["rename", "t1", "t2"],
         vec!["restore", "t1"],
         vec!["isolate", "t1"],
+        vec!["move", "t1", "shared"],
+        vec!["land", "--here", "the message"],
         vec!["history", "q"],
         vec!["history", "q w", "--agent", "main,t1", "--role", "user", "--since", "2026-09-01", "--archived", "--page", "2"],
         vec!["history", "q", "--role", "nope"],
