@@ -19,7 +19,8 @@ pub enum UserCmd {
         worktree: bool,
         with_changes: bool,
     },
-    /// `/drop [name] [--force]` (no name: the task in focus).
+    /// `/archive [name] [--force]` (no name: the task in focus). The
+    /// hub's drop: `sb drop` is the CLI's word for it.
     Drop {
         name: Option<String>,
         force: bool,
@@ -216,7 +217,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
                 with_changes,
             }
         }
-        "/drop" => {
+        "/archive" => {
             let force = words.contains(&"--force");
             let name = words
                 .iter()
@@ -377,23 +378,23 @@ mod tests {
     }
 
     #[test]
-    fn drop_defaults_to_the_task_in_focus() {
+    fn archive_defaults_to_the_task_in_focus() {
         assert_eq!(
-            parse("/drop", "docs"),
+            parse("/archive", "docs"),
             UserCmd::Drop {
                 name: Some("docs".into()),
                 force: false
             }
         );
         assert_eq!(
-            parse("/drop", MAIN),
+            parse("/archive", MAIN),
             UserCmd::Drop {
                 name: None,
                 force: false
             }
         );
         assert_eq!(
-            parse("/drop @bench --force", MAIN),
+            parse("/archive @bench --force", MAIN),
             UserCmd::Drop {
                 name: Some("bench".into()),
                 force: true

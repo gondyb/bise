@@ -574,7 +574,7 @@ fn dropping_a_worktree_with_work_asks_first() {
         dirty: 3,
         unpushed: 2,
     };
-    let fx = t.user(MAIN, "/drop fix");
+    let fx = t.user(MAIN, "/archive fix");
     let (id, text) = fx
         .iter()
         .find_map(|e| match e {
@@ -782,7 +782,7 @@ fn peers_cannot_reach_an_archived_task_but_the_user_can() {
         agent: "b".into(),
         leftover: false,
     });
-    t.user(MAIN, "/drop b --force");
+    t.user(MAIN, "/archive b --force");
     let (tok, fx) = t.req(
         "a",
         AgentReq::Send {
@@ -1601,7 +1601,7 @@ fn main_restores_and_isolates_a_task_and_tasks_cannot() {
     t.spawn_task("a");
     t.spawn_task("b");
     t.go(Input::ReplIdle { agent: "b".into(), leftover: false });
-    t.user(MAIN, "/drop b --force");
+    t.user(MAIN, "/archive b --force");
     assert_eq!(t.status("b"), Status::Archived);
     let (tok, fx) = t.req("a", AgentReq::Restore { agent: "b".into() });
     assert!(err_of(&fx, tok).contains("reserved for main"));
@@ -1684,14 +1684,14 @@ fn a_worktree_shared_by_two_agents_goes_with_its_last_one() {
     }
     t.hub.force_run("a", Run::Idle);
     // drop a, then c: the worktree stays with the others
-    let fx = t.user(MAIN, "/drop a --force");
+    let fx = t.user(MAIN, "/archive a --force");
     assert!(has_line(&fx, MAIN, "@a archived — its worktree stays with @b, @c"), "{:?}", fx);
-    t.user(MAIN, "/drop c --force");
+    t.user(MAIN, "/archive c --force");
     assert!(t.env.dropped.is_empty(), "no folder removed yet");
     assert!(!t.hub.st.agents["a"].ws.dropped);
     // b is the last: the folder goes, saved work included, for a and c too
     t.env.loss = Loss { dirty: 1, unpushed: 0 };
-    let fx = t.user(MAIN, "/drop b --force");
+    let fx = t.user(MAIN, "/archive b --force");
     assert_eq!(t.env.dropped, vec!["b".to_string()], "{:?}", fx);
     for n in ["a", "b", "c"] {
         let a = &t.hub.st.agents[n];
@@ -2001,7 +2001,7 @@ fn a_message_the_user_cannot_deliver_says_so() {
     // not ready yet: the user's message waits in the queue
     let fx = t.user("fix", "d'abord : les tests");
     assert!(lines_of(&fx, "fix").iter().all(|l| !l.starts_with("sb undelivered")), "{:?}", fx);
-    let fx = t.user(MAIN, "/drop fix");
+    let fx = t.user(MAIN, "/archive fix");
     assert_eq!(t.status("fix"), Status::Archived, "{:?}", fx);
     assert!(
         lines_of(&fx, "fix").contains(&"sb undelivered : fix : d'abord \\: les tests"),
@@ -2327,7 +2327,7 @@ fn a_step_keeps_the_archived_agents_it_does_not_send() {
     t.spawn_task("a");
     t.spawn_task("b");
     t.go(Input::ReplIdle { agent: "b".into(), leftover: false });
-    t.user(MAIN, "/drop b --force");
+    t.user(MAIN, "/archive b --force");
     t.go(Input::ReplExited { agent: "b".into(), crashed: false, reason: String::new() });
     assert_eq!(t.status("b"), Status::Archived);
     let out = t.hub.link.call(&json!({"t": "tick", "now": 1_000_000, "git": true, "ans": []})).unwrap();

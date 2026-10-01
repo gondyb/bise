@@ -75,8 +75,12 @@ pub(crate) const COMMANDS: &[Cmd] = &[
         desc: "start an agent: /new [-w] [name:] objective",
         args: &[Arg::Words(&[("-w", "in its own git worktree")]), Arg::Text],
     },
-    Cmd { name: "/drop", desc: "stop and archive an agent (and its worktree): /drop <agent>", args: &[Arg::Task] },
-    Cmd { name: "/restore", desc: "reopen an archived agent: /restore <agent>", args: &[Arg::Archived] },
+    Cmd {
+        name: "/archive",
+        desc: "stop an agent and archive it, with its worktree: /archive <agent>",
+        args: &[Arg::Task],
+    },
+    Cmd { name: "/restore", desc: "bring an archived agent back: /restore <agent>", args: &[Arg::Archived] },
     Cmd { name: "/archived", desc: "show or hide the archived agents in the panel", args: &[] },
     Cmd { name: "/isolate", desc: "give an agent its own git worktree: /isolate <agent>", args: &[Arg::Task] },
     Cmd { name: "/rename", desc: "rename an agent: /rename <agent> <new-name>", args: &[Arg::Task, Arg::Text] },
@@ -489,6 +493,20 @@ pub(crate) fn arg_items(app: &App) -> Vec<PopItem> {
         .collect()
 }
 
+/// The dim line above the argument popup of `/archive` and `/restore`
+/// (designer): `archive which agent?`, `restore which agent?`. Not a
+/// row: ⏎ still takes the first agent (the one in view).
+pub(crate) fn popup_title(app: &App) -> Option<&'static str> {
+    if !popup_open(app) {
+        return None;
+    }
+    match arg_slot(&app.ed.text)? {
+        (c, _, 0, _) if c.name == "/archive" => Some("archive which agent?"),
+        (c, _, 0, _) if c.name == "/restore" => Some("restore which agent?"),
+        _ => None,
+    }
+}
+
 /// A `@`, `$`, `:` or argument popup may complete the draft: not while
 /// a history line is recalled, nor after Esc closed the list on this text.
 pub(crate) fn popup_open(app: &App) -> bool {
@@ -766,6 +784,45 @@ mod arg_tests {
         }
     }
 
+    /// From an agent's view, `/archive` lists it first (`· in view`,
+    /// ⏎ archives it), and `/restore` the archived agent in view; the
+    /// titles say what the list is for. From main, the usual order.
+    #[test]
+    fn the_agent_in_view_comes_first() {
+        let mut app = test_app();
+        for (n, o) in [("auth-fix", "fix the login"), ("docs", "the release note"), ("bench", "time it")] {
+            add_agent(&mut app, n, o);
+        }
+        for n in ["old", "older"] {
+            add_agent(&mut app, n, "gone");
+            set_status(&mut app, n, "archived");
+        }
+        let labels = |v: &[PopItem]| v.iter().map(|i| i.label.clone()).collect::<Vec<_>>();
+        assert_eq!(labels(&items(&mut app, "/archive ")), ["auth-fix", "docs", "bench"]);
+        assert!(items(&mut app, "/archive ").iter().all(|i| !i.desc.contains("in view")));
+        crate::sb::focus(&mut app, "docs");
+        let a = items(&mut app, "/archive ");
+        assert_eq!(labels(&a), ["docs", "auth-fix", "bench"]);
+        assert_eq!((a[0].desc.as_str(), a[0].run.as_deref()), ("· in view · working · the release note", Some("/archive docs")));
+        assert_eq!(a[1].desc, "· working · fix the login", "the same ' · ' after every name");
+        assert_eq!(popup_title(&app), Some("archive which agent?"));
+        // a query the agent in view does not match: the others, as usual
+        assert_eq!(labels(&items(&mut app, "/archive time")), ["bench"]);
+        // /restore: the archived one in view first
+        let before = labels(&items(&mut app, "/restore "));
+        assert_eq!(before.len(), 2);
+        let last = before[1].clone();
+        crate::sb::focus(&mut app, &last);
+        let r = items(&mut app, "/restore ");
+        assert_eq!(r[0].label, last);
+        assert!(r[0].desc.starts_with("· in view · "), "{}", r[0].desc);
+        assert_eq!(r[0].run.as_deref(), Some(format!("/restore {last}").as_str()));
+        assert_eq!(popup_title(&app), Some("restore which agent?"));
+        app.ed.text = "/rename ".into();
+        app.ed.cursor = 8;
+        assert_eq!(popup_title(&app), None, "only /archive and /restore have one");
+    }
+
     fn items(app: &mut App, text: &str) -> Vec<PopItem> {
         app.ed.text = text.into();
         app.ed.cursor = text.chars().count();
@@ -785,7 +842,7 @@ mod arg_tests {
         assert_eq!(labels(&items(&mut app, "/theme ")), ["auto", "light", "dark"]);
         let t = items(&mut app, "/theme li");
         assert_eq!((t[0].fill.as_str(), t[0].run.as_deref()), ("/theme light", Some("/theme light")));
-        assert_eq!(labels(&items(&mut app, "/drop ")), ["auth-fix"], "live tasks only");
+        assert_eq!(labels(&items(&mut app, "/archive ")), ["auth-fix"], "live tasks only");
         assert_eq!(labels(&items(&mut app, "/isolate log")), ["auth-fix"], "the objective matches");
         assert_eq!(labels(&items(&mut app, "/restore ")), ["docs"], "archived only");
         let r = items(&mut app, "/rename a");

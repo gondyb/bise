@@ -998,7 +998,8 @@ pub(crate) fn status_state(app: &App) -> Vec<Line<'static>> {
     let rest: Vec<Span<'static>> = usage.as_ref().map(|u| d(u.compact())).into_iter().collect();
     let mut notes: Vec<Span<'static>> = Vec::new();
     if a.archived() {
-        notes.push(d("read-only history · /restore brings it back".into()));
+        // the placeholder says /restore: here only the state
+        notes.push(d("archived".into()));
     }
     if sb.preview {
         if let Some(sel) = sb.selected_agent().map(|a| a.name.clone()) {
@@ -1064,7 +1065,7 @@ pub(crate) fn status_text(app: &App) -> String {
 
 /// What `D` asks in the status row (book §16, BISE-43).
 pub(crate) fn drop_question(name: &str) -> String {
-    format!("drop {}? its history stays in archived. y / n", name)
+    format!("archive {}? /restore brings it back. y / n", name)
 }
 
 /// The key bar's mode once no overlay or popup has it (BISE-99,
@@ -1091,16 +1092,31 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
 
 /// What the empty composer shows after the cursor, dim (book §8 "The
 /// frame"): `what's on your mind?` to main, `talk to auth-fix directly`
-/// inside an agent, a read-only note in an archived agent's history.
+/// inside an agent, `/restore` in an archived agent's history (it reads
+/// nothing: a plain message stays in the composer, `archived_refusal`).
 pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = &app.sb;
     Some(if sb.focus_archived() {
-        format!("{} is archived: read-only", sb.focus)
+        format!("{} is archived · /restore to talk to it", sb.focus)
     } else if sb.is_main_focus() {
         PLACEHOLDER_MAIN.to_string()
     } else {
         format!("talk to {} directly", sb.focus)
     })
+}
+
+/// The line an archived agent's view says when ⏎ would send it a plain
+/// message (designer's words): it is not sent.
+pub(crate) fn archived_warn(name: &str) -> String {
+    format!("{name} is archived. /restore brings it back · esc → main")
+}
+
+/// ⏎ on `text` in the view in focus: an archived agent reads nothing,
+/// so a plain message (not a `/command`) is refused with its warn line
+/// and stays in the composer. None: it goes.
+pub(crate) fn archived_refusal(app: &App, text: &str) -> Option<String> {
+    let sb = &app.sb;
+    (sb.focus_archived() && !text.trim_start().starts_with('/')).then(|| archived_warn(&sb.focus))
 }
 
 /// The empty composer's question, to main (copy deck §17).
@@ -1699,11 +1715,23 @@ mod archived_tests {
         assert_eq!(app.sb.focus, "mid");
         let rows = draw(&mut app, &mut term);
         let all = rows.join("\n");
-        assert!(all.contains("read-only history"), "{}", all);
+        assert!(all.contains("archived ─"), "the divider says archived: {}", all);
+        assert_eq!(all.matches("/restore").count(), 1, "the placeholder alone says /restore: {}", all);
         assert!(panel(&rows, x).iter().any(|r| r.contains("mid did its job")), "{}", all);
-        assert_eq!(placeholder(&app).unwrap(), "mid is archived: read-only");
+        assert_eq!(placeholder(&app).unwrap(), "mid is archived · /restore to talk to it");
         let out = handle_input(&mut app, "hello");
-        assert!(matches!(&out[..], [Ev::Warn(w)] if w.contains("/restore")), "not sent");
+        assert!(matches!(&out[..], [Ev::Warn(w)] if w == "mid is archived. /restore brings it back · esc → main"), "not sent");
+        // ⏎ in the composer: the warn line, the message stays there;
+        // a command still runs
+        assert_eq!(archived_refusal(&app, "hello").as_deref(), Some("mid is archived. /restore brings it back · esc → main"));
+        assert_eq!(archived_refusal(&app, "/restore mid"), None);
+        app.ed.text = "hello".into();
+        app.ed.cursor = 5;
+        crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.ed.text, "hello", "the message stays in the composer");
+        assert!(app.events.iter().any(|e| matches!(e, Ev::Warn(w) if w.starts_with("mid is archived."))));
+        app.ed.text.clear();
+        app.ed.cursor = 0;
 
         let p = panel(&rows, x);
         let head = row_of(&p, "▾ 3 archived").unwrap();

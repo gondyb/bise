@@ -89,8 +89,8 @@ def main():
         main_role = open(os.path.join(E.state, "agents", "main", "role.md")).read()
         check("Your temp folder is `%s`" % os.path.join(E.state, "agents", "main", "tmp") in main_role,
               "main's role names its folder")
-        # /drop: tmp/ goes, run/ stays
-        c.say("/drop tt")
+        # /archive: tmp/ goes, run/ stays
+        c.say("/archive tt")
         c.wait(lambda: c.agent("tt")["status"] == "archived"
                or any(n.get("ev") == "confirm" for n in c.notices()), 30, "tt dropped or a confirmation")
         conf = [n for n in c.notices() if n.get("ev") == "confirm"]

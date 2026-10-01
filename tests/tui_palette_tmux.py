@@ -28,7 +28,7 @@ def main():
         t.wait_re(MAIN_IDLE)
         spawn(t, 1, "dark-mode", "dark colors first")
         spawn(t, 2, "old-beta", "the csv export")
-        t.typed("/drop old-beta")
+        t.typed("/archive old-beta")
         t.keys("Enter")
         if t.wait_any(["answer y", "@old-beta archived"], 20)[0] == 0:
             t.typed("y")
@@ -64,7 +64,7 @@ def main():
         sc = t.wait("earlier · read-only")
         print("---- beta ----\n" + sc)
         t.keys("Enter")
-        t.wait("old-beta is archived: read-only")
+        t.wait("old-beta is archived · /restore to talk to it")
         t.wait("the csv export")
         # /switch on a query: back to main
         t.keys("C-u")

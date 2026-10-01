@@ -26,7 +26,7 @@ def main():
         sc = t.wait_re(r"\b3 … t3\b", 60)
         print(sc)
         # drop t1: t2 and t3 keep their numbers
-        t.typed("/drop t1")
+        t.typed("/archive t1")
         t.keys("Enter")
         if t.wait_any(["answer y", "@t1 archived"], 20)[0] == 0:
             t.typed("y")

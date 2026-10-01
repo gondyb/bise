@@ -256,11 +256,11 @@ def main():
         t.typed("/agents")
         t.keys("Enter")
         t.wait("écris {{bash: echo hi-t1}}")
-        # drop from the panel with D: it asks first (BISE-43), y drops
+        # archive from the panel with D: it asks first (BISE-43), y archives
         t.keys("M-Down")
         t.keys("M-Down")
         t.typed("D")
-        t.wait("drop t1? its history stays in archived. y / n")
+        t.wait("archive t1? /restore brings it back. y / n")
         t.typed("y")
         t.wait("@t1 archived", 20)
         t.wait("1 archived")

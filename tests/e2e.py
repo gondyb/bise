@@ -342,7 +342,7 @@ def t_worktree_drop_restore(E, c):
     c.wait_idle("t4")
     check(out(wt, "git log -1 --format=%s") == "wt", "the commit is on the task's branch")
     check(not os.path.exists(os.path.join(E.ws, "wt.txt")), "the workspace is untouched")
-    c.say("/drop t4")
+    c.say("/archive t4")
     c.wait(lambda: any(n.get("ev") == "confirm" for n in c.notices()), 30, "a confirmation")
     conf = [n for n in c.notices() if n.get("ev") == "confirm"][-1]
     check("1 unpushed commit" in conf["text"], conf["text"])

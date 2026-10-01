@@ -729,6 +729,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 // the no-vision line now, the message stays in the composer
                 push_event(&mut app.events, &mut app.cache, Ev::Err(crate::attach::no_vision_error(&model)));
                 app.follow = true;
+            } else if let Some(w) = sb::archived_refusal(app, &app.ed.text) {
+                // an archived agent reads nothing: the message stays in
+                // the composer, its commands (/restore) still run
+                push_event(&mut app.events, &mut app.cache, Ev::Warn(w));
+                app.follow = true;
             } else {
                 let v = app.ed.take().trim().to_string();
                 let v = if v.starts_with('/') { v } else { crate::attach::expand(app, &v) };

@@ -96,7 +96,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(AGENTS, "alt+↑", "select the previous agent"),
     r(AGENTS, "⏎", "enter the selected agent").top(),
     r(AGENTS, "space", "preview the selected agent without entering it"),
-    r(AGENTS, "D", "drop the selected agent (stop it, archive its history)"),
+    r(AGENTS, "D", "archive the selected agent (stop it, keep its history)"),
     r(AGENTS, "A|/archived", "show or hide the archived agents (read-only history, newest first)"),
     r(AGENTS, "esc", "close the selection; in an agent, back to main").top(),
     r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").top(),

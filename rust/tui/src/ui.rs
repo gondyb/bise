@@ -832,7 +832,9 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
     // backgroundMenu, primary selection)
     let matches = popup_items(app);
     if !matches.is_empty() {
-        let n = matches.len().min(8) as u16;
+        // `/archive`'s and `/restore`'s question, dim, above the rows
+        let title = crate::commands::popup_title(app);
+        let n = matches.len().min(8) as u16 + u16::from(title.is_some());
         // wide enough for the widest line, whole (QA 6), within the prompt
         let need = matches
             .iter()
@@ -855,7 +857,10 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
         frame.render_widget(Clear, area);
         // BISE-272: over what it covers, no click does anything
         crate::pointer::region(area, crate::pointer::Shape::Default);
-        let lines: Vec<Line> = matches
+        let head = title.map(|t| Line::from(Span::styled(format!(" {t}"), Style::default().fg(theme::dim()))));
+        let lines: Vec<Line> = head
+            .into_iter()
+            .chain(matches
             .iter()
             .enumerate()
             .skip(top)
@@ -894,7 +899,7 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                 let room = (w as usize).saturating_sub(label.width() + mark_w + 6);
                 spans.push(Span::styled(truncate_chars(&c.desc, room), desc_style));
                 Line::from(spans)
-            })
+            }))
             .collect();
         frame.render_widget(
             Paragraph::new(lines).block(

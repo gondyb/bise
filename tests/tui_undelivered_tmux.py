@@ -24,7 +24,7 @@ def main():
         t.keys("Enter")
         t.wait("@t1", 30)
         time.sleep(2)
-        t.typed("/drop t1")
+        t.typed("/archive t1")
         t.keys("Enter")
         if t.wait_any(["answer y", "@t1 archived"], 20)[0] == 0:
             t.typed("y")

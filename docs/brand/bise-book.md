@@ -1168,7 +1168,7 @@ replays it (**⚠** proposed command).
 | `↑` in an empty composer | edit the newest queued message (then the history) | new (BISE-89) |
 | `↑` / `↓` at the composer's first / last row | the sent prompts, newest first (50 per workspace, kept across launches) | kept on disk (BISE-120a) |
 | `@name …` | direct message from main | — |
-| `/` | the commands, then each argument of a command (`/theme` light · dark · auto, the agents of `/drop` `/rename` `/isolate`, the archived ones of `/restore`, the inbox items of `/close` `/answer`, the versions of `/version` `/restart`, `/plugins` and its plugins): tab completes, ⏎ runs once nothing required is left | arguments new (BISE-117) |
+| `/` | the commands, then each argument of a command (`/theme` light · dark · auto, the agents of `/archive` `/rename` `/isolate` (the agent in view first), the archived ones of `/restore` (the one in view first), the inbox items of `/close` `/answer`, the versions of `/version` `/restart`, `/plugins` and its plugins): tab completes, ⏎ runs once nothing required is left | arguments new (BISE-117) |
 | `ctrl+c` | interrupt; again (or idle) quit, agents keep running | — |
 | `⌥ + 0…9` | go to main / agent N | now shown in the panel |
 | `alt+↓` / `alt+↑` | select next / previous agent | `ctrl+k` / `ctrl+j` removed (BISE-302) |
@@ -1217,7 +1217,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
 | composer hints, main | `@ file · $ skills · / commands` (something in the inbox: `… · ctrl+1 inbox`; without ctrl+digits `… · /inbox`) (BISE-303) |
 | composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |
-| composer placeholder (BISE-98) | `what's on your mind?` (to main) · `talk to {name} directly` (inside an agent) · `{name} is archived: read-only` |
+| composer placeholder (BISE-98) | `what's on your mind?` (to main) · `talk to {name} directly` (inside an agent) · `{name} is archived · /restore to talk to it` |
 | divider (BISE-98, BISE-135, BISE-303) | `you → {name} · {model} · {effort} · {mode}` (working: ` · <gust>`; ctrl held ` working · 42s`) · on the right the context `18k · 2%` (ctrl held: `idle · 18k / 1M tokens · 2%`), or `↓ back to the bottom · end · {n} new lines` while scrolled up |
 | run of level 3 | `▸ {n} messages between {k} agents` |
 | thinking | `∴ thought for {s}s` |
@@ -1240,9 +1240,10 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | images strip | `attached · backspace on a chip removes it` |
 | no undo (ctrl+z, or /cancel typed) | `no undo: an agent may already have acted. say the change to main instead ("no, v1 for docs").` |
 
-| drop asks first (D) | `drop {name}? its history stays in archived. y / n` · hint `y drop · n or esc keep` |
+| archive asks first (D) | `archive {name}? /restore brings it back. y / n` · hint `y archive · n or esc keep` |
 | yes/no confirm | `answer y (yes) or n (no), then ⏎` · hint `y yes · n no · esc cancel` |
-| archived agent in view | `@{name} is archived: its history is read-only · /restore brings it back · esc → main` |
+| archived agent in view | ⏎ on a plain message (it is not sent, it stays in the composer): `{name} is archived. /restore brings it back · esc → main` |
+| /archive, /restore pickers | title `archive which agent?` / `restore which agent?` (dim, above the rows); rows `{name} · {status} · {objective}`, the agent in view first, `{name} · in view · …` (⏎ takes it); in an archived agent's view `/restore` shows once, in the placeholder: the divider's right says `archived` (dim), the key bar `esc back to main` |
 | /theme | `theme: {mode}.` / `theme: {mode}. /theme auto, light or dark to change it.` / `theme: {mode}, for now: i couldn't save it ({err}).` / `/theme takes auto, light or dark.` |
 | /clear, ctrl+l | `display cleared — scroll up to see the earlier lines again` |
 | interrupt | `… · ctrl+c again to quit` |

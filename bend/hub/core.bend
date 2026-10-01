@@ -1136,7 +1136,7 @@ def drop.label(r: Result<&2, &2, String, J.Json>) -> String:
     case Done{J.JStr{_}}:
       " — work saved (/restore)"
     case Done{_}:
-      " — worktree deleted"
+      " · its worktree removed"
 
 def drop.snap(j: J.Json) -> Maybe<&2, String>:
   match j:
@@ -1248,7 +1248,7 @@ def drop.decide(-o: M.St, confirm: Bool, +cx: X.Cx<o>, +a: M.Agent, +has_wt: Boo
       +unpushed = J.get_num_or(loss, "unpushed", 0n)
       +parts = List.append(&2, String, Bool.pick(List<&2, String>, busy, ["the agent is mid-turn"], Nil{}),
         Bool.pick(List<&2, String>, Nat.is_gt(Nat.add(dirty, unpushed), 0n), [loss_text(dirty, unpushed)], Nil{}))
-      (cx, DAsk{cat(["drop @", M.Agent.name(a), "? ", String.join(parts, " ; "), ". [y/N]"])})
+      (cx, DAsk{cat(["archive @", M.Agent.name(a), "? ", String.join(parts, " ; "), ". [y/N]"])})
     case False{}:
       drop.now(o, has_wt, cx, a, loss)
 

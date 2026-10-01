@@ -1,8 +1,9 @@
 """Archived tasks in the panel, in a real terminal (tmux) on a throwaway
 hub with the fake provider: two tasks are dropped; the panel shows one
 dim, folded `▸ 2 archived` row; a click expands it (newest first); a
-click on an archived task opens its history read-only (typed text is
-not sent, the hint says /restore); /restore brings it back live.
+click on an archived task opens its history read-only (the placeholder
+says /restore; typed text is not sent and stays in the composer);
+/restore's picker has it first; /restore brings it back live.
 
 python3 -u tests/tui_archived_tmux.py
 """
@@ -34,7 +35,7 @@ def panel(t):
 
 
 def drop(t, name):
-    t.typed("/drop %s" % name)
+    t.typed("/archive %s" % name)
     t.keys("Enter")
     if t.wait_any(["answer y", "@%s archived" % name], 20)[0] == 0:
         t.typed("y")
@@ -69,17 +70,28 @@ def main():
         print("---- expanded ----\n" + p)
         assert p.index("– t2") < p.index("– t1"), "newest first:\n" + p
         click_on(t, "– t1")
-        sc = t.wait("t1 is archived: read-only")
-        assert "read-only history" in sc, sc
+        sc = t.wait("t1 is archived · /restore to talk to it")
+        # /restore once: the placeholder (the divider says archived)
+        assert sc.count("/restore") == 1, sc
         # its history is in the feed
         t.wait("first-objective")
         t.typed("hello-archived")
         t.keys("Enter")
-        sc = t.wait("@t1 is archived: its history is read-only")
+        sc = t.wait("t1 is archived. /restore brings it back · esc → main")
         print("---- archived feed ----\n" + sc)
-        # the hub never got the line
+        # the hub never got the line, it stays in the composer
         time.sleep(0.5)
-        assert "you: hello-archived" not in t.screen()
+        sc = t.screen()
+        assert "you: hello-archived" not in sc, sc
+        assert "hello-archived" in sc, sc
+        t.keys("C-u")
+        # /restore's picker: the archived agent in view first
+        t.typed("/restore ")
+        sc = t.wait("restore which agent?")
+        print("---- /restore picker ----\n" + sc)
+        rows = [r for r in sc.splitlines() if "· in view" in r]
+        assert rows and " t1 " in rows[0], sc
+        t.keys("C-u")
         # folding keeps the task in focus listed
         click_on(t, "▾ 2 archived")
         t.wait("▸ 2 archived")

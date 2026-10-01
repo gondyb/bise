@@ -98,14 +98,15 @@ impl Mode {
             // once lost its keys with an image)
             Mode::Images => &[("ctrl+v", "paste image"), REST[0], REST[1], REST[2]],
             Mode::Quote => &[ASK, ("cmd+c", "copy"), ("esc", "drop")],
-            Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
+            Mode::DropAsk => &[("y", "archive"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::Find => &[("⏎", "older"), ("shift+⏎", "newer"), ("esc", "close")],
             Mode::Palette => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
             Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
-            Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
-            Mode::Archived => &[BACK, ("/restore", "brings it back")],
+            Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "archive"), ("esc", "close")],
+            // the placeholder says /restore (designer: once)
+            Mode::Archived => &[BACK],
             Mode::Steer => &[("tab", "queue"), ("⏎", "steer"), ("ctrl+c", "interrupt")],
             Mode::Default => &REST,
         }
@@ -566,7 +567,7 @@ mod tests {
         let working = text(&render(Mode::Steer, 120, false, true, None));
         assert_eq!(working, "esc back to main   ⏎ steer   ctrl+c interrupt");
         let archived = text(&render(Mode::Archived, 120, false, true, None));
-        assert!(archived.starts_with("esc back to main   /restore"), "{archived}");
+        assert_eq!(archived, "esc back to main", "the placeholder says /restore");
     }
 
     #[test]

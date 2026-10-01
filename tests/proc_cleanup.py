@@ -88,7 +88,7 @@ def main():
             t1_tmux["TMUX_TMPDIR"] = t1_dir
         check(subprocess.run(["tmux", "-L", tsock, "has-session"], env=t1_tmux).returncode == 0, "t1's tmux")
 
-        c.say("/drop t1")
+        c.say("/archive t1")
         c.wait_status("t1", "archived", 30)
         c.wait(lambda: not alive("sleep 901" + tag), 15, "t1's sleep killed")
         c.wait(lambda: not alive("sbd --workspace " + child_ws), 15, "t1's hub killed")

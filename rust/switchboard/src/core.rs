@@ -1522,7 +1522,7 @@ impl Hub {
                     MAIN,
                     "warn",
                     &format!(
-                        "#{} ({}) is merged, but its worktree has {}: {} stays. /drop it when its work is not needed",
+                        "#{} ({}) is merged, but its worktree has {}: {} stays. /archive it when its work is not needed",
                         pr.number, l.branch, why, names
                     ),
                 ));
@@ -2145,7 +2145,7 @@ impl Hub {
             UserCmd::Drop { name, force } => match name {
                 None => fx.push(notice(
                     client,
-                    "usage: /drop <agent> (or /drop from the agent's view)",
+                    "usage: /archive <agent> (or /archive from the agent's view)",
                 )),
                 Some(name) => self.core(
                     fx,
@@ -2522,8 +2522,8 @@ pub const HELP: &str = "\
 plain text        message to the agent in view (main by default)
 @agent text       direct message to an agent, without main (@main from an agent)
 /new [-w] [name:] objective   create an agent (-w: its own git worktree, --with-changes: with your changes)
-/drop [agent] [--force]       stop and archive an agent (and delete its worktree)
-/restore agent    reopen an archived agent (and its saved worktree)
+/archive [agent] [--force]    stop an agent and archive it, with its worktree
+/restore agent    bring an archived agent back (and its saved worktree)
 /isolate agent    give a worktree to an agent that has not changed anything yet
 /rename a b       rename an agent (the old name still works)
 /answer N text    answer card N

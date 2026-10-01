@@ -30,7 +30,7 @@ mod tour_tests;
 #[cfg(test)]
 mod places_tests;
 pub(super) use panel::PANEL_TITLE;
-pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
+pub(super) use panel::{archived_refusal, archived_warn, draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
 #[cfg(test)]
 pub(super) use panel::status_text;
 pub(crate) use panel::{demo_ready, fill_demo, prefill_demo, DEMO, DEMO_READY};
@@ -504,7 +504,9 @@ pub(super) fn clear_display(app: &mut App) {
 }
 
 /// The agents matching `q` (name or objective): the live tasks (not
-/// main), or the archived ones, newest first (BISE-117).
+/// main), or the archived ones, newest first (BISE-117). The agent in
+/// view comes first, `· in view` (dim) after its name: from its view,
+/// `/archive` + ⏎ archives it, `/restore` + ⏎ restores it.
 pub(super) fn agent_choices(app: &App, archived: bool, q: &str) -> Vec<Choice> {
     let sb = &app.sb;
     let list: Vec<&Agent> = if archived {
@@ -512,13 +514,18 @@ pub(super) fn agent_choices(app: &App, archived: bool, q: &str) -> Vec<Choice> {
     } else {
         sb.agents.iter().filter(|a| !a.main && !a.archived()).collect()
     };
-    list.into_iter()
+    let (here, others): (Vec<&Agent>, Vec<&Agent>) = list.into_iter().partition(|a| a.name == sb.focus);
+    here.into_iter()
+        .chain(others)
         .filter(|a| crate::commands::matches(q, &[&a.name, &a.objective]))
-        .map(|a| Choice {
-            value: a.name.clone(),
-            label: a.name.clone(),
-            desc: format!("{} · {}", a.status, truncate_chars(&a.objective, 80)),
-            mark: None,
+        .map(|a| {
+            let in_view = if a.name == sb.focus { " in view ·" } else { "" };
+            Choice {
+                value: a.name.clone(),
+                label: a.name.clone(),
+                desc: format!("·{in_view} {} · {}", a.status, truncate_chars(&a.objective, 80)),
+                mark: None,
+            }
         })
         .collect()
 }
@@ -1110,10 +1117,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         "/cancel" => out.push(Ev::Info(NO_UNDO.into())),
         // an archived task reads nothing: its feed is history only
         _ if sb.focus_archived() && !typed.starts_with('/') => {
-            out.push(Ev::Warn(format!(
-                "@{} is archived: its history is read-only · /restore brings it back · esc → main",
-                sb.focus
-            )));
+            out.push(Ev::Warn(archived_warn(&sb.focus)));
         }
         _ => {
             sb.send_input(typed);
@@ -1573,7 +1577,7 @@ mod nav_key_tests {
     }
 
 /// D asks first (book §16, BISE-43): the status row says
-    /// `drop {name}? …`; n and esc keep the agent; y sends the /drop.
+    /// `archive {name}? …`; n and esc keep the agent; y sends the /archive.
     #[test]
     fn d_asks_before_dropping() {
         use std::io::Read;
@@ -1594,23 +1598,23 @@ mod nav_key_tests {
         let status = |app: &App| status_text(app);
         // D: the question, nothing sent
         assert!(press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT));
-        assert_eq!(status(&app).trim(), "drop docs? its history stays in archived. y / n");
+        assert_eq!(status(&app).trim(), "archive docs? /restore brings it back. y / n");
         assert_eq!(key_mode(&app), crate::keybar::Mode::DropAsk);
         assert_eq!(sent(), "");
         // n keeps it, the composer stays empty
         assert!(press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE));
-        assert!(!status(&app).contains("drop docs?"));
+        assert!(!status(&app).contains("archive docs?"));
         assert_eq!(sent(), "");
         // esc keeps it too
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
         assert!(press(&mut app, KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.sb.drop_ask, None);
         assert_eq!(sent(), "");
-        // y drops it
+        // y archives it
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
         assert!(press(&mut app, KeyCode::Char('y'), KeyModifiers::NONE));
         let out = sent();
-        assert!(out.contains(r#""op":"input""#) && out.contains("/drop docs"), "{out}");
+        assert!(out.contains(r#""op":"input""#) && out.contains("/archive docs"), "{out}");
         assert_eq!(app.ed.text, "");
         // main is never asked about
         app.sb.selected = Some(0);
