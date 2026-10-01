@@ -245,6 +245,9 @@ struct Shell {
     gates: gate::Gates,
     /// `sb land`'s line: one land at a time per target ref (dev-flow §5).
     lands: crate::land::Queue,
+    /// The PR poller (pr-design §7, `forge::poll`), on its own thread;
+    /// its answers come back as `Input::Prs`.
+    prs: Option<crate::forge::poll::Poller>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -868,6 +871,46 @@ impl Shell {
                 self.broadcast(&snap);
                 self.switch_idle_repls();
             }
+            Effect::Pr(e) => log_line(&self.opts.paths, &crate::forge::log_line(&e)),
+        }
+    }
+
+    /// The PR poller (pr-design §7): started once, off the loop (it
+    /// finds gh and the repo's forge on its thread); no forge, no asks.
+    fn start_prs(&mut self) {
+        let ws = self.opts.paths.workspace.clone();
+        let bin = self.opts.paths.bin_dir();
+        let log_paths = self.opts.paths.clone();
+        let tx = self.tx.clone();
+        let setup = Box::new(move || {
+            let gh = crate::forge::github::GitHub::find(&crate::tools_env::hub_agent_path(&bin));
+            let url = crate::worktree::git(&ws, &["remote", "get-url", "origin"]).ok()?;
+            let Some(repo) = crate::forge::github::detect(&url, gh.as_ref()) else {
+                log_line(&log_paths, "PRs: origin is not on GitHub, not followed");
+                return None;
+            };
+            log_line(
+                &log_paths,
+                &format!("PRs: following {}/{} on {}{}", repo.owner, repo.name, repo.host, if gh.is_none() { " (gh not found yet)" } else { "" }),
+            );
+            let forge: Box<dyn crate::forge::Forge> = match gh {
+                Some(g) => Box::new(g),
+                None => Box::new(crate::forge::github::GitHub { gh: "gh".into() }),
+            };
+            Some(crate::forge::poll::Watcher::new(repo, forge, Box::new(crate::forge::poll::RepoGit { workspace: ws })))
+        });
+        let sink = Box::new(move |r| {
+            let _ = tx.send(Msg::In(Input::Prs(r)));
+        });
+        self.prs = Some(crate::forge::poll::Poller::start(setup, sink));
+    }
+
+    /// Tell the poller the branches to follow (it sends nothing when
+    /// they did not change).
+    fn plan_prs(&mut self) {
+        let plan = crate::forge::poll::Plan { watches: self.hub.pr_watches(), clients: self.hub.has_clients() };
+        if let Some(p) = self.prs.as_mut() {
+            p.plan(plan);
         }
     }
 
@@ -1812,6 +1855,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         paths: paths.clone(),
         config: Config::load(&paths),
         log: Box::new(move |s| log_line(&log_paths, s)),
+        merged: BTreeMap::new(),
     };
     // the checker (approvals-design.md §4): a chat model in the role runs
     // through repl-live's one-shot, like the role lines
@@ -1860,6 +1904,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             runner,
         ),
         lands: crate::land::Queue::default(),
+        prs: None,
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -1937,6 +1982,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     }
     sh.down = sh.down_dirs();
     sh.reap_procs(None);
+    sh.start_prs();
     crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;
@@ -1953,6 +1999,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     sh.check_starts();
                     sh.switch_idle_repls();
                     sh.announce_update();
+                    sh.plan_prs();
                 }
             }
             Msg::ReplConnected {

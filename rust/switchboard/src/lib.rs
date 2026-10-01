@@ -26,6 +26,7 @@ pub mod client;
 pub mod core;
 pub mod daemon;
 pub mod flow;
+pub mod forge;
 pub mod land;
 pub mod model;
 pub mod paths;
