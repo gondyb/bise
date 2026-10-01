@@ -617,9 +617,19 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
             sb.activity.insert(agent.to_string());
         }
     }
+    // an answer given here: its fold line is in this feed already
+    let folded = line
+        .strip_prefix("sb route : ")
+        .and_then(|r| answer_route(&unescape_md(r)).map(|(_, id, _)| id))
+        .is_some_and(|id| sb.folded_in(id, agent));
     let mut queued = None;
     with_feed(app, agent, |app| {
-        ingest_at(app, line, pos, ts);
+        if folded {
+            let n0 = app.events.len();
+            feed::seen_at(app, pos, n0);
+        } else {
+            ingest_at(app, line, pos, ts);
+        }
         trim_window(app);
         // BISE-89: its turn ended, the oldest queued message goes (and
         // the next one waits for the turn it starts)
@@ -1030,6 +1040,14 @@ pub(crate) fn is_msg_id(s: &str) -> bool {
     s.strip_prefix("m_").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// The hub's line for an answer to an item (core.bend `answer.q.sent`):
+/// `you → @{asker} (answer to card #{id}) : {text}` → (asker, id, text).
+fn answer_route(text: &str) -> Option<(&str, u64, &str)> {
+    let (head, said) = text.split_once(" : ")?;
+    let (who, id) = head.strip_prefix("you → @")?.split_once(" (answer to card #")?;
+    Some((who, id.strip_suffix(')')?.parse().ok()?, said))
+}
+
 /// The synthetic lines of the hub (`sb <kind> : <text>`) as feed events.
 /// A hub line `sb <kind> : <text>` (hub line protocol, contract C2).
 /// v1 kinds keep working (an old transcript still renders); v2 adds:
@@ -1150,7 +1168,12 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
             },
             _ => Ev::Info(format!("card {} ", text)),
         },
-        "route" => Ev::Info(format!("→ {}", text)),
+        // an answer to an item: the box's fold line (BISE-305, designer:
+        // one sentence), `✓ you answered flow-prompts: oui`
+        "route" => match answer_route(&text) {
+            Some((who, _, said)) => Ev::Approval { ok: true, text: format!("you answered {who}: {said}"), note: String::new() },
+            None => Ev::Info(format!("→ {}", text)),
+        },
         "spawn" => Ev::Info(format!("✚ {}", text)),
         "direct" => Ev::Info(format!("⇄ {}", text)),
         "warn" => Ev::Warn(text),

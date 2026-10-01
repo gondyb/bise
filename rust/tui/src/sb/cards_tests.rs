@@ -656,3 +656,39 @@ fn the_last_answer_clears_the_inbox() {
     row_of(&rows, "✓ you answered a: hat");
     row_of(&rows, "✓ you answered b: never");
 }
+
+/// One line per answer in the thread (the user: « ça se retrouve
+/// affiché 2 fois »): the box's fold line, never the hub's route line
+/// under it; the hub's line, in a feed this TUI wrote no fold in (an
+/// answer from another view, a reload), reads as the same fold.
+#[test]
+fn an_answer_says_one_line_in_the_thread() {
+    let (mut app, mut hub) = app_with_hub();
+    app.sb.cards = cast();
+    open(&mut app);
+    ctrl(&mut app, 'n');
+    assert!(key(&mut app, KeyCode::Char('2'), KeyModifiers::NONE));
+    assert_eq!(sent(&mut hub), vec!["/answer 12 both: compress, and lazy-load below the fold"]);
+    let line = |agent: &str, l: &str| {
+        serde_json::json!({"ev": "line", "agent": agent, "line": format!("sb route : {l}")}).to_string()
+    };
+    let folds = |evs: &[Ev]| -> Vec<String> {
+        evs.iter()
+            .filter_map(|e| match e {
+                Ev::Approval { text, .. } => Some(text.clone()),
+                Ev::Info(t) if t.contains("answer to card") => Some(t.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    // the hub's line for it comes back to main's feed: nothing more
+    let focus = app.sb.focus.clone();
+    super::super::dispatch(&mut app, &line(&focus, "you → @perf (answer to card #12) : both: compress, and lazy-load below the fold"));
+    assert_eq!(folds(&app.events), vec!["you answered perf: both"]);
+    // an answer given elsewhere: the hub's line, as a fold
+    super::super::dispatch(&mut app, &line(&focus, "you → @docs (answer to card #40) : v2"));
+    assert_eq!(folds(&app.events), vec!["you answered perf: both", "you answered docs: v2"]);
+    // a message routed by hand stays as it was
+    super::super::dispatch(&mut app, &line(&focus, "you → @docs : thanks"));
+    assert!(matches!(app.events.last(), Some(Ev::Info(t)) if t == "→ you → @docs : thanks"));
+}

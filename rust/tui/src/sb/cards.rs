@@ -157,6 +157,10 @@ pub(super) struct CardView {
     pub(super) thread: Option<Editor>,
     /// Answered or closed here, still in the hub's last snapshot: hidden.
     answered: Vec<u64>,
+    /// The cards whose fold line this TUI wrote, and the feed it went
+    /// to: the hub's own line for the answer (`route : you → @x (answer
+    /// to card #n) : …`) stays out of that feed (one line per answer).
+    folded: Vec<(u64, String)>,
     /// Set by the last draw: what a click hits.
     pub(super) hits: RefCell<Vec<(Rect, CardHit)>>,
 }
@@ -547,6 +551,11 @@ impl Sb {
         self.card.answered.contains(&id)
     }
 
+    /// This TUI wrote card `id`'s fold line in `agent`'s feed.
+    pub(super) fn folded_in(&self, id: u64, agent: &str) -> bool {
+        self.card.folded.iter().any(|(i, a)| *i == id && a == agent)
+    }
+
     fn card_ids(&self) -> Vec<u64> {
         self.sorted_cards().iter().map(|c| c.id).collect()
     }
@@ -702,6 +711,7 @@ fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
     let fold = fold_of(&c, reply, said);
     if c.kind != "confirm" {
         push_event(&mut app.events, &mut app.cache, Ev::Approval { ok: fold.ok, text: fold.text.clone(), note: fold.note.clone() });
+        app.sb.card.folded.push((id, app.sb.focus.clone()));
     }
     let open = app.sb.card.open && app.sb.card.sel == Some(id);
     retire(app, id);

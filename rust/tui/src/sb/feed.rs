@@ -120,6 +120,13 @@ pub(super) fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
 pub(super) fn ingest_at(app: &mut App, line: String, pos: Option<usize>, ts: Option<u64>) {
     let n0 = app.events.len();
     ingest_line(app, line, ts);
+    seen_at(app, pos, n0);
+}
+
+/// Line `pos` of the transcript was read, its events from `n0`: the
+/// window's ends and marks (a line that drew nothing moves the ends
+/// only).
+pub(super) fn seen_at(app: &mut App, pos: Option<usize>, n0: usize) {
     if let Some(p) = pos {
         app.win.first_pos.get_or_insert(p);
         app.win.last_pos = Some(app.win.last_pos.map_or(p, |l| l.max(p)));
