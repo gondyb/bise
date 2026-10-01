@@ -79,7 +79,8 @@ def main():
         t.typed("/approvals")
         t.keys("Enter")
         sc = t.wait("↑↓ choose · backspace remove · esc back")
-        assert "what runs without asking you in /private/…/" in sc, sc
+        # the repo's own name stays (a long path is cut in its middle)
+        assert "what runs without asking you in /" in sc and "/ws." in sc, sc
         assert "off · every command asks you" in sc and "/models changes it" in sc, sc
         assert "› cargo test *" in sc and "2 days ago · 2 agents" in sc, sc
         assert "gmail.send_email" in sc and "a connector · every project" in sc, sc
