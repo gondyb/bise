@@ -687,8 +687,16 @@ impl Shell {
         // the agent's edit toolset (approvals-edit: one per provider)
         let main = self.hub.st.agents.get(name).is_some_and(|a| a.is_main);
         let edit_tool = if self.in_use(dir, main).model.provider == "openai" { "apply_patch" } else { "edit" };
+        // dev-flow §6: the flow's rows, with the agent's own branch
+        let flow = self.flow_now().map(|f| approvals::FlowRules {
+            mode: f.mode,
+            push: f.push,
+            base: f.base,
+            branch: self.hub.st.agents.get(name).and_then(|a| a.ws.branch.clone()),
+        });
         Call {
             edit_tool: edit_tool.into(),
+            flow,
             tool,
             args,
             agent: name.to_string(),
@@ -1046,6 +1054,7 @@ mod tests {
             home: "/u".into(),
             bise: "/u/.bise".into(),
             edit_tool: "edit".into(),
+            flow: None,
         }
     }
 

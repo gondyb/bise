@@ -24,11 +24,8 @@ use cards::{Card, CardView};
 mod card_draw;
 pub(super) use card_draw::{box_height, card_frame, BoxFit, card_view_open, divider_label as card_divider_label, draw_box, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs};
 mod panel;
-pub(crate) mod places;
 #[cfg(test)]
 mod tour_tests;
-#[cfg(test)]
-mod places_tests;
 pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
 #[cfg(test)]
@@ -108,9 +105,6 @@ pub(super) struct Agent {
     /// BISE-136: the private git worktree it works in (`gate.sh new`),
     /// "" when it works in its own workspace.
     place: String,
-    /// dev-flow §3.1: the id of its place (`shared`, `wt:<dir>`), the
-    /// box it sits in when `places` has it ("" from an older hub)
-    place_id: String,
     /// The model it runs (the full `provider/id`) and its reasoning
     /// effort ("" = the model takes none), as the hub resolves them
     /// (BISE-135: its `/model`, `/reasoning` choice first); the efforts
@@ -152,12 +146,6 @@ pub(super) struct Sb {
     pub(super) focus: String,
     views: HashMap<String, View>,
     agents: Vec<Agent>,
-    /// The worktrees, one box each in the panel (pr-design §4.1), in
-    /// their first agent's order.
-    places: Vec<places::Place>,
-    /// The repo's flow, `pr` or `trunk` ("" until the hub says): the
-    /// header's held `lands via PRs` (dev-flow §7).
-    flow: String,
     cards: Vec<Card>,
     /// Index in `nav()` of the highlighted entry of the panel.
     selected: Option<usize>,
@@ -295,51 +283,18 @@ impl Sb {
         }
     }
 
-    /// What the panel navigates, in its order (pr-design §4.1): the
-    /// blocks' agents ([`Sb::blocks`]), then (the section expanded) the
-    /// archived ones, newest first.
+    /// What the panel navigates: main, then the live tasks in the order
+    /// of their numbers (QA M: a newcomer that takes a dropped agent's
+    /// number sits at that number's row, not last), then (the section
+    /// expanded) the archived ones, newest first.
     fn nav(&self) -> Vec<&Agent> {
-        let mut out: Vec<&Agent> = self.blocks().into_iter().flat_map(|(_, a)| a).collect();
+        let mut out: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
+        let numbers = self.numbers();
+        out.sort_by_key(|a| numbers.iter().find(|(n, _)| *n == a.name).map_or(usize::MAX, |(_, k)| *k));
         if self.archived_open {
             out.extend(self.archived());
         }
         out
-    }
-
-    /// The live agents by block (pr-design §4.1): the shared folder's
-    /// (main first, None), then one block per worktree, ordered by its
-    /// first agent's number; in each, the order of their numbers (QA M:
-    /// a newcomer that takes a dropped agent's number sits at that
-    /// number's row, not last). A worktree whose agents are all archived
-    /// keeps its block, empty. Numbers never change; the order follows
-    /// the blocks.
-    fn blocks(&self) -> Vec<(Option<&places::Place>, Vec<&Agent>)> {
-        let numbers = self.numbers();
-        let num = |name: &str| numbers.iter().find(|(n, _)| n == name).map_or(usize::MAX, |(_, k)| *k);
-        let live: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
-        let place_of = |a: &Agent| self.place_of(a).and_then(|p| self.places.iter().position(|q| std::ptr::eq(p, q)));
-        let mut shared: Vec<&Agent> = live.iter().copied().filter(|a| place_of(a).is_none()).collect();
-        shared.sort_by_key(|a| num(&a.name));
-        let mut boxes: Vec<(Option<&places::Place>, Vec<&Agent>)> = self
-            .places
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let mut v: Vec<&Agent> = live.iter().copied().filter(|a| place_of(a) == Some(i)).collect();
-                v.sort_by_key(|a| num(&a.name));
-                (Some(p), v)
-            })
-            .collect();
-        // by the number of its first agent (the hub's order), else last
-        boxes.sort_by_key(|(p, _)| p.and_then(|p| p.agents.iter().map(|n| num(n)).find(|k| *k != usize::MAX)).unwrap_or(usize::MAX));
-        let mut out = vec![(None, shared)];
-        out.extend(boxes);
-        out
-    }
-
-    /// The worktree `a` works in, when the hub sent it (main never).
-    fn place_of(&self, a: &Agent) -> Option<&places::Place> {
-        self.places.iter().find(|p| !a.main && (p.agents.contains(&a.name) || (!a.place_id.is_empty() && p.id == a.place_id)))
     }
 
     /// The archived tasks, the most recently active first.
@@ -719,7 +674,6 @@ fn apply_state(app: &mut App, v: &Value) {
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
                     waiting_on: s(x, "waiting_on"),
                     place: s(x, "place"),
-                    place_id: s(x, "place_id"),
                     model: s(x, "model"),
                     effort: s(x, "effort"),
                     efforts: x
@@ -731,8 +685,6 @@ fn apply_state(app: &mut App, v: &Value) {
                 .collect()
         })
         .unwrap_or_default();
-    sb.places = places::parse(v);
-    sb.flow = s(v, "flow");
     sb.cards = v
         .get("cards")
         .and_then(|a| a.as_array())

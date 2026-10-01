@@ -20,6 +20,11 @@ pub enum Hard {
     Protected(String),
     Secret(String),
     PipeToShell,
+    /// dev-flow §6: a write on the forge (merge, approve, comment, close,
+    /// `gh api` writes): always the user's.
+    Forge(String),
+    /// dev-flow §6: `sb land` in a PR flow (no landing on main).
+    LandInPrFlow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,6 +53,11 @@ impl Hard {
             Hard::Protected(p) => format!("it writes to {p}, which bise protects."),
             Hard::Secret(p) => format!("it reads a secret: {p}."),
             Hard::PipeToShell => "it downloads a script and runs it.".to_string(),
+            Hard::Forge(what) => format!("it {what} on GitHub."),
+            Hard::LandInPrFlow => {
+                "this repo ships through pull requests: commit with sb land --here, then open a PR."
+                    .to_string()
+            }
         };
         format!("{what} this one always asks.")
     }
@@ -104,6 +114,17 @@ pub enum Class {
     /// Tier 1.
     Allowed,
     Open(Open),
+    /// dev-flow §6: the flow makes it the user's call; the card offers
+    /// "always" (`rule`), a saved rule runs it.
+    Ask(Ask),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ask {
+    /// The card's reason line.
+    pub reason: String,
+    /// The "always" rule the card offers.
+    pub rule: String,
 }
 
 /// What moves between the parts of one command: the base folder (`cd`).
@@ -117,6 +138,8 @@ pub struct Walk<'a> {
     /// Variables whose value the hub knows (`TMPDIR` → the agent's temp
     /// folder, `HOME`), when the command does not set them.
     pub known: Vec<(String, String)>,
+    /// The repo's flow (dev-flow §6's rows); None: unknown.
+    pub flow: Option<&'a super::FlowRules>,
 }
 
 impl Walk<'_> {
@@ -394,13 +417,19 @@ pub fn classify(part: &Part, w: &mut Walk) -> Class {
         Kind::Compound(_) => Class::Allowed,
         Kind::Simple => simple(part, w),
     };
+    let mut ask = None;
     match verdict {
         Class::Hard(h) => hard.push(h),
         Class::Open(o) => open = Some(o),
+        Class::Ask(a) => ask = Some(a),
         Class::Allowed => {}
     }
     if let Some(h) = hard.into_iter().min() {
         return Class::Hard(h);
+    }
+    // the flow's ask is the user's anyway: a written file's check waits
+    if let Some(a) = ask {
+        return Class::Ask(a);
     }
     open.map(Class::Open).unwrap_or(Class::Allowed)
 }
@@ -484,6 +513,9 @@ fn simple(part: &Part, w: &mut Walk) -> Class {
     }
     if name == "curl" || name == "wget" {
         w.fetched = true;
+    }
+    if let Some(c) = w.flow.and_then(|f| flow_row(part, name, &args, f)) {
+        return c;
     }
     if name == "git" {
         if let Some(h) = git_push(&args) {
@@ -699,6 +731,128 @@ fn git_push(args: &[&str]) -> Option<Hard> {
         .map(|r| branch_of(r))
         .find(|b| b == "main" || b == "master")
         .map(Hard::PushMain)
+}
+
+/// dev-flow §6, "Approvals (auto mode)": the rows the repo's flow sets.
+/// None: no row, the other tiers decide.
+///
+/// | command | PR flow | trunk flow |
+/// | `git push` of its own branch | runs | asks |
+/// | `git push` to the default branch | always asks | runs if `push`, else asks |
+/// | `gh pr create/view/checks/diff/list/status` | runs | asks |
+/// | `gh pr merge/close/comment/review`, `gh api` writes | always ask | always ask |
+/// | `sb land` | refused | runs |
+fn flow_row(part: &Part, name: &str, args: &[&str], f: &super::FlowRules) -> Option<Class> {
+    use crate::flow::FlowMode::{Pr, Trunk};
+    let ask = |reason: String, rule: &str| {
+        Some(Class::Ask(Ask {
+            reason,
+            rule: if pattern_ok(part) { rule.to_string() } else { part.exact() },
+        }))
+    };
+    match name {
+        "git" if args.first() == Some(&"push") => {
+            if git_push(args).is_some_and(|h| matches!(h, Hard::ForcePush(_))) {
+                return None; // a forced push stays a hard rule
+            }
+            let target = push_target(args, f)?;
+            if target == f.base {
+                return match (f.mode, f.push) {
+                    (Pr, _) => Some(Class::Hard(Hard::PushMain(target))),
+                    (Trunk, true) => Some(Class::Allowed),
+                    (Trunk, false) => ask(
+                        format!("it pushes {target}, and this repo keeps its lands local (push = false)."),
+                        "git push *",
+                    ),
+                };
+            }
+            if f.branch.as_deref() != Some(target.as_str()) {
+                return None; // another branch: the checker decides
+            }
+            match f.mode {
+                Pr => Some(Class::Allowed),
+                Trunk => ask(
+                    format!("it pushes {target}, and this repo lands on {}: no PR here.", f.base),
+                    "git push *",
+                ),
+            }
+        }
+        "gh" => {
+            let (a0, a1) = (args.first().copied().unwrap_or(""), args.get(1).copied().unwrap_or(""));
+            if a0 == "api" {
+                return gh_api_writes(args).then(|| Class::Hard(Hard::Forge("writes through the API".into())));
+            }
+            if a0 != "pr" {
+                return None;
+            }
+            match a1 {
+                "merge" => Some(Class::Hard(Hard::Forge("merges a PR".into()))),
+                "close" | "reopen" | "lock" | "unlock" => Some(Class::Hard(Hard::Forge(format!("{a1}s a PR")))),
+                "comment" => Some(Class::Hard(Hard::Forge("comments on a PR".into()))),
+                "review" => Some(Class::Hard(Hard::Forge(if args.iter().any(|a| *a == "--approve" || *a == "-a") {
+                    "approves a PR".into()
+                } else {
+                    "reviews a PR".into()
+                }))),
+                "create" | "view" | "checks" | "diff" | "list" | "status" => match f.mode {
+                    Pr => Some(Class::Allowed),
+                    Trunk => ask(
+                        format!("it uses a PR, and this repo lands on {}: no PR here.", f.base),
+                        &format!("gh pr {a1} *"),
+                    ),
+                },
+                _ => None,
+            }
+        }
+        "sb" if args.first() == Some(&"land") && !args.contains(&"--here") && f.mode == Pr => {
+            Some(Class::Hard(Hard::LandInPrFlow))
+        }
+        _ => None,
+    }
+}
+
+/// The branch a non-forced `git push` updates: its refspec's
+/// destination, else the agent's own branch (the default branch in the
+/// shared folder). None: unreadable (`HEAD` in the shared folder is the
+/// default branch too).
+fn push_target(args: &[&str], f: &super::FlowRules) -> Option<String> {
+    let refs: Vec<&str> = args[1..]
+        .iter()
+        .filter(|a| !a.starts_with('-'))
+        .skip(1)
+        .copied()
+        .collect();
+    let here = || f.branch.clone().unwrap_or_else(|| f.base.clone());
+    match refs.as_slice() {
+        [] => Some(here()),
+        [r] => {
+            let dst = r.rsplit(':').next().unwrap_or(r).trim_start_matches("refs/heads/");
+            Some(if dst == "HEAD" { here() } else { dst.to_string() })
+        }
+        _ => None,
+    }
+}
+
+/// `gh api` that writes: `-X`/`--method` other than GET, or fields
+/// (`-f`, `-F`, `--field`, `--raw-field`, `--input`: a POST by default).
+fn gh_api_writes(args: &[&str]) -> bool {
+    let mut it = args.iter().peekable();
+    let mut method: Option<String> = None;
+    let mut fields = false;
+    while let Some(a) = it.next() {
+        match *a {
+            "-X" | "--method" => method = it.next().map(|m| m.to_ascii_uppercase()),
+            "-f" | "-F" | "--field" | "--raw-field" | "--input" => fields = true,
+            a if a.starts_with("--method=") => method = Some(a["--method=".len()..].to_ascii_uppercase()),
+            a if a.starts_with("-X") && a.len() > 2 => method = Some(a[2..].to_ascii_uppercase()),
+            a if a.starts_with("--field=") || a.starts_with("--raw-field=") || a.starts_with("--input=") => fields = true,
+            _ => {}
+        }
+    }
+    match method {
+        Some(m) => m != "GET" && m != "HEAD",
+        None => fields,
+    }
 }
 
 fn fetches(src: &str) -> bool {

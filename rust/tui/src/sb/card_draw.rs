@@ -478,17 +478,14 @@ fn hint(s: &Shape) -> Option<&'static str> {
     }
 }
 
-/// The open item in place, `w` columns (its bar and gap and its right
-/// padding included), in
+/// The open item in place, `w` columns (its bar and gap included), in
 /// at most `cap` rows: a blank row, the head, the middle, a blank row,
 /// the options and the hint, a blank row; a middle too long for `cap`
 /// keeps its first lines, then `… n more lines · ctrl+o full screen`.
 fn item_block(app: &App, c: &Card, w: usize, cap: usize) -> Vec<Drawn> {
     let sb = &app.sb;
     let s = shape(c);
-    // the bar and its gap on the left, one tinted column on the right:
-    // `1 of 4 · 2m` never touches the tint's edge
-    let tw = w.saturating_sub(3).max(1);
+    let tw = w.saturating_sub(2).max(1);
     let typing = !app.ed.text.is_empty();
     let mut middle = middle_lines(app, c, &s, tw);
     let opts = option_lines(&s, c.id, tw, sb.card.opt, typing);

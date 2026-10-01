@@ -196,11 +196,9 @@ pub fn place_of(st: &State, name: &str) -> Option<String> {
 }
 
 /// The views the TUI draws: worktrees only. `lids`: the held line of a
-/// place, by id (the land queue's `waits to land · 2nd`, else pr-hub's
-/// `no PR yet · 2 commits`). `stale`: the age of a PR's state, by place
-/// id, when the forge is late (pr-hub: its last ask failed, or it is
-/// older than `core::PR_STALE_MS`).
-pub fn views(places: &[Place], lids: &BTreeMap<String, String>, stale: &BTreeMap<String, u64>) -> Vec<PlaceView> {
+/// place, by id (the land queue's `waits to land · 2nd`). `now`: for the
+/// PR's staleness (`stale_after`: the age past which a PR is stale).
+pub fn views(places: &[Place], lids: &BTreeMap<String, String>, now_ms: u64, stale_after_ms: u64) -> Vec<PlaceView> {
     places
         .iter()
         .filter(|p| p.kind == PlaceKind::Worktree)
@@ -214,11 +212,17 @@ pub fn views(places: &[Place], lids: &BTreeMap<String, String>, stale: &BTreeMap
                 state: pr.state,
                 review: pr.review,
                 checks: pr.checks.clone(),
-                stale_ms: stale.get(&p.id).copied(),
+                stale_ms: stale_ms(&pr.updated_at, now_ms, stale_after_ms),
             }),
             lid: lids.get(&p.id).cloned(),
         })
         .collect()
+}
+
+/// Wave 1 has no poller: a PR's staleness is pr-hub's (it knows when it
+/// last asked the forge). Here: never stale.
+fn stale_ms(_updated_at: &str, _now: u64, _after: u64) -> Option<u64> {
+    None
 }
 
 #[cfg(test)]
@@ -265,7 +269,7 @@ mod tests {
         assert_eq!(ps[1].agents, ["c"]);
         // the views: worktrees only, the lid by id
         let lids = BTreeMap::from([("wt:a".to_string(), "waits to land · 2nd".to_string())]);
-        let v = views(&ps, &lids, &BTreeMap::new());
+        let v = views(&ps, &lids, 0, 0);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].lid.as_deref(), Some("waits to land · 2nd"));
         assert_eq!(v[0].pr, None);

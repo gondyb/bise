@@ -57,10 +57,6 @@ pub trait Env {
         ws: &Workspace,
         snapshot: Option<&str>,
     ) -> Result<Workspace, String>;
-    /// pr-design §6.4: the PR of `branch` is merged with `head` its head:
-    /// a tip at `head` loses nothing at a drop (no backup, RFC 0002
-    /// §5.1's squash case).
-    fn pr_merged(&mut self, _branch: &str, _head: &str) {}
 }
 
 /// A request of the `sb` CLI (RFC 0003 §4, RFC 0001 §7.2, §7.5).
@@ -98,6 +94,12 @@ pub enum AgentReq {
     /// A view-only fact: never sent to sb-core, never journaled.
     Worktree {
         path: String,
+    },
+    /// `sb flow [pr|trunk]` (main, dev-flow §2): the repo's flow and the
+    /// question to ask, or the user's answer saved. The daemon's
+    /// (`Effect::Flow`): never sent to sb-core.
+    Flow {
+        set: Option<crate::flow::FlowMode>,
     },
     Report {
         kind: String,
@@ -227,6 +229,12 @@ impl AgentReq {
                     s => return Err(format!("unknown status: {} (working|done|blocked)", s)),
                 },
                 note: jstr(v, "note"),
+            },
+            "flow" => AgentReq::Flow {
+                set: match jstr(v, "set").trim() {
+                    "" => None,
+                    m => Some(crate::devflow::parse_mode(m).map_err(|_| "usage: sb flow [pr|trunk]".to_string())?),
+                },
             },
             "worktree" => AgentReq::Worktree {
                 path: match jstr(v, "path").trim() {
@@ -388,8 +396,6 @@ pub enum Input {
         key: String,
         line: Option<String>,
     },
-    /// An answer of the PR poller (`forge::poll`, its own thread).
-    Prs(crate::forge::poll::Report),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -481,9 +487,14 @@ pub enum Effect {
         effort: Option<String>,
         default: bool,
     },
-    /// A PR event (pr-design §10): the daemon logs it (pr-news routes
-    /// them, wave 3). The journaled ones also come as `Journal`.
-    Pr(crate::forge::PrEvent),
+    /// `/flow` and `sb flow` (dev-flow §2, §7): the daemon reads the
+    /// config and the detection, saves a switch, and answers the client
+    /// (`client`) or the agent's request (`token`).
+    Flow {
+        client: Option<ClientId>,
+        token: Option<Token>,
+        set: Option<crate::flow::FlowMode>,
+    },
 }
 
 /// The sb-core executable: `SB_CORE_BIN` (the harness sets it from its
@@ -638,18 +649,6 @@ pub struct Hub {
     /// The repo's `[flow] mode` (None: not set), for the views' held
     /// header (`lands via PRs` / `lands on main`); the daemon reads it.
     pub flow: Option<crate::flow::FlowMode>,
-    /// pr-hub (pr-design §7-§10), runtime but `known`: what the journal
-    /// says of each place's PR (its number; `pr_*` lines, read back by
-    /// `replay`); `pr_lids`: the held line of a worktree with no PR yet
-    /// (`no PR yet · 2 commits`; the land queue's `lids` win);
-    /// `pr_ok_ms`: when the forge last answered for a place; `pr_late`:
-    /// its last ask failed (the boxes go faint); `pr_done`: places whose
-    /// merged PR was cleaned up (or kept, said once).
-    pr_known: BTreeMap<String, crate::forge::Known>,
-    pr_lids: BTreeMap<String, String>,
-    pr_ok_ms: BTreeMap<String, u64>,
-    pub pr_late: Option<crate::forge::ForgeError>,
-    pr_done: BTreeSet<String>,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -796,11 +795,6 @@ impl Hub {
             prs: BTreeMap::new(),
             lids: BTreeMap::new(),
             flow: None,
-            pr_known: BTreeMap::new(),
-            pr_lids: BTreeMap::new(),
-            pr_ok_ms: BTreeMap::new(),
-            pr_late: None,
-            pr_done: BTreeSet::new(),
             dirty: false,
             link,
             revive: None,
@@ -832,11 +826,6 @@ impl Hub {
     pub fn replay(&mut self, events: &[Value]) -> Vec<Value> {
         let mut skipped = Vec::new();
         for ev in events {
-            // the hub's own lines (the PR numbers): never sb-core's
-            if crate::forge::is_pr_line(ev) {
-                crate::forge::read_line(&mut self.pr_known, ev);
-                continue;
-            }
             let out = self.raw(&json!({"t": "replay", "ev": ev}));
             if out["skipped"].as_bool() == Some(true) {
                 skipped.push(ev.clone());
@@ -1115,153 +1104,6 @@ impl Hub {
         self.dirty = true;
     }
 
-    /// A client is attached (the PR poller's slow cadence when none).
-    pub fn has_clients(&self) -> bool {
-        !self.clients.is_empty()
-    }
-
-    /// The branches the PR poller follows: each worktree place's.
-    pub fn pr_watches(&self) -> Vec<crate::forge::poll::Watch> {
-        crate::place::places(&self.st, &self.prs)
-            .into_iter()
-            .filter(|p| p.kind == crate::place::PlaceKind::Worktree)
-            .filter_map(|p| {
-                Some(crate::forge::poll::Watch { branch: p.branch?, place: p.id, path: p.path, base: p.base })
-            })
-            .collect()
-    }
-
-    /// An answer of the PR poller (pr-design §7-§10): the snapshots by
-    /// place, the events (journaled when they carry the number), the
-    /// held line of a place with no PR yet, a merged PR's cleanup.
-    fn prs_in(&mut self, fx: &mut Fx, env: &mut dyn Env, r: crate::forge::poll::Report) {
-        use crate::forge::{self, PrEvent};
-        let places = crate::place::places(&self.st, &self.prs);
-        let place = |id: &str| places.iter().find(|p| p.id == id && p.kind == crate::place::PlaceKind::Worktree);
-        for l in &r.local {
-            if place(&l.place).is_none() {
-                continue;
-            }
-            if let Some(n) = l.commits {
-                let lid = forge::no_pr_lid(n);
-                if self.pr_lids.get(&l.place) != Some(&lid) {
-                    self.pr_lids.insert(l.place.clone(), lid);
-                    self.dirty = true;
-                }
-            }
-        }
-        let prs = match r.prs {
-            None => return,
-            Some(Err(e)) => {
-                if self.pr_late.is_none() {
-                    fx.push(Effect::Pr(PrEvent::Unreachable { error: e.clone() }));
-                    self.dirty = true;
-                }
-                self.pr_late = Some(e);
-                return;
-            }
-            Some(Ok(prs)) => prs,
-        };
-        if self.pr_late.take().is_some() {
-            self.dirty = true;
-        }
-        for l in &r.local {
-            let Some(p) = place(&l.place) else { continue };
-            let known = self.pr_known.get(&l.place).copied();
-            let new = prs.iter().find(|pr| pr.branch == l.branch).filter(|pr| forge::belongs(pr, known, l.tip.as_deref()));
-            for e in forge::diff(&l.place, self.prs.get(&l.place), new, known) {
-                if let Some(j) = forge::journal_line(&e) {
-                    forge::read_line(&mut self.pr_known, &j);
-                    fx.push(Effect::Journal(j));
-                }
-                fx.push(Effect::Pr(e));
-            }
-            self.pr_ok_ms.insert(l.place.clone(), r.at_ms);
-            match new {
-                Some(pr) => {
-                    if self.prs.get(&l.place) != Some(pr) {
-                        self.prs.insert(l.place.clone(), pr.clone());
-                        self.dirty = true;
-                    }
-                }
-                None => {
-                    if self.prs.remove(&l.place).is_some() {
-                        self.dirty = true;
-                    }
-                }
-            }
-            if let Some(pr) = new.filter(|pr| pr.state == crate::place::PrState::Merged) {
-                let agents = p.agents.clone();
-                self.pr_cleanup(fx, env, l, pr, &agents);
-            }
-        }
-        // the places gone (dropped): their PR goes with them
-        let ids: BTreeSet<&str> = places.iter().map(|p| p.id.as_str()).collect();
-        self.prs.retain(|k, _| ids.contains(k.as_str()));
-        self.pr_lids.retain(|k, _| ids.contains(k.as_str()));
-        self.pr_ok_ms.retain(|k, _| ids.contains(k.as_str()));
-    }
-
-    /// pr-design §6.4: a merged PR archives its place's agents and
-    /// removes the worktree, with no backup when nothing would be lost
-    /// (the PR's head is the branch's tip, no changed file). Else the
-    /// place stays, and main's thread says why, once.
-    fn pr_cleanup(
-        &mut self,
-        fx: &mut Fx,
-        env: &mut dyn Env,
-        l: &crate::forge::poll::Local,
-        pr: &crate::place::PrSnapshot,
-        agents: &[String],
-    ) {
-        if self.pr_done.contains(&l.place) {
-            return;
-        }
-        let Some(dirty) = l.dirty else { return };
-        self.pr_done.insert(l.place.clone());
-        let names = agents.iter().map(|a| format!("@{}", a)).collect::<Vec<_>>().join(", ");
-        if dirty || l.tip.as_deref() != Some(pr.head_oid.as_str()) {
-            if !agents.is_empty() {
-                let why = if dirty { "changed files" } else { "commits after the PR's head" };
-                fx.push(line(
-                    MAIN,
-                    "warn",
-                    &format!(
-                        "#{} ({}) is merged, but its worktree has {}: {} stays. /drop it when its work is not needed",
-                        pr.number, l.branch, why, names
-                    ),
-                ));
-            }
-            return;
-        }
-        env.pr_merged(&l.branch, &pr.head_oid);
-        for a in agents {
-            self.core(fx, env, None, json!({"t": "drop", "name": a, "force": true}));
-        }
-    }
-
-    /// The held lines (the land queue's first, else `no PR yet`) and the
-    /// stale PRs' ages, by place id, for the views.
-    fn pr_views(&self, now: u64) -> (BTreeMap<String, String>, BTreeMap<String, u64>) {
-        let mut lids = self.lids.clone();
-        // trunk flow: a branch lands on main, it never waits for a PR
-        let no_pr = if self.flow == Some(crate::flow::FlowMode::Trunk) { &BTreeMap::new() } else { &self.pr_lids };
-        for (id, l) in no_pr {
-            if !self.prs.contains_key(id) && self.pr_ok_ms.contains_key(id) {
-                lids.entry(id.clone()).or_insert_with(|| l.clone());
-            }
-        }
-        let stale = self
-            .prs
-            .keys()
-            .filter_map(|id| {
-                let age = now.saturating_sub(*self.pr_ok_ms.get(id)?);
-                (self.pr_late.is_some() || age > PR_STALE_MS).then(|| (id.clone(), age))
-            })
-            .collect();
-        (lids, stale)
-    }
-
     /// The client snapshot (agents, cards) for the views.
     pub fn snapshot(&self, now: u64) -> Value {
         let agents: Vec<Value> = self
@@ -1317,8 +1159,7 @@ impl Hub {
             })
             .collect();
         let places = crate::place::places(&self.st, &self.prs);
-        let (lids, stale) = self.pr_views(now);
-        let places = crate::place::views(&places, &lids, &stale);
+        let places = crate::place::views(&places, &self.lids, now, PR_STALE_MS);
         json!({"ev": "state", "agents": agents, "cards": cards, "places": places,
                "flow": self.flow.map(|f| f.as_str())})
     }
@@ -1434,7 +1275,6 @@ impl Hub {
                 self.ask_role(&mut fx, env.now(), &agent);
             }
             Input::RoleLine { dir, key, line } => self.role_answer(&mut fx, env.now(), &dir, key, line),
-            Input::Prs(r) => self.prs_in(&mut fx, env, r),
             Input::ReplExited {
                 agent,
                 crashed,
@@ -1897,6 +1737,7 @@ impl Hub {
                 effort,
                 default: false,
             }),
+            UserCmd::Flow { set } => fx.push(Effect::Flow { client: Some(client), token: None, set }),
             UserCmd::Help => fx.push(notice(client, HELP)),
             UserCmd::Invalid(e) => fx.push(notice(client, &e)),
         }
@@ -2003,6 +1844,14 @@ impl Hub {
             } => json!({"cmd": "ask", "to": to, "text": text, "timeout_s": timeout_s}),
             AgentReq::Status { status, note } => {
                 json!({"cmd": "status", "status": status, "note": note})
+            }
+            AgentReq::Flow { set } => {
+                if self.st.resolve(from).as_deref() != Some(MAIN) {
+                    reply(fx, json!({"ok": false, "error": "sb flow is main's: ask main"}));
+                    return;
+                }
+                fx.push(Effect::Flow { client: None, token: Some(token), set });
+                return;
             }
             AgentReq::Worktree { path } => {
                 let Some(name) = self.st.resolve(from) else {
@@ -2153,6 +2002,7 @@ plain text        message to the agent in view (main by default)
 /interrupt        interrupt the turn of the agent in view
 /compact          compact the conversation of the agent in view
 /model [m] [default]  the model of the agent in view (default: also config.toml's)
+/flow [pr|trunk]  how this repo ships code (PRs or straight to main), why, and switch it
 /reasoning [effort]   its reasoning effort (none, low, medium, high, max...)";
 
 #[cfg(test)]

@@ -238,79 +238,20 @@ pub(crate) struct Who {
     pub(crate) mode: String,
     /// shift+tab switched it less than 3 s ago: the word in accent
     pub(crate) flash: bool,
-    /// the others in its worktree (dev-flow §3.1): `ψ sb/dark-mode with i18n`
-    pub(crate) with: Vec<String>,
-    /// the PR of its worktree's branch (pr-design §4): `↑ #412`
-    pub(crate) pr: Option<WhoPr>,
-}
-
-/// The PR in the divider: its number (a link to `url`), `↑`'s look,
-/// and, ctrl held, its state in words.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct WhoPr {
-    pub(crate) number: u64,
-    pub(crate) url: String,
-    pub(crate) style: Style,
-    /// ctrl held: `changes asked · checks pass` ([] at rest)
-    pub(crate) words: Vec<Span<'static>>,
 }
 
 impl Who {
     /// The tails the label may end with, richest first.
     fn tails(&self) -> Vec<Vec<Span<'static>>> {
-        let mut out: Vec<Vec<Span<'static>>> = Vec::new();
-        for t in self.forms() {
-            if out.last().is_none_or(|l| width_of(l) != width_of(&t)) {
-                out.push(t);
-            }
-        }
-        out
-    }
-
-    /// The short tail, `· opus·hi · yolo · ψ · ↑ #412`: what the label
-    /// keeps when the key bar shares the divider.
-    fn short_tail(&self) -> Vec<Span<'static>> {
-        self.forms().swap_remove(SHORT_FORM)
-    }
-
-    /// Every form of the tail, richest first (pr-design §4, short on
-    /// room): the PR's held words go, then who else is in the worktree,
-    /// the branch's name (ψ stays), the long model becomes the tag, the
-    /// tag goes, then ψ, the PR's number (`↑` stays), `↑`; the mode last.
-    fn forms(&self) -> Vec<Vec<Span<'static>>> {
         let sep = || Span::styled(" · ", Style::default().fg(faint()));
         let d = |t: &str| Span::styled(t.to_string(), Style::default().fg(dim()));
         let psi = theme::glyph(theme::G_WORKTREE);
-        let place = |full: bool, with: bool| -> Vec<Span<'static>> {
+        let place = |full: bool| -> Vec<Span<'static>> {
             match &self.place {
-                Some(p) if full => {
-                    let mut v = vec![sep(), d(&format!("{} {}", psi, p))];
-                    if with && !self.with.is_empty() {
-                        v.push(d(&format!(" with {}", self.with.join(", "))));
-                    }
-                    v
-                }
+                Some(p) if full => vec![sep(), d(&format!("{} {}", psi, p))],
                 Some(_) => vec![sep(), d(psi)],
                 None => Vec::new(),
             }
-        };
-        let pr = |num: bool, words: bool| -> Vec<Span<'static>> {
-            let Some(p) = &self.pr else { return Vec::new() };
-            let mut v = vec![sep(), Span::styled(theme::pr_glyph(), p.style)];
-            if num {
-                let label = format!("#{}", p.number);
-                v.push(Span::raw(" "));
-                v.push(if crate::links::linkable(&p.url) {
-                    crate::textlayer::link(label, &p.url, Style::default().fg(dim()))
-                } else {
-                    d(&label)
-                });
-            }
-            if words && !p.words.is_empty() {
-                v.push(Span::raw(" "));
-                v.extend(p.words.iter().cloned());
-            }
-            v
         };
         let long = || -> Vec<Span<'static>> {
             if self.model.is_empty() {
@@ -341,22 +282,21 @@ impl Who {
             };
             vec![sep(), Span::styled(self.mode.clone(), st)]
         };
-        vec![
-            [long(), mode(), place(true, true), pr(true, true)].concat(),
-            [long(), mode(), place(true, true), pr(true, false)].concat(),
-            [long(), mode(), place(true, false), pr(true, false)].concat(),
-            [long(), mode(), place(false, false), pr(true, false)].concat(),
-            [short(), mode(), place(false, false), pr(true, false)].concat(),
-            [mode(), place(false, false), pr(true, false)].concat(),
-            [mode(), pr(true, false)].concat(),
-            [mode(), pr(false, false)].concat(),
+        let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+        for t in [
+            [long(), mode(), place(true)].concat(),
+            [long(), mode(), place(false)].concat(),
+            [short(), mode(), place(false)].concat(),
+            [mode(), place(false)].concat(),
             mode(),
-        ]
+        ] {
+            if out.last().is_none_or(|l| width_of(l) != width_of(&t)) {
+                out.push(t);
+            }
+        }
+        out
     }
 }
-
-/// The index of the short tail in [`Who::forms`].
-const SHORT_FORM: usize = 4;
 
 /// How much of the label the divider shows, while the agent works (book
 /// §9 "Short on room (the gust)", BISE-303): the steps in the order they
@@ -422,7 +362,8 @@ fn width_of(spans: &[Span]) -> u16 {
 /// held words. With the key bar in the divider, the label keeps the
 /// short tail (`· opus·hi · ψ`).
 pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, working: Option<&Working>) -> u16 {
-    let tail = who.short_tail();
+    let tails = who.tails();
+    let tail = tails.get(2).or(tails.last()).cloned().unwrap_or_default();
     let label_w = width_of(&label(name, &tail, working.map(|w| (w, STEPS[1]))));
     let start = cols.margin - 1 + label_w + 2;
     let end = width.saturating_sub(cols.margin);
@@ -646,7 +587,7 @@ mod tests {
             tag: "opus·hi".into(),
             place: Some("fix-login".into()),
             mode: "yolo".into(),
-            ..Who::default()
+            flash: false,
         };
         let state = "idle · 42k";
         let row = |w| divider_row_who(w, "auth-fix", &who, None, state);
