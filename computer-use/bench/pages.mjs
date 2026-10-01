@@ -26,6 +26,7 @@ document.getElementById("f").onsubmit = (e) => {
 <form id="f">
 <div class="row"><label>Name <input id="name"></label></div>
 <div class="row"><label>Email <input id="email" type="email"></label></div>
+<div class="row"><label>Password <input id="pw" type="password" value="hunter2"></label></div>
 <div class="row"><label>Country <select id="country"><option>France</option><option>Germany</option><option>Japan</option></select></label></div>
 <div class="row"><label><input type="checkbox" id="terms"> I accept the terms</label></div>
 <button>Subscribe</button></form><p id="out" role="status"></p>`, `

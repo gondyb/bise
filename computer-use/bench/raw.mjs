@@ -60,6 +60,10 @@ try {
   const f = await call("act", { target, action: "fill", locator: { role: "textbox", name: "Email" }, text: "ana@example.com" });
   check("fill", f.body.ok, f.body.summary);
 
+  // passwords are the user's (ship plan §6): refused on any site, by ref or focus
+  const pw = await call("act", { target, action: "fill", locator: { label: "Password" }, text: "x" });
+  check("fill a password field: refused", pw.body.error?.code === "refused" && /passwords himself/.test(pw.body.error?.summary || ""), pw.body.error?.summary);
+
   const r = await call("act", { target, action: "read", locator: { text: "bought 1" } });
   check("the click landed (read)", r.body.ok && /bought 1/.test(r.body.changed || ""), r.body.changed);
 

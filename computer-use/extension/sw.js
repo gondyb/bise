@@ -586,6 +586,15 @@ function focusFn(selectAll) {
   }`;
 }
 
+function isPasswordFn() {
+  return this.tagName === "INPUT" && this.type === "password";
+}
+
+/** Passwords are the user's (ship plan §6): never typed by an agent, on any site. */
+function refusePassword() {
+  fail("refused", "the user types passwords himself; ask him to sign in, then go on", { reason: "he types passwords himself" });
+}
+
 function readFn() {
   if (this.nodeType === 3) return this.textContent;
   const el = this;
@@ -716,12 +725,15 @@ async function doAct(tabId, t, agent, action, args, seen) {
         const r = await need({ visible: true, enabled: true });
         ({ entry: el, snap: before } = r);
         if (!TEXT_ROLES.has(el.role) && !el.editable) fail("bad_args", `${el.line} is not a text field`, { reason: "it isn't a text field" });
+        if (await callOn(tabId, el.backendId, isPasswordFn)) refusePassword();
         await cursor(tabId, agent, r.point, true);
         await callOn(tabId, el.backendId, focusFn(action === "fill"));
       } else if (action === "fill") {
         fail("bad_args", "fill needs a ref or a locator");
       } else {
         before = await takeSnapshot(tabId, t);
+        const focused = await cdp(tabId, "Runtime.evaluate", { expression: "document.activeElement?.tagName === 'INPUT' && document.activeElement.type === 'password'", returnByValue: true });
+        if (focused.result?.value === true) refusePassword();
       }
       if (text === "" && action === "fill") await keys(tabId, parseKeys("Delete"));
       else if (text !== "") await cdp(tabId, "Input.insertText", { text });

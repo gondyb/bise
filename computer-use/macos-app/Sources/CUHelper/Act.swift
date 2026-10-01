@@ -164,7 +164,18 @@ struct Act {
         throw CUError("needs_front", "\(target.name) takes no click on this element without being in front; ask the user to bring it forward")
     }
 
+    /// Passwords are the user's (ship plan §6): no agent types into a
+    /// secure text field, in any app.
+    func refusePassword(_ el: AXUIElement, _ n: Node?) throws {
+        if n?.secure == true || el.string(kAXSubroleAttribute) == "AXSecureTextField" {
+            var e = CUError("refused", "the user types passwords himself; ask him to sign in, then go on")
+            e.summary = "couldn't type in \(what(n)): he types passwords himself · \(target.name)"
+            throw e
+        }
+    }
+
     func fill(_ el: AXUIElement, _ n: Node?) throws {
+        try refusePassword(el, n)
         let text = args["value"] as? String ?? args["text"] as? String ?? ""
         guard el.settable(kAXValueAttribute) else {
             throw CUError("needs_front", "this element of \(target.name) can't be filled in the background; ask the user to bring it forward")
@@ -178,6 +189,7 @@ struct Act {
     func type(_ el: AXUIElement, _ n: Node?) throws -> Node? {
         guard let text = args["text"] as? String, !text.isEmpty else { throw CUError("bad_args", "type needs text") }
         let node = n ?? Walker.walk(el, budget: 1) { engine.registry(target.target).ref($0) }.nodes.first
+        try refusePassword(el, node)
         if hasElement { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
         let before = el.string(kAXValueAttribute)
         if el.settable(kAXSelectedTextAttribute), el.set(kAXSelectedTextAttribute, text as CFString) == .success {
