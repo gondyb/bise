@@ -190,9 +190,10 @@ def pane_rows(rows):
 
 def start_tui(E, cols, rows, extra_env, session):
     """Open the switchboard TUI of the throwaway hub E in the tmux session
-    `session`, with E's SB_/BEND_/MISTRAL_ env (+ extra_env, "K=V ...")."""
+    `session`, with E's SB_/BEND_/MISTRAL_ env and its BISE_APPROVALS
+    (+ extra_env, "K=V ...")."""
     envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
-                    if k.startswith(("SB_", "BEND_", "MISTRAL_")))
+                    if k.startswith(("SB_", "BEND_", "MISTRAL_")) or k == "BISE_APPROVALS")
     unset = " ".join("-u " + k for k in e2e.AGENT_VARS)   # tmux's server env may carry them
     # a TUI that exits early leaves its last screen and its exit code
     # until close() kills the session (the timeout print shows them)

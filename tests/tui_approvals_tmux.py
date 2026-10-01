@@ -56,6 +56,8 @@ def main():
                 'from = "card #3, api-v2, web"\n\n[[allow]]\ntool = "gmail.send_email"\n'
                 % (os.path.realpath(E.ws), two_days))
     E.env.update(HOME=home, BISE_HOME=bise)
+    # the mode comes from its config.toml, a switch is written there
+    E.env.pop("BISE_APPROVALS", None)
     dump = os.environ.get("SB_DUMP")
     n = [0]
 

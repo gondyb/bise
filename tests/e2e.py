@@ -76,6 +76,11 @@ class Env:
             "BEND_BG_AFTER": "30",
             # the tmux tests start on the normal UI (tui_onboarding_tmux turns it on)
             "SB_ONBOARDING": "off",
+            # the approvals mode of this session: yolo, whatever the user's
+            # ~/.bise/config.toml remembers (in auto a test agent's bash
+            # waited on the real checker and a card: proc_cleanup's t1
+            # never left "starting"). The approvals tests pop it.
+            "BISE_APPROVALS": "yolo",
         }
         self.hub = None
 
