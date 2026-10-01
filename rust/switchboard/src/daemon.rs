@@ -249,6 +249,8 @@ struct Shell {
     /// The PR poller (pr-design §7, `forge::poll`), on its own thread;
     /// its answers come back as `Input::Prs`.
     prs: Option<crate::forge::poll::Poller>,
+    /// computer use's events.jsonl: each stop, one line in main's feed
+    cu: crate::computer_use::Watch,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -778,6 +780,10 @@ impl Shell {
             Effect::Journal(ev) => {
                 let _ = writeln!(self.journal, "{}", ev);
                 let _ = self.journal.flush();
+                // /drop (design §7.3): its tab group closes too
+                if let Some(name) = crate::computer_use::archived(&ev) {
+                    crate::computer_use::drop_agent(name);
+                }
             }
             Effect::Spawn {
                 agent,
@@ -2005,6 +2011,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         ),
         lands: crate::land::Queue::default(),
         prs: None,
+        cu: crate::computer_use::Watch::new(),
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -2102,6 +2109,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     sh.switch_idle_repls();
                     sh.announce_update();
                     sh.plan_prs();
+                    // computer use (design §7.3): each stop, one line in main's feed
+                    for l in sh.cu.poll() {
+                        sh.feed(crate::model::MAIN, &format!("sb computer : {}", crate::util::wire_escape(&l)));
+                    }
                 }
             }
             Msg::ReplConnected {

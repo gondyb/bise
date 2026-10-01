@@ -18,6 +18,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let rows = crate::layout::rows(full.width, full.height);
     draw_bise(app, frame, full, cols, rows);
     approvals_screen::draw(app, frame);
+    computer_use::draw(app, frame);
     help::draw(app, frame);
 }
 

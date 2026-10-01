@@ -291,7 +291,9 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     // annotation between two blocks must not swallow the blank line
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
     // a sub-call of a box is drawn inside it (book §11)
-    if matches!(ev, Ev::Sub { .. }) && box_owner(events, i).is_some() {
+    // (computer use: an action has its own row, `↖ clicked …`, design §8)
+    let own_row = matches!(ev, Ev::Sub { name, preview, .. } if crate::computer_use::sub_row(name, preview).is_some());
+    if matches!(ev, Ev::Sub { .. }) && !own_row && box_owner(events, i).is_some() {
         return rows;
     }
     // BISE-223: a done call (and the thinking around it) under a closed
@@ -766,6 +768,8 @@ fn subs_of(events: &[Ev], i: usize) -> Vec<crate::toolbox::SubCall<'_>> {
             Ev::Sub { name, ok, preview } => Some(crate::toolbox::SubCall { name, ok: *ok, preview }),
             _ => None,
         })
+        // a computer action has its own row under the box (design §8)
+        .filter(|s| crate::computer_use::sub_row(s.name, s.preview).is_none())
         .collect()
 }
 

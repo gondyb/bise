@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -47,6 +47,8 @@ pub struct Opts {
     pub helper_app: Option<PathBuf>,
     /// on top of an action's own `timeout_ms`, the wait for its reply
     pub slack: Duration,
+    /// after `open -g` of the helper, how long its socket may take
+    pub helper_wait: Duration,
 }
 
 impl Opts {
@@ -59,6 +61,7 @@ impl Opts {
             launch_helper: true,
             helper_app,
             slack: Duration::from_secs(15),
+            helper_wait: Duration::from_secs(8),
         }
     }
 }
@@ -129,7 +132,16 @@ struct Shared {
     started: Instant,
     /// one helper connection attempt at a time
     helper_gate: Mutex<()>,
+    /// the last `open -g` of the helper for a `permissions` poll (at most
+    /// one per [`PERMISSIONS_LAUNCH_EVERY`])
+    last_launch: Mutex<Option<Instant>>,
+    /// how many times this broker ran `open -g` on the helper (tests)
+    launches: AtomicUsize,
 }
+
+/// `permissions` (the /computer-use rows' 1 s poll) starts the helper at
+/// most this often.
+const PERMISSIONS_LAUNCH_EVERY: Duration = Duration::from_secs(20);
 
 /// A running broker (tests stop it to restart it).
 pub struct Handle {
@@ -139,6 +151,11 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// How many times this broker started the helper app (`open -g`).
+    pub fn helper_launches(&self) -> usize {
+        self.shared.launches.load(Ordering::SeqCst)
+    }
+
     /// Close the socket and every connection, as if the process died.
     pub fn shutdown(mut self) {
         self.close();
@@ -208,7 +225,7 @@ pub fn start(opts: Opts) -> Result<Handle, StartError> {
     let listener = UnixListener::bind(&sock).map_err(StartError::Io)?;
     crate::paths::private(&sock, 0o600).map_err(StartError::Io)?;
     let inner = Inner { agents: state::restore(&opts.paths), quiet_since: Some(Instant::now()), ..Inner::default() };
-    let shared = Arc::new(Shared { opts, inner: Mutex::new(inner), stop: AtomicBool::new(false), started: Instant::now(), helper_gate: Mutex::new(()) });
+    let shared = Arc::new(Shared { opts, inner: Mutex::new(inner), stop: AtomicBool::new(false), started: Instant::now(), helper_gate: Mutex::new(()), last_launch: Mutex::new(None), launches: AtomicUsize::new(0) });
     write_state(&shared);
     {
         let sh = shared.clone();
@@ -376,14 +393,15 @@ fn incoming(sh: &Arc<Shared>, link: u64, msg: &Value) {
         }
         "paused" => {
             let target = str_of(msg, "target").unwrap_or("").to_string();
-            {
+            let driving = {
                 let mut inner = lock(&sh.inner);
                 let a = inner.agents.entry(agent.clone()).or_default();
                 if !a.paused.contains(&target) {
                     a.paused.push(target.clone());
                 }
-            }
-            let _ = state::event(&sh.opts.paths, &agent, "paused", "you");
+                a.driving.clone()
+            };
+            let _ = state::event_driving(&sh.opts.paths, &agent, "paused", "you", driving.as_deref());
             fail_where(sh, |p| p.agent == agent && p.target.as_deref() == Some(target.as_str()), || {
                 err("paused", "the user took over this tab or app; wait until he gives it back, or ask him")
             });
@@ -427,14 +445,14 @@ fn broadcast(sh: &Arc<Shared>, v: &Value) {
 }
 
 fn stop_agent(sh: &Arc<Shared>, agent: &str, by: &str) {
-    {
+    let driving = {
         let mut inner = lock(&sh.inner);
         let a = inner.agents.entry(agent.to_string()).or_default();
         a.stopped = true;
-        a.driving = None;
         a.since_ms = None;
-    }
-    let _ = state::event(&sh.opts.paths, agent, "stopped", by);
+        a.driving.take()
+    };
+    let _ = state::event_driving(&sh.opts.paths, agent, "stopped", by, driving.as_deref());
     broadcast(sh, &json!({"stop": agent}));
     fail_where(sh, |p| p.agent == agent, || err("stopped", "the user stopped you; ask before you start again"));
     log(&format!("{} stopped by {}", agent, by));
@@ -503,6 +521,46 @@ fn request_permission(sh: &Arc<Shared>, what: &str) -> Reply {
     }
 }
 
+/// C6 `permissions` (setup-check, polled every second by /computer-use):
+/// the helper's `{accessibility, screen_recording}`. Not connected: a
+/// plain connect first, every poll (after a Screen Recording grant macOS
+/// reopens the helper by itself, and the row must see it within a
+/// second); then, installed, one `open -g` at most every 20 s (m_3897);
+/// else nulls. `status` never connects nor launches.
+fn permissions(sh: &Arc<Shared>) -> Value {
+    let unknown = json!({"accessibility": null, "screen_recording": null});
+    let connected = lock(&sh.inner).helper.as_ref().map(|h| h.id);
+    let id = match connected {
+        Some(id) => Some(id),
+        None => {
+            let _g = lock(&sh.helper_gate);
+            let now = || lock(&sh.inner).helper.as_ref().map(|h| h.id);
+            if now().is_none() && connect_helper(sh).is_none() && sh.opts.launch_helper && helper_installed(sh) {
+                let due = {
+                    let mut last = lock(&sh.last_launch);
+                    let due = last.is_none_or(|t| t.elapsed() >= PERMISSIONS_LAUNCH_EVERY);
+                    if due {
+                        *last = Some(Instant::now());
+                    }
+                    due
+                };
+                if due {
+                    drop(_g);
+                    return match helper(sh) {
+                        Ok(id) => forward(sh, id, None, None, "permissions", &json!({}), Duration::from_secs(2)).unwrap_or(unknown),
+                        Err(_) => unknown,
+                    };
+                }
+            }
+            now()
+        }
+    };
+    match id {
+        Some(id) => forward(sh, id, None, None, "permissions", &json!({}), Duration::from_secs(2)).unwrap_or(unknown),
+        None => unknown,
+    }
+}
+
 fn ctl_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
     for line in lines {
         let Ok(line) = line else { break };
@@ -545,6 +603,7 @@ fn ctl_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
             }
             "status" => Ok(full_status(sh)),
             "request" => request_permission(sh, str_of(&args, "what").unwrap_or("")),
+            "permissions" => Ok(permissions(sh)),
             _ => Err(err("bad_args", "unknown command")),
         };
         let out = match r {
@@ -628,14 +687,17 @@ fn helper(sh: &Arc<Shared>) -> Result<u64, Value> {
     }
     if connect_helper(sh).is_none() && sh.opts.launch_helper && helper_installed(sh) {
         // -g: never in front (the user's rule: computer use never steals focus)
+        sh.launches.fetch_add(1, Ordering::SeqCst);
         let _ = std::process::Command::new("open")
             .arg("-g")
             .arg(sh.opts.helper_app.as_deref().unwrap_or(std::path::Path::new("")))
             .args(["--args", "--socket"])
             .arg(&sh.opts.paths.app_socket)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
         let t0 = Instant::now();
-        while t0.elapsed() < Duration::from_secs(8) && connect_helper(sh).is_none() {
+        while t0.elapsed() < sh.opts.helper_wait && connect_helper(sh).is_none() {
             std::thread::sleep(Duration::from_millis(200));
         }
     }

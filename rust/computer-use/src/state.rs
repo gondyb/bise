@@ -81,8 +81,20 @@ pub fn restore(paths: &Paths) -> BTreeMap<String, Agent> {
 /// Append one line to events.jsonl: `stopped|paused|resumed`, by
 /// `you|cancel_bar|group_closed`.
 pub fn event(paths: &Paths, agent: &str, event: &str, by: &str) -> std::io::Result<()> {
+    event_driving(paths, agent, event, by, None)
+}
+
+/// [`event`] with what the agent drove just before (`"Chrome"`,
+/// `"TextEdit"`): `stopped` and `paused` carry it for main's feed line
+/// ("↖ api-v2 stopped driving Chrome · you stopped it"); state.json has
+/// `driving: null` by then (C6, m_3897).
+pub fn event_driving(paths: &Paths, agent: &str, event: &str, by: &str, driving: Option<&str>) -> std::io::Result<()> {
     paths.ensure()?;
-    let line = json!({"t": crate::now_ms(), "agent": agent, "event": event, "by": by}).to_string() + "\n";
+    let mut v = json!({"t": crate::now_ms(), "agent": agent, "event": event, "by": by});
+    if matches!(event, "stopped" | "paused") {
+        v["driving"] = json!(driving);
+    }
+    let line = v.to_string() + "\n";
     let f = paths.events_file();
     let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&f)?;
     crate::paths::private(&f, 0o600)?;

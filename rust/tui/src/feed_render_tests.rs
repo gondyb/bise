@@ -852,6 +852,35 @@ fn an_answered_card_fades_in_place() {
 }
 
 // the other §6 entities of the feed
+/// computer use (design §8, designer m_3774): each action of a code-mode
+/// run is its own row under the run, `↖ <summary>`; a failure `✗` in the
+/// error color, a pause or stop dim without `✗`; quiet calls (snapshot)
+/// stay inside the box. CU_DUMP=<file>: the rows for designer.
+#[test]
+fn computer_actions_are_rows_of_their_own() {
+    let mut t = tool_with(1, "run_typescript", None, Some((true, "done")), true);
+    t.elapsed = Some(String::new());
+    let sub = |name: &str, ok: bool, preview: &str| Ev::Sub { name: name.into(), ok, preview: preview.into() };
+    let events = vec![
+        Ev::Tool(t),
+        sub("computer.snapshot", true, r##"{"refs":12,"target":"tab:7","text":"# Anker cable · amazon.fr"##),
+        sub("computer.act", true, r##"{"summary":"clicked \"Add to cart\" · amazon.fr","changed":"- button \"Added\" [e4]","ok":true"##),
+        sub("computer.act", true, r##"{"summary":"typed in the search box · figma","changed":"","ok":true,"title":"Figma"}"##),
+        sub("computer.act", true, r##"{"error":{"summary":"couldn't click \"Add to cart\": a popup covers it","candidates":[],"code":"not_found""##),
+        sub("computer.act", true, r##"{"error":{"summary":"paused · you took the wheel in Mail","code":"paused","message":"m"}}"##),
+    ];
+    let rows: Vec<String> = feed_text(&events, 90).iter().map(|r| r.trim_end().to_string()).filter(|r| !r.is_empty()).collect();
+    if let Some(f) = std::env::var_os("CU_DUMP") {
+        let _ = std::fs::write(f, rows.join("\n") + "\n");
+    }
+    let has = |w: &str| assert!(rows.iter().any(|r| r == w), "{w:?} in\n{}", rows.join("\n"));
+    has(" ↖ clicked \"Add to cart\" · amazon.fr");
+    has(" ↖ typed in the search box · figma");
+    has(" ✗ couldn't click \"Add to cart\": a popup covers it");
+    has("   paused · you took the wheel in Mail");
+    assert!(!rows.iter().any(|r| r.contains("computer.act")), "{}", rows.join("\n"));
+}
+
 #[test]
 fn feed_entities_use_the_book_glyphs() {
     let row = |ev: Ev| rows_text(&ev_rows(&ev, 0, 100)).join("\n");

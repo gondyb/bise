@@ -118,13 +118,20 @@ fn state_word(sb: &Sb, a: &Agent) -> (String, Color) {
 /// the time goes first (1), then the % (2).
 fn columns(app: &App, sb: &Sb, a: &Agent, boxed: bool, drop: usize) -> Vec<Span<'static>> {
     let d = Style::default().fg(dim());
+    // computer use (design §8): `↖` takes the mark's column while it
+    // drives, in accent; ctrl held, the state words say what it drives
+    let drives = crate::computer_use::driving(&a.name).and_then(|x| x.driving);
     let mark = match sb.solo_of(a) {
+        _ if drives.is_some() => Span::styled(crate::computer_use::mark(), Style::default().fg(accent())),
         Some(p) => p.row_mark(sb.asks_merge(p)),
         None if place_label(a).is_some() => Span::styled(crate::theme::glyph(G_WORKTREE).to_string(), d),
         None => Span::raw(" "),
     };
     let mut out = if crate::ctrlhint::words(app) {
-        let (w, c) = state_word(sb, a);
+        let (w, c) = match &drives {
+            Some(app) => (crate::computer_use::short_app(app), dim()),
+            None => state_word(sb, a),
+        };
         vec![Span::styled(format!(" {:>STATE_W$}", w), Style::default().fg(c))]
     } else {
         let time = a.turn_ms.filter(|_| a.status == "working").map(short_age).unwrap_or_default();
@@ -899,14 +906,19 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
         return false;
     }
     let sb = &app.sb;
-    let target = {
+    let (target, right) = {
         let Ok(hits) = sb.panel_hits.try_borrow() else { return false };
         if !hits.contains(m.column, m.row) {
             return false;
         }
-        hits.hit_at(m.column, m.row).cloned()
+        (hits.hit_at(m.column, m.row).cloned(), hits.area.right().saturating_sub(m.column) <= 3)
     };
     match target {
+        // computer use (design §7.3): a click on `↖` stops it, from anywhere
+        Some(Hit::Agent(name)) if right && crate::computer_use::driving(&name).is_some() => {
+            app.sb.send(serde_json::json!({"op": "interrupt", "agent": name}));
+            crate::computer_use::stop(&name);
+        }
         Some(Hit::Agent(name)) if sb.agent(&name).is_some() => focus(app, &name),
         Some(Hit::Archived) => {
             let sb = &mut app.sb;
@@ -948,6 +960,15 @@ pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
             style: pr.mark_style(),
             words: if crate::ctrlhint::words(app) { pr.words(Style::default().fg(dim())) } else { Vec::new() },
         }),
+        drives: crate::computer_use::driving(&a.name).and_then(|d| {
+            let m = crate::computer_use::mark();
+            let app_name = d.driving?;
+            Some(match (crate::ctrlhint::words(app), d.place) {
+                (true, Some(p)) if p != app_name => format!("{m} driving {app_name} · {p}"),
+                (true, _) => format!("{m} driving {app_name}"),
+                (false, _) => format!("{m} {app_name}"),
+            })
+        }),
     }
 }
 
@@ -986,6 +1007,13 @@ pub(crate) fn status_state(app: &App) -> Vec<Line<'static>> {
     let sb = &app.sb;
     if let Some(name) = &sb.drop_ask {
         return vec![Line::from(Span::styled(drop_question(name), Style::default().fg(accent())))];
+    }
+    // computer use (design §7.3): you touched its tab or app, it waits
+    if crate::computer_use::paused(&sb.focus) {
+        return vec![Line::from(vec![
+            Span::styled("? ", Style::default().fg(accent())),
+            Span::styled(format!("you took the wheel · {} give it back", if crate::theme::ascii_mode() { "enter" } else { "⏎" }), Style::default().fg(dim())),
+        ])];
     }
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let d = |t: String| Span::styled(format!(" · {}", t), Style::default().fg(dim()));

@@ -242,6 +242,9 @@ pub(crate) struct Who {
     pub(crate) with: Vec<String>,
     /// the PR of its worktree's branch (pr-design §4): `↑ #412`
     pub(crate) pr: Option<WhoPr>,
+    /// computer use (design §8): what it drives, `↖ Chrome`; ctrl held,
+    /// `↖ driving Chrome · amazon.fr` (accent)
+    pub(crate) drives: Option<String>,
 }
 
 /// The PR in the divider: its number (a link to `url`), `↑`'s look,
@@ -340,6 +343,14 @@ impl Who {
                 true => Style::default().fg(accent()),
             };
             vec![sep(), Span::styled(self.mode.clone(), st)]
+        };
+        // it drives Chrome or an app: live, it stays in every form
+        let mode = || -> Vec<Span<'static>> {
+            let mut v = mode();
+            if let Some(d) = &self.drives {
+                v.extend([sep(), Span::styled(d.clone(), Style::default().fg(accent()))]);
+            }
+            v
         };
         vec![
             [long(), mode(), place(true, true), pr(true, true)].concat(),

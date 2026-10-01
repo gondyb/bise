@@ -14,6 +14,8 @@ pub(crate) struct App {
     pub(crate) help: Option<help::Overlay>,
     // the /approvals screen, when open
     pub(crate) approvals: Option<approvals_screen::Screen>,
+    // the /computer-use screen, when open (computer_use.rs)
+    pub(crate) computer_use: Option<computer_use::Screen>,
     pub(crate) debug: bool,
     // feed scrollback: follow means stick to the bottom (any scroll up
     // turns it off, End/enter turn it back on). A pinned view is anchored
@@ -222,6 +224,7 @@ impl App {
             term: crate::term::Term::default(),
             help: None,
             approvals: None,
+            computer_use: None,
             debug,
             follow: true,
             anchor: (0, 0),

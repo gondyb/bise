@@ -55,7 +55,9 @@ pub fn main(args: &[String]) -> i32 {
             host::run(&paths, Arc::from(client::spawn_broker(exe())), std::io::stdin(), std::io::stdout(), parent)
         }
         "setup-check" => {
-            print(&setup_check(&paths));
+            let start: Arc<client::Starter> = Arc::from(client::spawn_broker(exe()));
+            let helper = broker::find_helper(&paths.home);
+            print(&setup_check(&paths, helper.as_deref(), Some(&*start)));
             0
         }
         "repair" => {
@@ -214,11 +216,54 @@ pub fn control(paths: &Paths, cmd: &str, args: &Value) -> Result<Value, String> 
 
 // ---- setup-check ----
 
-/// The `/computer-use` rows (design §8): browser → extension → live test.
+/// The `/computer-use` rows (design §8): browser → extension → live test,
+/// then, for apps, accessibility and screen recording (C6, m_3893).
 /// Each row: `state` (`done`, `waits`, `checking`, `failed`, `not_yet`),
 /// `detail`, and `fix` (what ⏎ does: `install_browser`, `open_browser`,
-/// `update_browser`, `add_extension`, `repair`, `run_live_test`).
-pub fn setup_check(paths: &Paths) -> Value {
+/// `update_browser`, `add_extension`, `repair`, `run_live_test`,
+/// `request_accessibility`, `request_screen_recording`, `install_helper`).
+/// `helper`: the helper app when installed; then the broker is started
+/// (`start`) and asked `permissions` (never `request`: the macOS prompt
+/// only on the user's ⏎).
+pub fn setup_check(paths: &Paths, helper: Option<&std::path::Path>, start: Option<&client::Starter>) -> Value {
+    let mut v = browser_rows(paths);
+    let perms: Option<Value> = helper.and_then(|_| {
+        let mut c = Conn::open(paths, start, &json!({"op": "hello", "role": "ctl"})).ok()?;
+        c.call("permissions", &json!({})).ok()?.ok()
+    });
+    let row = |id: &str, st: &str, detail: &str, fix: Option<&str>| json!({"id": id, "state": st, "detail": detail, "fix": fix});
+    let app_row = |id: &str| -> Value {
+        let fix = format!("request_{}", id);
+        match perms.as_ref().map(|p| &p[id]) {
+            _ if helper.is_none() => row(id, "not_yet", "", Some("install_helper")),
+            Some(Value::Bool(true)) => row(id, "done", "", None),
+            Some(Value::Bool(false)) => row(id, "waits", "", Some(&fix)),
+            // the helper doesn't answer yet (starting, or reopening after a grant)
+            _ => row(id, "checking", "", None),
+        }
+    };
+    let apps = [app_row("accessibility"), app_row("screen_recording")];
+    if let Some(rows) = v["rows"].as_array_mut() {
+        rows.extend(apps);
+    }
+    v["helper"] = json!(helper.map(|h| h.display().to_string()));
+    v
+}
+
+/// Where the unpacked extension is, for the "load unpacked" steps (before
+/// the Web Store): `$BISE_CU_EXTENSION`, the app root's
+/// `computer-use/extension`, then the try folder
+/// `~/.bise/dev/try/computer-use/extension`.
+pub fn extension_dir(paths: &Paths) -> Option<PathBuf> {
+    let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let mut c: Vec<PathBuf> = Vec::new();
+    c.extend(env("BISE_CU_EXTENSION"));
+    c.extend(env("BISE_APP_ROOT").map(|r| r.join("computer-use").join("extension")));
+    c.push(paths.root.join("dev").join("try").join("computer-use").join("extension"));
+    c.into_iter().find(|p| p.join("manifest.json").is_file())
+}
+
+fn browser_rows(paths: &Paths) -> Value {
     let live = Conn::ctl(paths).ok().and_then(|mut c| c.call("status", &json!({})).ok()).and_then(Result::ok);
     let connected = |key: &str| -> Option<Value> {
         live.as_ref()?["browsers"].as_array()?.iter().find(|b| {
@@ -236,6 +281,7 @@ pub fn setup_check(paths: &Paths) -> Value {
                 "key": b.key,
                 "name": b.name,
                 "installed": app.is_some() || b.installed(paths),
+                "app": app.as_ref().map(|a| a.display().to_string()),
                 "version": version,
                 "too_old": major.is_some_and(|m| m < browsers::MIN_MAJOR),
                 "running": conn.is_some() || (app.is_some() && browsers::running(b)),
@@ -285,11 +331,13 @@ pub fn setup_check(paths: &Paths) -> Value {
     };
     json!({
         "browser": name,
+        "min_major": browsers::MIN_MAJOR,
         "browsers": list,
         "shim": paths.shim().exists(),
         "broker": {"running": live.is_some()},
         "apps": live.as_ref().map(|l| l["apps"].clone()).unwrap_or(json!({"helper": "unknown"})),
         "live_test": last,
+        "extension": {"id": browsers::EXTENSION_ID, "dir": extension_dir(paths).map(|d| d.display().to_string())},
         "rows": [browser_row, ext_row, test_row],
     })
 }

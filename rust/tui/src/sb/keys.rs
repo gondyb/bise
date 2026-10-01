@@ -104,12 +104,21 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         (KeyCode::Char('c'), KeyModifiers::CONTROL) if pending && !interrupt_requested => {
             let f = sb.focus.clone();
             sb.send(json!({"op": "interrupt", "agent": f}));
+            // computer-use-design.md §7.3: it lets go of Chrome and its apps too
+            if crate::computer_use::driving(&f).is_some() {
+                crate::computer_use::stop(&f);
+            }
             app.interrupt_requested = true;
             push_event(
                 &mut app.events,
                 &mut app.cache,
                 Ev::Info("interrupted — the turn stops at the next safe point · ctrl+c again to quit".into()),
             );
+            true
+        }
+        // computer use: `? you took the wheel · ⏎ give it back`
+        (KeyCode::Enter, KeyModifiers::NONE) if empty && sb.selected.is_none() && crate::computer_use::paused(&sb.focus) => {
+            crate::computer_use::give_back(&sb.focus.clone());
             true
         }
         _ if empty && n > 0 && nav == Some(Nav::Next) => {

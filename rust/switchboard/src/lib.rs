@@ -23,6 +23,7 @@ pub mod approvals;
 pub mod board;
 pub mod cli;
 pub mod client;
+pub mod computer_use;
 pub mod core;
 pub mod daemon;
 pub mod devflow;

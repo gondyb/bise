@@ -102,6 +102,12 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd { name: "/provider", desc: "set up a provider's key, or change it", args: &[] },
     Cmd { name: "/reasoning", desc: "its reasoning effort: /reasoning [<effort>]", args: &[Arg::Effort] },
     Cmd { name: "/interrupt", desc: "interrupt the turn of the agent in view", args: &[] },
+    Cmd {
+        name: "/stop",
+        desc: "stop an agent's turn and its hands on Chrome or an app until you write to it: /stop <agent>",
+        args: &[Arg::Task],
+    },
+    Cmd { name: "/computer-use", desc: "set up computer use: agents drive Chrome and your apps, step by step", args: &[] },
     Cmd { name: "/compact", desc: "compact the conversation of the agent in view", args: &[] },
     Cmd {
         name: "/theme",

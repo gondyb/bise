@@ -137,11 +137,34 @@ impl Server {
                         (json!({"error": e}), t)
                     }
                 };
-                json!({"content": [{"type": "text", "text": body.to_string()}], "isError": is_error})
+                json!({"content": [{"type": "text", "text": body_text(&body)}], "isError": is_error})
             }
             _ => return Some(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": format!("no method {}", method)}})),
         };
         Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
+    }
+}
+
+/// A tool result's text: its JSON with `summary` first (`error.summary`
+/// for an error). The TUI's tool row reads it from the runtime's
+/// sub-call line, which keeps the first 200 characters only
+/// (main-pure.bend `ann_flat`), and serde_json sorts the keys: a long
+/// `changed` would push the summary out (cu-setup, m_3893).
+pub fn body_text(body: &Value) -> String {
+    fn first(o: &serde_json::Map<String, Value>) -> String {
+        let Some(s) = o.get("summary") else { return Value::Object(o.clone()).to_string() };
+        let mut rest = o.clone();
+        rest.remove("summary");
+        let tail = Value::Object(rest).to_string();
+        let sep = if tail == "{}" { "" } else { "," };
+        format!("{{\"summary\":{}{}{}", s, sep, &tail[1..])
+    }
+    match body.as_object() {
+        Some(o) => match o.get("error").and_then(Value::as_object) {
+            Some(e) if o.len() == 1 => format!("{{\"error\":{}}}", first(e)),
+            _ => first(o),
+        },
+        None => body.to_string(),
     }
 }
 
@@ -172,6 +195,24 @@ pub fn run(mut server: Server, input: impl BufRead, mut output: impl Write) -> i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// the TUI's tool row reads `summary` from the first 200 characters
+    #[test]
+    fn the_summary_comes_first() {
+        let long = "- button \"x\" [e1]\n".repeat(40);
+        let ok = json!({"ok": true, "changed": long, "title": "Shop", "url": "https://amazon.fr/", "summary": "clicked \"Add to cart\" · amazon.fr"});
+        let t = body_text(&ok);
+        assert!(t.chars().take(200).collect::<String>().contains("clicked \\\"Add to cart\\\" · amazon.fr"), "{t}");
+        assert_eq!(serde_json::from_str::<Value>(&t).unwrap(), ok);
+        let e = json!({"error": {"code": "not_found", "message": "m", "candidates": [long], "summary": "couldn't find \"Email\""}});
+        let t = body_text(&e);
+        assert!(t.starts_with("{\"error\":{\"summary\":\"couldn't find"), "{t}");
+        assert_eq!(serde_json::from_str::<Value>(&t).unwrap(), e);
+        // no summary, or only a summary: the same JSON
+        for v in [json!({"target": "tab:1"}), json!({"summary": "s"}), json!([1]), json!({"error": {"code": "x"}})] {
+            assert_eq!(serde_json::from_str::<Value>(&body_text(&v)).unwrap(), v);
+        }
+    }
 
     #[test]
     fn tools_json_lists_c1() {

@@ -47,6 +47,7 @@ fn opts(p: &Paths) -> Opts {
         launch_helper: false,
         helper_app: None,
         slack: Duration::from_secs(2),
+        helper_wait: Duration::from_millis(300),
     }
 }
 
@@ -712,15 +713,50 @@ fn commands_without_a_broker_and_one_broker_only() {
     assert!(matches!(broker::start(opts(&p)), Err(broker::StartError::Running)));
     let mut a = agent(&p, "x", &d);
     assert_eq!(code(&mut a, "open", json!({"url": "https://x.org"}))["code"], "stopped");
-    let check = cli::setup_check(&p);
+    let check = cli::setup_check(&p, None, None);
     assert_eq!(check["broker"]["running"], true);
-    assert_eq!(check["rows"].as_array().unwrap().len(), 3);
+    // no helper app: the apps rows say so, nothing asks the broker
+    let ids: Vec<&str> = check["rows"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["browser", "extension", "live_test", "accessibility", "screen_recording"]);
+    assert_eq!(check["rows"][3]["fix"], "install_helper");
+    assert_eq!(check["rows"][4]["state"], "not_yet");
+    assert_eq!(check["extension"]["id"], crate::browsers::EXTENSION_ID);
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(std::fs::metadata(p.socket()).unwrap().permissions().mode() & 0o777, 0o600);
     h.shutdown();
     // resume with no broker clears it
     cli::control(&p, "resume", &json!({"agent": "x"})).unwrap();
     assert!(state::read(&p)["agents"].get("x").is_none());
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// setup-check's apps rows (m_3897): a 1 s poll never relaunches the
+/// helper (one `open -g` per 20 s at most), sees a helper that comes back
+/// by itself at once (a plain connect each poll), and reads its grants.
+#[test]
+fn setup_check_polls_permissions_without_relaunching() {
+    let (d, p) = paths();
+    // a path that doesn't exist: `open -g` fails at once, nothing opens
+    // (a folder would open in Finder, in front of the user)
+    let app = d.join("no such helper.app");
+    let o = Opts { launch_helper: true, helper_app: Some(app.clone()), ..opts(&p) };
+    let brokers: Brokers = Default::default();
+    let start = starter(o, brokers.clone());
+    for _ in 0..5 {
+        let v = cli::setup_check(&p, Some(&app), Some(&*start));
+        assert_eq!(v["rows"][3]["state"], "checking", "{v}");
+        std::thread::sleep(Duration::from_millis(1000));
+    }
+    assert_eq!(brokers.lock().unwrap()[0].helper_launches(), 1);
+    // the helper comes back (macOS reopened it): the next poll sees it
+    let _helper = FakeHelper::start(&p, jpeg(&d));
+    let v = cli::setup_check(&p, Some(&app), Some(&*start));
+    assert_eq!(v["rows"][3]["id"], "accessibility");
+    assert_ne!(v["rows"][3]["state"], "checking", "{v}");
+    assert_eq!(brokers.lock().unwrap()[0].helper_launches(), 1);
+    for h in brokers.lock().unwrap().drain(..) {
+        h.shutdown();
+    }
     let _ = std::fs::remove_dir_all(&d);
 }
 
