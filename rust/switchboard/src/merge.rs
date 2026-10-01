@@ -52,7 +52,7 @@ pub fn method(pr: &PrSnapshot) -> Option<MergeMethod> {
 ///
 /// ```text
 /// #409 is ready to merge
-/// the sad 404 gets a dog in a hat
+/// the cookie banner stops covering buy
 /// approved by alice · 6 of 6 checks pass · 3 commits · +84 −12
 /// github.com/acme/web/pull/409
 ///
@@ -297,14 +297,14 @@ mod tests {
         PrSnapshot {
             number: 409,
             url: "https://github.com/acme/web/pull/409".into(),
-            branch: "sb/sad-404".into(),
+            branch: "sb/cookies".into(),
             head_oid: "h1".into(),
             state: PrState::Open,
             review: Review::Approved,
             checks: Checks::Pass,
             updated_at: "t".into(),
             facts: Box::new(PrFacts {
-                title: "the sad 404 gets a dog in a hat".into(),
+                title: "the cookie banner stops covering buy".into(),
                 approved_by: vec!["alice".into()],
                 commits: 3,
                 additions: 84,
@@ -320,7 +320,7 @@ mod tests {
     fn the_item_s_text() {
         assert_eq!(
             text(&pr()),
-            "#409 is ready to merge\nthe sad 404 gets a dog in a hat\napproved by alice · 6 of 6 checks pass · 3 commits · +84 −12\ngithub.com/acme/web/pull/409\n\n1. squash and merge\n2. open it on GitHub\n3. not yet"
+            "#409 is ready to merge\nthe cookie banner stops covering buy\napproved by alice · 6 of 6 checks pass · 3 commits · +84 −12\ngithub.com/acme/web/pull/409\n\n1. squash and merge\n2. open it on GitHub\n3. not yet"
         );
         let mut p = pr();
         p.review = Review::None;

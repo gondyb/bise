@@ -168,7 +168,7 @@ fn without_ctrl_digits_the_inbox_never_shows_them() {
 fn many_cards_and_small_screens() {
     let (mut app, _hub) = app_with_hub();
     let mut cs = cast();
-    cs.push(card(20, "done", "sad-404", "the dog has a hat"));
+    cs.push(card(20, "done", "cookies", "moved the banner off buy"));
     cs.push(card(21, "failed", "t9", "the build broke"));
     app.sb.cards = cs;
     let rows = draw(&mut app, 140, 40);
@@ -187,7 +187,7 @@ fn many_cards_and_small_screens() {
 fn ctrl_digit_opens_row_n() {
     let (mut app, mut hub) = app_with_hub();
     let mut cs = cast();
-    cs.push(card(20, "done", "sad-404", "the dog has a hat"));
+    cs.push(card(20, "done", "cookies", "moved the banner off buy"));
     cs.push(card(21, "failed", "t9", "the build broke"));
     app.sb.cards = cs;
     let ids = super::super::card_draw::strip_ids(&app.sb);
@@ -585,7 +585,7 @@ fn going_to_an_agent_closes_the_view() {
 #[test]
 fn a_done_card_is_acknowledged_with_enter() {
     let (mut app, mut hub) = app_with_hub();
-    app.sb.cards = vec![card(5, "done", "sad-404", "the dog has a hat")];
+    app.sb.cards = vec![card(5, "done", "cookies", "moved the banner off buy")];
     open(&mut app);
     assert_eq!(bar(&app), "⏎ got it   ctrl+o full screen   esc back to your message");
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -635,7 +635,7 @@ fn a_sandbox_card_says_outside_the_sandbox() {
 fn the_last_answer_clears_the_inbox() {
     let (mut app, mut hub) = app_with_hub();
     app.sb.cards = vec![
-        card(1, "question", "a", "hat or scarf?\n1. hat\n2. scarf"),
+        card(1, "question", "a", "banner: smaller, or gone?\n1. smaller\n2. gone"),
         card(2, "question", "b", "now or later?\n1. now\n2. later\n3. never"),
     ];
     app.ed.insert("and once it ships");
@@ -644,16 +644,16 @@ fn the_last_answer_clears_the_inbox() {
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(2), "the next one opens by itself");
     assert!(app.sb.answered_here(1));
     let rows = draw(&mut app, 140, 40);
-    row_of(&rows, "│ ✓ you answered a: hat");
+    row_of(&rows, "│ ✓ you answered a: smaller");
     key(&mut app, KeyCode::Char('3'), KeyModifiers::NONE);
-    assert_eq!(sent(&mut hub), vec!["/answer 1 hat", "/answer 2 never"]);
+    assert_eq!(sent(&mut hub), vec!["/answer 1 smaller", "/answer 2 never"]);
     assert!(!app.sb.card.open);
     assert_eq!(app.ed.text, "and once it ships", "your draft back");
     let rows = draw(&mut app, 140, 40);
     assert!(!rows.iter().any(|r| r.contains("╭─ inbox")), "{}", rows.join("\n"));
     let d = row_of(&rows, "you → main");
     assert!(rows[d].contains("✓ inbox clear"), "{}", rows[d]);
-    row_of(&rows, "✓ you answered a: hat");
+    row_of(&rows, "✓ you answered a: smaller");
     row_of(&rows, "✓ you answered b: never");
 }
 
@@ -699,14 +699,14 @@ fn an_answer_says_one_line_in_the_thread() {
 #[test]
 fn the_ready_to_merge_item() {
     let (mut app, mut hub) = app_with_hub();
-    let text = "#409 is ready to merge\nthe sad 404 gets a dog in a hat\napproved by alice · 6 of 6 checks pass · 3 commits · +84 −12\ngithub.com/acme/web/pull/409\n\n1. squash and merge\n2. open it on GitHub\n3. not yet";
-    app.sb.cards = vec![Card { place: Some("wt:sad-404".into()), pr: Some(409), ..card(20, "merge", "sad-404", text) }];
+    let text = "#409 is ready to merge\nthe cookie banner stops covering buy\napproved by alice · 6 of 6 checks pass · 3 commits · +84 −12\ngithub.com/acme/web/pull/409\n\n1. squash and merge\n2. open it on GitHub\n3. not yet";
+    app.sb.cards = vec![Card { place: Some("wt:cookies".into()), pr: Some(409), ..card(20, "merge", "cookies", text) }];
     let s = shape(&app.sb.cards[0]);
-    assert_eq!(s.title, "sad-404: #409 is ready to merge");
+    assert_eq!(s.title, "cookies: #409 is ready to merge");
     assert_eq!(s.summary, "#409 is ready to merge");
     assert_eq!(s.options, ["squash and merge", "open it on GitHub", "not yet"]);
     // designer: the title text, the facts and the link dim evidence, the link clickable
-    assert!(matches!(s.parts.first(), Some(Part::Text(t)) if t == "the sad 404 gets a dog in a hat"));
+    assert!(matches!(s.parts.first(), Some(Part::Text(t)) if t == "the cookie banner stops covering buy"));
     assert!(matches!(s.parts.get(1), Some(Part::Evidence(t)) if t.starts_with("approved by alice")));
     assert!(matches!(s.parts.get(2), Some(Part::Evidence(t)) if t == "[github.com/acme/web/pull/409](https://github.com/acme/web/pull/409)"));
     assert_eq!(kind_look("merge").2, theme::accent());
@@ -720,5 +720,5 @@ fn the_ready_to_merge_item() {
     // 1: the digit goes to the hub, the history says the option's words
     assert!(key(&mut app, KeyCode::Char('1'), KeyModifiers::NONE));
     assert_eq!(sent(&mut hub), vec!["/answer 20 1"]);
-    assert!(matches!(app.events.last(), Some(Ev::Approval { ok: true, text, .. }) if text == "you answered sad-404: squash and merge"));
+    assert!(matches!(app.events.last(), Some(Ev::Approval { ok: true, text, .. }) if text == "you answered cookies: squash and merge"));
 }

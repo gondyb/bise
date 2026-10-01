@@ -852,8 +852,8 @@ fn answer(app: &mut App, id: u64, reply: &str, picked: Option<&str>) {
 
 /// The one line an answer folds into (the hub's words for a gate's
 /// card, approvals-design.md §9): `you allowed t3: npm publish`, `you
-/// said no to t3: npm publish` and the note, `you answered sad-404:
-/// both`.
+/// said no to t3: npm publish` and the note, `you answered cookies:
+/// smaller`.
 pub(super) fn fold_of(c: &Card, reply: &str, picked: Option<&str>) -> Fold {
     let gate = matches!(c.kind.as_str(), "confirm" | "approval");
     if !gate {

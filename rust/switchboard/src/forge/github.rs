@@ -547,7 +547,7 @@ mod tests {
             "squashMergeAllowed": false, "mergeCommitAllowed": true, "rebaseMergeAllowed": true,
             "b0": {"nodes": [{"number": 409, "url": "u", "state": "OPEN", "isDraft": false, "reviewDecision": "APPROVED",
                 "headRefOid": "h", "updatedAt": "t", "headRepositoryOwner": {"login": "o"},
-                "title": "the sad 404 gets a dog in a hat", "additions": 84, "deletions": 12,
+                "title": "the cookie banner stops covering buy", "additions": 84, "deletions": 12,
                 "mergeStateStatus": "CLEAN", "total": {"totalCount": 3},
                 "latestReviews": {"nodes": [
                     {"state": "APPROVED", "author": {"login": "alice"}},
@@ -557,7 +557,7 @@ mod tests {
         }}});
         let prs = parse(&out.to_string(), &repo(), &["sb/a".to_string()]).unwrap();
         let f = &prs[0].facts;
-        assert_eq!(f.title, "the sad 404 gets a dog in a hat");
+        assert_eq!(f.title, "the cookie banner stops covering buy");
         assert_eq!(f.approved_by, ["alice"]);
         assert_eq!((f.commits, f.additions, f.deletions, f.checks), (3, 84, 12, 6));
         assert!(f.mergeable);

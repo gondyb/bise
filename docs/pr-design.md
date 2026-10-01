@@ -99,7 +99,7 @@ row's last column, as before the boxes.
 ```
  agents
   0 ∿ main :* ✉ 2   1m  22%
-  2 ○ sad-404           18%
+  2 ○ cookies           18%
   3 ∿ login-fix     5m   9%  ↑      (red: checks fail)
   5 ∿ emoji-csv     2m  14%  ψ      (no PR yet)
   6 ○ palette            6%  ↑      (faint: draft)

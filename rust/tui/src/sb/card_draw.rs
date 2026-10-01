@@ -740,7 +740,7 @@ pub(crate) fn draw_box(app: &mut App, frame: &mut Frame, area: Rect, fit: BoxFit
     cv.hits.borrow_mut().extend(hits);
 }
 
-/// The tabs of the full-screen item: `1 ? t3   2 ? api-v2   3 ? sad-404`
+/// The tabs of the full-screen item: `1 ? t3   2 ? api-v2   3 ? cookies`
 /// (the box's numbers), the current one accent (`[ ]` under NO_COLOR),
 /// the others dim, `↑↓` faint on the right.
 fn tabs_line(sb: &Sb, cur: u64, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Line<'static> {

@@ -100,8 +100,8 @@ pub struct PrSnapshot {
     pub facts: Box<PrFacts>,
 }
 
-/// pr-design §6.3: the ready-to-merge item's lines (`the sad 404 gets a
-/// dog in a hat`, `approved by alice · 6 of 6 checks pass · 3 commits ·
+/// pr-design §6.3: the ready-to-merge item's lines (`the cookie banner
+/// stops covering buy`, `approved by alice · 6 of 6 checks pass · 3 commits ·
 /// +84 −12`) and what `1` needs: whether the forge would merge it now
 /// (GitHub's `mergeStateStatus` clean: the required reviews and checks
 /// are there, no conflict, not behind a required base) and the methods

@@ -32,7 +32,7 @@ fn place(dir: &str, agents: &[&str], pr: Option<Pr>, lid: Option<&str>) -> Place
     }
 }
 
-/// The mock's panel (sidebar-wt.html, option A): main and sad-404 in
+/// The mock's panel (sidebar-wt.html, option A): main and cookies in
 /// your folder, dark-mode and i18n sharing a worktree with PR #412
 /// (changes asked), login-fix alone (#415, checks fail), emoji-csv alone
 /// (no PR yet), palette alone (draft #418), release alone (waits to
@@ -45,7 +45,7 @@ fn mock() -> App {
     sb.agents = vec![
         Agent { main: true, turn_ms: Some(60_000), ..agent("main", "working", "shared") },
         Agent { turn_ms: Some(180_000), ..agent("dark-mode", "working", "wt:dark-mode") },
-        agent("sad-404", "idle", "shared"),
+        agent("cookies", "idle", "shared"),
         Agent { turn_ms: Some(300_000), ..agent("login-fix", "working", "wt:login-fix") },
         Agent { turn_ms: Some(42_000), ..agent("i18n", "working", "wt:dark-mode") },
         Agent { turn_ms: Some(120_000), ..agent("emoji-csv", "working", "wt:emoji-csv") },
@@ -124,7 +124,7 @@ fn a_box_only_when_they_share() {
         "  agents",
         "",
         "  0 ∿ main :*       1m",
-        "  2 ○ sad-404",
+        "  2 ○ cookies",
         "  3 ∿ login-fix     5m       ↑",
         "  5 ∿ emoji-csv     2m       ψ",
         "  6 ○ palette                ↑",
@@ -153,7 +153,7 @@ fn a_box_only_when_they_share() {
     assert!(r.iter().any(|l| l.starts_with("╰ 4 ∿ i18n-everywhere 42s")), "{}", show(&r));
     // the selection follows the rows' order, the numbers stay
     let names: Vec<&str> = app.sb.nav().iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(names, ["main", "sad-404", "login-fix", "emoji-csv", "palette", "release", "docs", "dark-mode", "i18n"]);
+    assert_eq!(names, ["main", "cookies", "login-fix", "emoji-csv", "palette", "release", "docs", "dark-mode", "i18n"]);
 }
 
 /// A shared box that drops to one live agent is a plain row on the next
@@ -303,7 +303,7 @@ fn ctrl_held_says_the_words() {
     hold(&mut app);
     let r = rows(&app, panel_w(150), 32);
     let at = |s: &str| r.iter().position(|l| l.contains(s)).unwrap_or_else(|| panic!("{s}:\n{}", show(&r)));
-    assert_eq!(r[at("sad-404") + 1], "  3 ∿ login-fix     working  ↑", "{}", show(&r));
+    assert_eq!(r[at("cookies") + 1], "  3 ∿ login-fix     working  ↑", "{}", show(&r));
     let want = [
         ("login-fix", "      #415 · checks fail: e2e…"),
         ("emoji-csv", "      no PR yet · 2 commits"),
@@ -314,7 +314,7 @@ fn ctrl_held_says_the_words() {
     for (name, words) in want {
         assert_eq!(r[at(name) + 1], words, "{}", show(&r));
     }
-    assert!(r[at("main :*") + 1].contains("sad-404"), "{}", show(&r));
+    assert!(r[at("main :*") + 1].contains("cookies"), "{}", show(&r));
     let dark = at("sb/dark-mode");
     assert_eq!(r[dark], "╭─ ψ sb/dark-mode ──── ↑ #412 ─", "{}", show(&r));
     assert_eq!(r[dark + 1], "│  changes asked · checks pass");
@@ -457,7 +457,7 @@ fn the_divider_says_the_branch_and_the_pr() {
     // an agent alone in its worktree: no `with`; in your folder: nothing
     app.sb.focus = "login-fix".into();
     assert!(panel::viewed_who(&app).with.is_empty());
-    app.sb.focus = "sad-404".into();
+    app.sb.focus = "cookies".into();
     let who = panel::viewed_who(&app);
     assert!(who.place.is_none() && who.pr.is_none());
 }
