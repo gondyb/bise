@@ -9,7 +9,7 @@
 
 import { walk, render, pick, diff, describeLocator, TEXT_ROLES } from "./lib/ax.js";
 import { parseKeys, chordEvents, keyLabel } from "./lib/keys.js";
-import { summary, failure, hostOf, refusal, label } from "./lib/text.js";
+import { summary, failure, withPlace, hostOf, refusal, label } from "./lib/text.js";
 import { jpegSize } from "./lib/jpeg.js";
 
 const HOST = "dev.bise.computer_use";
@@ -659,7 +659,8 @@ async function act(agent, args) {
   const { tabId, t } = await owned(agent, args.target);
   const action = args.action;
   if (!ACTIONS.has(action)) fail("bad_args", `unknown action ${JSON.stringify(action)}; one of ${[...ACTIONS].join(", ")}`);
-  if (t.paused) fail("paused", "the user is using this tab; wait until they give it back, or ask them", { summary: failure(action, targetLabel(args), "paused") });
+  const place = async () => hostOf((await chrome.tabs.get(tabId).catch(() => ({}))).url || "");
+  if (t.paused) fail("paused", "the user is using this tab; wait until they give it back, or ask them", { summary: withPlace(failure(action, targetLabel(args), "paused"), await place()) });
   return serial(t, async () => {
     let el = null;
     try {
@@ -671,8 +672,9 @@ async function act(agent, args) {
       if (e instanceof CuError && !e.summary) e.summary = failure(action, targetLabel(args, el), e.code, e.reason);
       if (!(e instanceof CuError)) {
         const err = toError(e);
-        throw new CuError(err.code, err.message, { summary: failure(action, targetLabel(args, el), err.code) });
+        throw new CuError(err.code, err.message, { summary: withPlace(failure(action, targetLabel(args, el), err.code), await place()) });
       }
+      if (e.summary) e.summary = withPlace(e.summary, await place());
       throw e;
     } finally {
       t.acting = false;

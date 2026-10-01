@@ -39,6 +39,9 @@ struct Act {
         case "no_permission": e.summary = "couldn't \(verb) \(w): no permission"
         default: e.summary = "couldn't \(verb) \(w)"
         }
+        // ends with its place like a success line (designer m_3904 #6),
+        // not twice when the line already names the app
+        if let s = e.summary, !s.contains(target.name) { e.summary = "\(s) · \(target.name)" }
         return e
     }
 

@@ -22,6 +22,7 @@ const check = (name, ok, detail = "") => {
 };
 
 const pages = await servePages();
+const HOST = new URL(pages.base).host; // the place every failure line ends with
 const broker = await fakeBroker();
 const b = await launch({ browser, brokerPort: broker.port, startUrl: pages.base + "next.html?user" });
 const A = "api-v2", B = "pr-designer";
@@ -96,9 +97,9 @@ try {
   const nth = await act(A, T1, "click", { locator: { role: "button", name: "More", nth: 1 } });
   check("nth picks one", nth.ok, nth.error);
   const nf = await act(A, T1, "click", { locator: { role: "button", name: "Checkout" }, timeout_ms: 300 });
-  check("not_found lists candidates", !nf.ok && nf.error.code === "not_found" && nf.error.candidates.length > 0 && nf.error.summary === 'couldn\'t find "Checkout"', nf.error);
+  check("not_found lists candidates", !nf.ok && nf.error.code === "not_found" && nf.error.candidates.length > 0 && nf.error.summary === `couldn't find "Checkout" · ${HOST}`, nf.error);
   const dis = await act(A, T1, "click", { locator: { role: "button", name: "Pay now" }, timeout_ms: 400 });
-  check("disabled → timeout", !dis.ok && dis.error.code === "timeout" && /disabled/.test(dis.error.message) && dis.error.summary === "couldn't click \"Pay now\": it's disabled", dis.error);
+  check("disabled → timeout", !dis.ok && dis.error.code === "timeout" && /disabled/.test(dis.error.message) && dis.error.summary === `couldn't click "Pay now": it's disabled · ${HOST}`, dis.error);
   const re = await act(A, T1, "read", { locator: { text_re: "price: \\d+/i" } });
   check("text_re with flags + read", re.ok && re.result.changed === "Price: 12,50 €", re.result || re.error);
 
@@ -128,7 +129,7 @@ try {
 
   // ---- auto-wait, covered element, wait
   const cov = await act(A, T2, "click", { locator: { role: "button", name: "Under the popup" }, timeout_ms: 500 });
-  check("covered element → timeout naming it", !cov.ok && cov.error.code === "timeout" && /covers/.test(cov.error.message) && cov.error.summary === "couldn't click \"Under the popup\": something covers it", cov.error);
+  check("covered element → timeout naming it", !cov.ok && cov.error.code === "timeout" && /covers/.test(cov.error.message) && cov.error.summary === `couldn't click "Under the popup": something covers it · ${HOST}`, cov.error);
   const acc = await act(A, T2, "click", { locator: { name: "Accept cookies" } });
   const under = await act(A, T2, "click", { locator: { name: "Under the popup" } });
   check("after closing the popup the click lands", acc.ok && under.ok && under.result.changed.includes("clicked under"), under.result || under.error);
@@ -203,7 +204,7 @@ try {
   await ext.ev(`chrome.tabs.update(${id3}, {active: true}).then(() => 1)`);
   check("activating an agent tab → paused event", await broker.until(() => broker.events.some((e) => e.event === "paused" && e.agent === B && e.target === T3)), broker.events);
   const pz = await act(B, T3, "click", { locator: { role: "button", name: "Add to cart" } });
-  check("act on a paused tab → paused", !pz.ok && pz.error.code === "paused" && pz.error.summary === 'couldn\'t click "Add to cart": you\'re using this tab', pz.error);
+  check("act on a paused tab → paused", !pz.ok && pz.error.code === "paused" && pz.error.summary === `couldn't click "Add to cart": you're using this tab · ${HOST}`, pz.error);
   const tb = await req(B, "tabs", {});
   check("tabs shows user_touched", tb.result.find((t) => t.target === T3)?.user_touched === true, tb.result);
   broker.send({ resume: B });

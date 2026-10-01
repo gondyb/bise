@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { walk, render, pick, match, diff, parseRe, ariaRole } from "../lib/ax.js";
 import { parseKeys, chordEvents, keyLabel } from "../lib/keys.js";
-import { summary, failure, hostOf, label, refusal } from "../lib/text.js";
+import { summary, failure, withPlace, hostOf, label, refusal } from "../lib/text.js";
 import { jpegSize } from "../lib/jpeg.js";
 
 // A small CDP AX tree: root → heading, button (with its own text), a
@@ -154,6 +154,9 @@ test("summary lines (designer m_3616)", () => {
   assert.equal(label("x".repeat(40)), "x".repeat(31) + "…");
   assert.equal(failure("click", '"Add to cart"', "timeout", "something covers it"), 'couldn\'t click "Add to cart": something covers it');
   assert.equal(failure("fill", '"Email"', "not_found"), 'couldn\'t find "Email"');
+  assert.equal(withPlace('couldn\'t click "Add to cart": something covers it', "amazon.fr"), 'couldn\'t click "Add to cart": something covers it · amazon.fr');
+  assert.equal(withPlace("couldn't go to amazon.fr: it took too long", "amazon.fr"), "couldn't go to amazon.fr: it took too long");
+  assert.equal(withPlace("couldn't find \"Email\"", ""), "couldn't find \"Email\"");
 });
 
 test("hosts and refusals", () => {

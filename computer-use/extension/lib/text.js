@@ -75,6 +75,15 @@ export function failure(action, target, code, reason = "") {
   return `couldn't ${VERB[action] || action}${t}: ${why}`;
 }
 
+/**
+ * A failure line ends with its place like a success line (designer m_3904
+ * #6): `couldn't click "Add to cart": something covers it · amazon.fr`.
+ * Not twice when the line already names the host (open, goto).
+ */
+export function withPlace(line, host) {
+  return host && !line.includes(host) ? `${line}${at(host)}` : line;
+}
+
 // Pages the extension never drives (design §5.1; the broker checks too).
 const REFUSED_SCHEMES = ["chrome:", "chrome-extension:", "chrome-untrusted:", "chrome-search:", "devtools:", "edge:", "brave:", "vivaldi:", "opera:", "arc:", "view-source:", "extension:"];
 const REFUSED_HOSTS = ["chromewebstore.google.com", "microsoftedge.microsoft.com", "addons.opera.com", "chrome.google.com"];
