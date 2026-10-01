@@ -72,7 +72,11 @@ def part_a(tmp):
         "BEND_PROVIDER_URL": "http://127.0.0.1:%s/v1/chat/completions" % fake.stdout.readline().split()[1],
         "BEND_MODEL": "mistral-small-latest", "MISTRAL_API_KEY": "fake-key",
         "BEND_MCP_INDEX": os.path.join(tmp, "mcp.txt"), "BEND_SKILLS_INDEX": os.path.join(tmp, "sk.txt"),
-        "BEND_BG_ROOT": bg, "BEND_BG_AFTER": "2", "BEND_REPL_PORT": str(port),
+        # the sync window, the job (8 s) and the wait (4 s): 2 s of margin
+        # each way (the job outlives the window, the wait does not, the job
+        # ends before 3 runs). With 2 / 3 / 1.5 a full gate at load 12 made
+        # the job end in the window and `echo before; cat` hand off
+        "BEND_BG_ROOT": bg, "BEND_BG_AFTER": "6", "BEND_REPL_PORT": str(port),
         "BEND_SESSION_FILE": session, "BEND_WIRE_LOG": os.path.join(tmp, "wire.log"),
         "SB_AGENT": "probe",
     })
@@ -86,7 +90,7 @@ def part_a(tmp):
                 sys.exit("FAIL no REPL banner: %s" % open(err).read()[-500:])
             time.sleep(0.1)
         out0 = os.path.join(bg, "bend-bg-%d" % port, "0.out")
-        cmds = ["sleep 3; echo job-done", "sleep 1.5", "echo before; cat " + out0,
+        cmds = ["sleep 8; echo job-done", "sleep 4", "echo before; cat " + out0,
                 "yes aaaaaaaaa | head -c 3000000",
                 'echo "env:[${BEND_SESSION_FILE-}][${BEND_WIRE_LOG-}][${BEND_REPL_PORT-}][${SB_AGENT-}]"']
         sock = socket.create_connection(("127.0.0.1", port), timeout=120)
