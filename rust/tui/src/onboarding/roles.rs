@@ -210,10 +210,11 @@ impl Onb {
         (m, src)
     }
 
-    /// The checker's model when unset: the small jobs model
-    /// (`roles::checker_default`; Jev only when picked).
+    /// The checker's model when unset: Jev by the keys ready, else the
+    /// small jobs model (`roles::checker_default`).
     fn checker_auto(&self) -> String {
-        r::checker_default(&self.setup.small_model)
+        let ready = |pid: &str| self.setup.catalog.provider(pid).is_some_and(|p| self.ready(&Provider::of(p)));
+        r::checker_default(&self.setup.small_model, &ready)
     }
 
     /// The role runs a model of its own (picked, or an env var's).
@@ -930,7 +931,7 @@ fn provider_lines(o: &Onb, id: &'static str, w: u16, gap: usize, said: &dyn Fn(&
                     name.push(s(format!(" {} now", d), theme::dim()));
                 }
                 // designer: OpenRouter says it serves Jev; TypeSafe, no tag
-                // (auto, the small jobs model, is the default)
+                // (auto is the default and says what it uses)
                 if p.id != "typesafe" {
                     name.push(s(format!(" {} jev through {}", d, p.name), theme::dim()));
                 }

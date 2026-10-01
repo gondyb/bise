@@ -882,9 +882,11 @@ fn every_role_has_its_words() {
 }
 
 #[test]
-fn the_checker_is_the_small_model_jev_when_picked() {
+fn the_checker_is_jev_first_then_the_small_model() {
     let small = "mistral/mistral-small-latest";
-    assert_eq!(roles::checker_default(small), small);
+    assert_eq!(roles::checker_default(small, &|_| true), roles::JEV_TYPESAFE);
+    assert_eq!(roles::checker_default(small, &|p| p == "openrouter"), roles::JEV_OPENROUTER);
+    assert_eq!(roles::checker_default(small, &|_| false), small);
     assert_eq!(roles::jev_of("typesafe/jev-1.13"), Some(("typesafe", "jev-1.13.0".to_string())));
     assert_eq!(roles::jev_of("openrouter/typesafe/jev-1.13"), Some(("openrouter", "typesafe/jev-1.13".to_string())));
     assert_eq!(roles::jev_of("openrouter/anthropic/claude-sonnet-5.5"), None);

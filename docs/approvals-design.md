@@ -21,11 +21,13 @@ the hard rules and the wire; §14 says what changed.
 - The checker is called **rarely**, to save tokens and time: cheap tiers
   first (§3), the checker only for the rest, its verdicts cached (§4.4).
 - The checker is a **role, `checker`, in `/models`** (the `classify` role
-  of BISE-298, shown with this feature), **the small jobs model by
-  default**; Jev (TypeSafe's System One model) when the user picks it, or
-  another chat model, or off (§4.2). Settled by the user (Q2); the default
-  moved from Jev to small jobs after the eval (docs/approvals-eval: Jev as
-  designed asks about every command).
+  of BISE-298, shown with this feature), **Jev by default** (TypeSafe's
+  System One model, through TypeSafe or OpenRouter, whichever key is
+  ready, else the small jobs model); a chat model can take the role
+  instead, or it can be off (§4.2). Settled by the user (Q2): Jev stays
+  the default only while it does at least as well as mistral-small
+  (docs/approvals-eval: as designed it asked about every command; tuned,
+  it beats mistral-small on the 150 and on 50 fresh commands).
 - **The sandbox on macOS now** (Seatbelt: writes only in the roots,
   network only when allowed), the parser path where there is none (§6).
   Settled (Q1).
@@ -295,8 +297,8 @@ until this feature). Designer's words:
   when the mode is `yolo`). Off: the row says `off · commands ask you`,
   dim; enter sets it up.
 - Picker, step 1 "checker: which provider?", `now: TypeSafe · jev-1.13`:
-  - `auto` first: the small jobs model (`Mistral · mistral-small-latest ·
-    now` when unset);
+  - `auto` first: what the default resolves to (`TypeSafe · jev-1.13 ·
+    now` when unset and its key is ready);
   - `TypeSafe` (`✓ ready · now`; no tag, designer: auto is the default);
   - `OpenRouter` (`✓ ready · jev through OpenRouter`);
   - a dim separator row "or a chat model checks" (not selectable), then the
@@ -315,8 +317,9 @@ until this feature). Designer's words:
   (`TYPESAFE_API_KEY` too). OpenRouter's key already works for Jev.
 - config.toml: `[roles] classify = "typesafe/jev-1.13"` (or
   `"openrouter/typesafe/jev-1.13"`, a chat `provider/model`, or `"off"`);
-  `BISE_CLASSIFY_MODEL` for one session. Unset: the small jobs model,
-  whatever keys are ready (Jev only when picked).
+  `BISE_CLASSIFY_MODEL` for one session. Unset: Jev through TypeSafe if its
+  key is ready, else through OpenRouter if that key is ready, else the
+  small jobs model.
 - `/approvals` shows which checker runs and points to `/models`.
 
 A checker error falls back to a card, never to another checker (no
@@ -336,19 +339,28 @@ Kept short on purpose (tokens, and less to inject into):
   chars; never the agent's words, never tool results or file contents;
 - `folder`, `roots`, `repo` (paths only); the tool name for a connector.
 
-Jev questions (one request, answered in parallel):
+Jev questions (one request, answered in parallel). The first design asked
+3 broad statements (`contained`, `serves_task`, `secrets`, allow at
+`contained` ≥ 0.9, `serves_task` ≥ 0.8, `secrets` ≤ 0.1, OpenRouter's
+thresholds): Jev scored fine and risky commands alike and asked about every
+one (docs/approvals-eval). Tuned (`checker.rs`, `JEV_QUESTIONS`): 4 narrow
+risks and secrets, each a `noul` with System One's `criteria` (`true`:
+examples of the risk; `false`: the look-alikes that are fine), the risks
+told to judge what the command text itself does:
 
-| id | type | statement |
-|---|---|---|
-| `contained` | noul | "Every command only reads or changes files inside the roots and can be undone with git or by running it again. It does not push, publish, deploy, delete files outside the roots, change system settings, stop other people's processes, or send data to a network service." |
-| `serves_task` | noul | "Running these commands is a reasonable next step toward the task." |
-| `secrets` | noul | "The commands read, print or send credentials, keys or tokens." |
+| id | statement (short) |
+|---|---|
+| `publishes` | publishes, deploys, pushes, merges, releases, or sends data to a network service |
+| `destroys` | deletes or discards what rerunning cannot bring back: uncommitted work, history, branches, worktrees, files outside the project and /tmp |
+| `machine` | changes the machine outside the project: system-wide installs, system or global settings, shell files, cron, services, home permissions |
+| `others_processes` | stops processes chosen by name, pattern or port |
+| `secrets` | reads, prints, copies or sends a credential's value |
 
-Allow when `contained` ≥ 0.9 and `serves_task` ≥ 0.8 and `secrets` ≤ 0.1
-(OpenRouter's thresholds, a stricter one for secrets). Anything else is a
-card. No `task` (a headless run): `serves_task` is not asked. The scores
-go to the debug log and behind ctrl+o on the card, never in its words
-(§9).
+Allow when every risk ≤ 0.2 and `secrets` ≤ 0.15. Anything else is a
+card ("it may expose a key or a token." for secrets, else "it may not be
+undoable."). `serves_task` is not asked of Jev (its scores did not
+separate the sets); the task stays in the state. The scores go to the
+debug log and behind ctrl+o on the card, never in its words (§9).
 
 The chat fallback gets the same state and the approvals.md §4.3 prompt,
 answers `{"verdict":"allow"|"ask","reason":…}`, and the same rule applies:
@@ -724,7 +736,7 @@ by an edit is lost (said in `/help`). A recursive delete of a root itself
   ⇧⇥ changes it."
 - **First switch to `auto`** with a checker that sends data out, a one-time
   tip that says exactly what leaves the machine (designer):
-  - a chat model in the role (auto's default, the small jobs model): "auto
+  - a chat model in the role (auto's default with no Jev key): "auto
     sends commands to Mistral (mistral-small-latest) to check them. /models
     changes it."; a local one (Ollama, LM Studio): "auto checks commands
     with <model>, on this machine. /models changes it."
@@ -905,7 +917,7 @@ user runs on a real repo, a short script of what to try, and main merges
 | default `auto` (spec) | default `yolo`, the last pick remembered |
 | `shift+tab` cycles 3 modes | `shift+tab` toggles 2 |
 | the classifier judged every call past a small fast path | tiers 0–4 decide ~93 % of bash calls without a model (§3.2) |
-| `approvals_model`, then the `classify` role | the `checker` role in `/models` (the `classify` role shown), the small jobs model by default, Jev (TypeSafe or OpenRouter) or another chat model when picked, or off |
+| `approvals_model`, then the `classify` role | the `checker` role in `/models` (the `classify` role shown), Jev by default (TypeSafe or OpenRouter, tuned: docs/approvals-eval), else the small jobs model; a chat model instead, or off |
 | classifier verdicts: allow / deny-and-continue / card | allow or card; the only denial is the deny-once for a bash edit the parser cannot read (no model call) |
 | a turn cache | a per-repo, per-hub-session cache of allow verdicts, keyed by pattern for plain parts (§4.4) |
 | reason line: the classifier's words | words picked from the scores (designer); scores in the debug log and behind ctrl+o |

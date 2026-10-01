@@ -49,17 +49,18 @@ pub enum Route {
 }
 
 impl Route {
-    /// The role's model as `Setup::role_model` gives it ("" = unset).
-    /// Unset: `roles::checker_default`, `small` (the small jobs model);
-    /// Jev only when picked.
-    pub fn of(model: &str, small: &str) -> Route {
+    /// The role's model as `Setup::role_model` gives it ("" = unset),
+    /// with `ready(provider id)` = its key is there. Unset:
+    /// `roles::checker_default` (Jev through TypeSafe, else OpenRouter,
+    /// else `small`, the small jobs model).
+    pub fn of(model: &str, small: &str, ready: &dyn Fn(&str) -> bool) -> Route {
         let m = model.trim();
         if m == OFF {
             return Route::Off;
         }
         if m.is_empty() {
-            let d = roles::checker_default(small);
-            return if d.is_empty() { Route::Off } else { Route::of(&d, small) };
+            let d = roles::checker_default(small, ready);
+            return if d.is_empty() { Route::Off } else { Route::of(&d, small, ready) };
         }
         match roles::jev_of(m) {
             Some(("typesafe", model)) => Route::Jev { via: Via::TypeSafe, model },

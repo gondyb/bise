@@ -1,9 +1,8 @@
 """The checker role (approvals, design §4.2) in /models, in a real terminal
 (tmux), in a clean bise home and HOME, main on Anthropic, TypeSafe's key in
-the environment (Jev is ready, but only runs when picked), no other key:
+the environment (so Jev is ready), no other key:
 
-- /models: `checker   auto · Anthropic · claude-haiku-…` (dim: the small
-  jobs model), its hint;
+- /models: `checker   auto · TypeSafe · jev-1.13` (dim), its hint;
 - `checker: which provider?`: now, what leaves the machine, `auto` first,
   TypeSafe with no tag, OpenRouter `jev through OpenRouter`, the dim
   separator `── or a chat model checks ──` (stepped over), the chat providers
@@ -67,7 +66,7 @@ def main():
         t.typed("/models")
         t.keys("Enter")
         sc = t.wait("which model does what?")
-        assert re.search(r"checker +auto · Anthropic · claude-haiku-", sc), sc
+        assert re.search(r"checker +auto · TypeSafe · jev-1.13", sc), sc
         for _ in range(4):
             t.keys("Down")
         sc = t.wait("› checker")
@@ -78,9 +77,9 @@ def main():
         t.keys("Enter")
         sc = t.wait("checker: which provider?")
         cap("02-checker-providers")
-        assert "now: auto · Anthropic · claude-haiku-" in sc, sc
+        assert "now: auto · TypeSafe · jev-1.13" in sc, sc
         assert "the checker sees the command, the script it runs, and your request." in sc, sc
-        assert re.search(r"› auto +Anthropic · claude-haiku-\S+ · now", sc), sc
+        assert re.search(r"› auto +TypeSafe · jev-1.13 · now", sc), sc
         assert re.search(r"TypeSafe +✓ ready$", sc, re.M), sc
         assert re.search(r"OpenRouter +not set up · jev through OpenRouter", sc), sc
         assert re.search(r"^ +── or a chat model checks ──$", sc, re.M), sc
