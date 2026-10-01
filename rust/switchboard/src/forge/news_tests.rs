@@ -12,6 +12,7 @@ fn pr(head: &str, review: Review, checks: Checks) -> PrSnapshot {
         review,
         checks,
         updated_at: "t".into(),
+        facts: Default::default(),
     }
 }
 
