@@ -113,6 +113,11 @@ Namespace `computer` (the built-in plugin). Targets are strings:
   `ambiguous`, `stale_ref`, `stopped`, `paused`, `refused`, `timeout`,
   `needs_front`, `bad_args`. `message` is one sentence the agent can
   act on ("the user stopped you in Chrome; ask before you start again").
+  An `act` error also carries `summary`, the user-facing failure line
+  without the `✗` (the TUI adds it in err colour): `couldn't click "Add
+  to cart": a popup covers it`, `couldn't find "Email"`. Built by
+  whoever acts (extension, helper); the broker passes it through
+  (cu-extension m_3630, designer's row shape).
 
 Settled details (cu-extension m_3613, cu-apps m_3609; the same on web
 and apps):
