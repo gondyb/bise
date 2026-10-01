@@ -412,67 +412,6 @@ class Mini:
         css = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
         return svg(s.W, s.H, "".join(s.o), "".join(s.tl.css) + css, label, s.c, pad=16)
 
-def f_talk(c):
-    m = Mini(c, 11, 250, "∿ = working")
-    m.you(0.9, "signup is slow on mobile. can you look?", gap=0)
-    m.row(1.6, f'{m.acc(":*")} perf started.')
-    m.you(3.4, "oh and dark mode. people keep asking")
-    m.row(4.0, f'{m.acc(":*")} dark-mode started too.')
-    m.row(4.3, f'{m.dim("you never wait for a turn. the composer is never locked.")}', size=13, gap=4)
-    m.composer([(0, None, f'<tspan fill="{c["acc"]}" font-weight="700">main</tspan>')],
-               [(0.2, 0.8, 0.9, "signup is slow on mobile. can you look?"), (2.2, 3.2, 3.4, "oh and dark mode. people keep asking")])
-    for t0, t1, n in [(1.6, 4.0, 1), (4.0, 10.2, 2)]:
-        k = m.tl.show(t0, t1, dur=0.12)
-        m.o.append(f'<text class="{k}" x="{m.W-24}" y="{m.H-40}" text-anchor="end" font-size="12" fill="{c["dim"]}"><tspan class="g" fill="{c["acc"]}">∿</tspan> {n} working</text>')
-    return m.svg("you send a second idea while the first agent works: the composer is never locked.")
-
-def f_sync(c):
-    m = Mini(c, 10, 230, "between agents · folded by default")
-    m.chip(1.0, "dark-mode", "theme", "which file has the colors?")
-    m.chip(2.6, "theme", "dark-mode", "tokens.css. i'm editing it, don't touch it.", gap=0)
-    m.row(4.4, f'{m.acc(":*")} dark-mode and theme agreed on who edits tokens.css.', gap=4)
-    m.row(5.0, f'{m.dim("you didn’t have to do anything.")}', size=13)
-    return m.svg("two agents message each other about a shared file, then main sums it up in one line.")
-
-def f_tools(c):
-    m = Mini(c, 10, 230, "$ bash · ƒ TypeScript")
-    rows = [(0.8, "ƒ", "reading the Sentry issue", 1.8), (1.9, "ƒ", "checking the Linear ticket", 2.9),
-            (3.0, "$", "running the failing test", 4.4), (4.5, "ƒ", "opening a PR on GitHub", 6.2)]
-    for (t0, g, d, t1) in rows:
-        yy = m.y; m.y += 27
-        m.row(t0, f'{m.dim(g)} {E(d)}', y=yy)
-        m.swap(t0, t1, m.fx + int((len(d) + 3) * CW), yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan>', f'<tspan fill="{c["acc"]}">✓</tspan>')
-    m.row(6.6, f'{m.dim("every MCP server, always on. called from code: the context stays small.")}', size=13, gap=6)
-    return m.svg("an agent calls Sentry, Linear and GitHub tools from code, one row each.")
-
-def f_card(c):
-    m = Mini(c, 10, 230, "ctrl+1 opens it, or a click")
-    m.row(0.6, f'{m.acc(":*")} perf found why signup is slow.')
-    yy = m.y + 6; k = m.tl.show(1.4, 5.2, dur=0.2); a = m.tl.show(5.2, dur=0.2)
-    m.o.append(f'<g class="{k}"><rect x="{m.fx-14}" y="{yy-17}" width="620" height="72" rx="4" fill="{c["raised"]}"/><rect x="{m.fx-14}" y="{yy-17}" width="3" height="72" fill="{c["acc"]}"/>'
-               f'<text x="{m.fx}" y="{yy}" font-size="14" font-weight="700" fill="{c["acc"]}">? perf needs you</text>'
-               f'<text x="{m.fx}" y="{yy+22}" font-size="14" fill="{c["text"]}">the hero image is 4.2 MB. compress it, or lazy-load it?</text>'
-               f'<text x="{m.fx}" y="{yy+44}" font-size="13" fill="{c["dim"]}" xml:space="preserve">1 compress   2 lazy-load   3 both</text></g>'
-               f'<text class="{a}" x="{m.fx}" y="{yy}" font-size="14" fill="{c["dim"]}">{m.acc("✓")} perf · you said both</text>')
-    kp = m.tl.show(4.6, 5.2, dur=0.1)
-    m.o.append(f'<rect class="{kp}" x="{m.fx + int(28*7.6)}" y="{yy+30}" width="{int(7*7.6)+12}" height="20" rx="3" fill="{c["chip"]}"/>')
-    m.y = yy + 34
-    m.row(6.0, f'{m.acc("✓")} perf done {m.dim("· signup 4.1 s → 0.9 s")}', gap=4)
-    return m.svg("a card asks one question; you answer with one key; it folds into one line.")
-
-def f_direct(c):
-    m = Mini(c, 12, 250, "⌥ + number, or @name")
-    m.row(0.5, f'{m.acc("✓")} perf done {m.dim("· signup 4.1 s → 0.9 s")}', gap=0)
-    m.row(2.2, f'{m.dim("⌥1 · now talking to perf")}', size=13, gap=4)
-    m.you(3.9, "why 0.9 and not 0.5?")
-    m.row(4.7, f'{m.dim("@ perf:")} the fonts block the first paint. want me to preload them?')
-    m.you(6.9, "yes. then back to main")
-    m.row(7.6, f'{m.dim("@ perf:")} on it.')
-    main = f'<tspan fill="{c["acc"]}" font-weight="700">main</tspan>'; perf = f'<tspan fill="{c["acc"]}" font-weight="700">perf</tspan>'
-    m.composer([(0, 2.2, main), (2.2, 8.4, perf), (8.4, None, main)],
-               [(3.0, 3.7, 3.9, "why 0.9 and not 0.5?"), (5.8, 6.7, 6.9, "yes. then back to main")])
-    return m.svg("you switch to one agent with alt+1, ask why, push it, and go back to main.")
-
 def f_steer(c):
     m = Mini(c, 10, 230, "✓ sent · ✓✓ read")
     yy = m.y; m.y += 27
@@ -482,27 +421,6 @@ def f_steer(c):
     m.row(3.3, f'{m.dim("@ sad-404:")} got it. the dog keeps its job. hat on.', gap=4)
     m.row(4.2, f'{m.dim("the correction lands in the running agent. nothing restarts.")}', size=13, gap=6)
     return m.svg("you correct a running agent; the double check shows it read the message; it changes course.")
-
-def f_resume(c):
-    m = Mini(c, 10, 230, "nothing gets dropped")
-    yy = m.y; m.y += 27
-    m.swap(0.4, 1.8, m.fx, yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> dark-mode <tspan fill="{c["dim"]}">· 6 of 11 pages dark</tspan>',
-           f'<tspan fill="{c["acc"]}">✗</tspan> dark-mode <tspan fill="{c["dim"]}">stopped: the provider answered 503.</tspan>')
-    m.row(3.0, f'{m.acc(":*")} dark-mode stopped half-way. i started it again, from page 7.', gap=4)
-    m.row(4.2, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> dark-mode {m.dim("· 7 of 11 pages…")}')
-    m.row(5.2, f'{m.dim("quit bise, update it, come back tomorrow: the agents pick up where they were.")}', size=13, gap=6)
-    return m.svg("an agent stops on a provider error; main starts it again from where it stopped.")
-
-def f_worktree(c):
-    m = Mini(c, 10, 230, "ψ = its own worktree")
-    m.row(0.5, f'{m.acc(":*")} migrate-db gets its own worktree. the others share the folder.')
-    yy = m.y; m.y += 27
-    m.swap(1.6, 5.0, m.fx, yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> migrate-db <tspan fill="{c["dim"]}">ψ db-v2 · running the migration on a copy</tspan>',
-           f'<tspan fill="{c["acc"]}">✓</tspan> migrate-db <tspan fill="{c["dim"]}">merged into main. worktree cleaned up.</tspan>')
-    m.row(1.9, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> dark-mode {m.dim("· shared folder")}')
-    m.row(2.2, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> emoji-csv {m.dim("· shared folder")}')
-    m.row(5.6, f'{m.dim("no branch to name, no folder to delete. nothing to think about.")}', size=13, gap=6)
-    return m.svg("one agent gets its own worktree for a risky job; the others share the folder; the worktree is cleaned up after.")
 
 def f_quiet(c):
     m = Mini(c, 12, 250, "ctrl+o opens it all · ctrl+o folds it back")
@@ -566,7 +484,7 @@ class Tui(Mini):
         s.chrome.append(f'<text x="24" y="28" font-size="13" font-weight="700" fill="{c["text"]}">bise {s.acc(":*")}</text>'
                         f'<line x1="0" y1="42" x2="{s.W}" y2="42" stroke="{c["line"]}"/>')
         for (t0, t1, html) in spans:
-            k = s.tl.show(t0, t1, dur=0.15)
+            k = s.tl.show(t0, t1, dur=0.01)
             s.chrome.append(f'<text class="{k}" x="{s.W-24}" y="28" text-anchor="end" font-size="12" fill="{c["dim"]}" xml:space="preserve">{html}</text>')
     def agents(s, rows):
         """rows: [(t0, name, [(t, mark_html)])]: one row per agent in the panel; its mark changes at each t."""
@@ -579,7 +497,7 @@ class Tui(Mini):
             s.chrome.append(f'<text class="{k}" x="{x+20}" y="{yy}" font-size="14" fill="{c["text"]}">{E(name)}</text>')
             for j, (t, mk) in enumerate(marks):
                 t1 = marks[j + 1][0] if j + 1 < len(marks) else None
-                kk = s.tl.show(t, t1, dur=0.15)
+                kk = s.tl.show(t, t1, dur=0.01)
                 s.chrome.append(f'<text class="{kk}" x="{x}" y="{yy}" font-size="14" fill="{c["acc"]}">{mk}</text>')
     def you(s, t, text, gap=8, read=0.5, html=None, w=None):
         """your message in the feed: a pen bar, bold, ✓ then ✓✓ once read."""
@@ -601,7 +519,7 @@ class Tui(Mini):
                       f'<text x="{s.fx+4}" y="{yy}" font-size="12" fill="{s.c["dim"]}" textLength="{(n - 1) * 7.3 - 8:.1f}" lengthAdjust="spacing" xml:space="preserve">✉ <tspan font-weight="700" fill="{s.c["text"]}">{E(a)}</tspan> <tspan fill="{s.c["faint"]}">→</tspan> {E(b)}</text>'
                       f'<text x="{s.fx + w + 6:.0f}" y="{yy}" font-size="13" fill="{s.c["dim"]}" xml:space="preserve">{E(text)}</text></g>')
         return yy
-    def type(s, t, t2, text, x=None, row=0):
+    def type(s, t, t2, text, x=None, row=0, y=None, size=14):
         """text typed in the composer between t and t2: whole characters, one at a time (one tspan each, no
         sliding mask). textLength pins the line to the cell grid, so what is drawn after it lines up in any
         mono font. it stays until the send (the composer's group hides it)."""
@@ -614,8 +532,9 @@ class Tui(Mini):
             s.tl.n += 1; k = f"q{s.tl.n}"; at = t + (t2 - t) * (i + 1) / len(chars)
             s.tl.css.append(f"@keyframes {k}{{0%,{p(at)}{{opacity:0}}{p(at + .01)},100%{{opacity:1}}}}.{k}{{animation:{k} {T}s linear infinite}}")
             spans.append(f'<tspan class="{k}">{E(ch)}</tspan>')
-        yy = s.top + 34 + row * 22
-        s.typed.append((t, f'<text x="{x}" y="{yy}" font-size="14" fill="{s.c["text"]}" textLength="{n * CW:.1f}" lengthAdjust="spacing" xml:space="preserve">{"".join(spans)}</text>'))
+        yy = y if y is not None else s.top + 34 + row * 22
+        cw = CW * size / 14
+        s.typed.append((t, f'<text x="{x}" y="{yy}" font-size="{size}" fill="{s.c["text"]}" textLength="{n * cw:.1f}" lengthAdjust="spacing" xml:space="preserve">{"".join(spans)}</text>'))
         return x + w
     typed = None
     def composer(s, sends, who=None):
@@ -629,7 +548,7 @@ class Tui(Mini):
         o.append(f'<rect x="0" y="{top}" width="{W}" height="{s.H-top}" fill="{c["foot"]}"/>')
         s.chrome.append(f'<path d="M0 {top} H16 M{24 + 18 * 7.3 + 8:.0f} {top} H{W}" stroke="{c["line"]}"/>')
         for (t0, t1, name) in who:
-            k = s.tl.show(t0, t1, dur=0.12) if t0 or t1 else None
+            k = s.tl.show(t0, t1, dur=0.01) if t0 or t1 else None
             o.append(f'<text{f" class={chr(34)}{k}{chr(34)}" if k else ""} x="24" y="{top+4}" font-size="12" fill="{c["dim"]}">you → {s.acc_b(name)}</text>')
         o.append(f'<rect x="48" y="{top+19}" width="2" height="21" fill="{c["acc"]}"/>')
         ends = [0] + [b for (_, b) in sends]; starts = [a for (a, _) in sends] + [s.T]
@@ -665,6 +584,10 @@ class Tui(Mini):
         """the chrome fades between t0 and t1 (zen.rs: 250 ms, mixed toward its background)."""
         s.fade.append((t0, t1, depth))
     def svg(s, label):
+        body, css = s.body(label)
+        return svg(s.W, s.H, body, css, label, s.c, pad=16)
+    def body(s, label):
+        """the screen (no paper, no figure) and its CSS."""
         T = s.T; p = lambda v: f"{v / T * 100:.2f}%"
         css = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
         cls = ""
@@ -678,11 +601,11 @@ class Tui(Mini):
         fw = (s.px - 17) if s.px else s.W
         feedclip = f'<clipPath id="feed"><rect x="0" y="43" width="{fw}" height="{s.top - 43}"/></clipPath>'
         # the still: the last thing that happens holds at least 2 s before the loop fades out (designer)
-        last = max(t for t in s.tl.starts if t < T - 0.8)
+        last = max([t for t in s.tl.starts if t < T - 0.8] or [0])
         assert last + 2 <= T - 0.8, f"{label[:40]}: the last event ends at {last:.2f} s, the loop at {T} s: no 2 s still"
         body = (f'<rect width="{s.W}" height="{s.H}" fill="{s.c["bg"]}"/>' + feedclip +
                 f'<g clip-path="url(#feed)"><g{scls}>{"".join(s.feed)}</g></g>' + comp + "".join(s.over) + f'<g{cls}>{"".join(s.chrome)}</g>' + "".join(s.last))
-        return svg(s.W, s.H, body, "".join(s.tl.css) + css, label, s.c, pad=16)
+        return body, "".join(s.tl.css) + css
 
 def t_talk(c):
     """talk whenever. you never wait: you type the next idea while main answers the last one."""
@@ -779,7 +702,7 @@ def t_worktree(c):
     m.header([(0, 1.9, f'{m.gust()} 2 working'), (1.9, 5.0, f'{m.gust()} 3 working'), (5.0, None, f'{m.gust()} 2 working · {m.acc("✓")} 1 done')])
     m.agents([(0, "main", [(0, ":*")]), (0, "dark-mode", [(0, m.gust())]), (0, "cookies", [(0, m.gust())]),
               (1.9, "perf", [(1.9, m.gust()), (5.0, "✓")])])
-    k = m.tl.show(1.9, 5.0, dur=0.15)  # the ψ next to perf while its worktree lives
+    k = m.tl.show(1.9, 5.0, dur=0.01)  # the ψ next to perf while its worktree lives
     m.chrome.append(f'<text class="{k}" x="{m.px + 20 + 5 * 8.45:.0f}" y="{90 + 3 * 22}" font-size="14" fill="{c["acc"]}">ψ</text>')
     m.main(0.2, "dark-mode and cookies share your folder.")
     m.main(1.3, "perf needs a clean build to time signup.", gap=8)
@@ -886,7 +809,7 @@ def t_prs(c):
     # under cookies, its PR's state (the panel shows where each one stands)
     for (t0, t1, html) in [(0.3, 1.6, f'#409 {m.dim("· checks")} {m.gust()}'), (1.6, 2.9, f'#409 {m.dim("·")} {m.acc("✗ checks")}'),
                            (2.9, 4.2, f'#409 {m.dim("· green")}'), (4.2, 7.8, f'#409 {m.dim("· review")}'), (7.8, None, f'#409 {m.dim("· merged")}')]:
-        k = m.tl.show(t0, t1, dur=0.15)
+        k = m.tl.show(t0, t1, dur=0.01)
         m.chrome.append(f'<text class="{k}" x="{m.px + 20}" y="{90 + 2 * 22}" font-size="12" fill="{c["text"]}" xml:space="preserve">{html}</text>')
     m.main(0.3, "cookies opened #409: the banner, half the size.")
     m.row(1.6, f'{m.acc("↑")} {m.dim("#409 · checks fail: e2e/checkout.spec.ts")}', size=13)
@@ -927,7 +850,7 @@ def t_voice(c):
     m.over.append(f'<g class="{k}"><rect x="52" y="{m.top + 14}" width="{m.W - 80}" height="30" fill="{c["foot"]}"/>'
                   f'<text x="64" y="{m.top + 34}" font-size="14" fill="{c["acc"]}">●</text>{"".join(bars)}</g>')
     for i, (a, b) in enumerate([(rec0, 2.1), (2.1, 3.1), (3.1, rec1)]):
-        kt = m.tl.show(a, b, dur=0.05)
+        kt = m.tl.show(a, b, dur=0.01)
         m.over.append(f'<text class="{kt}" x="170" y="{m.top + 34}" font-size="13" fill="{c["dim"]}">0:0{i}</text>')
     kk = m.tl.show(rec0, rec1, dur=0.1)
     m.last.append(f'<g class="{kk}"><rect x="60" y="{m.H - 30}" width="{m.W - 80}" height="20" fill="{c["foot"]}"/>'
@@ -979,7 +902,7 @@ def t_model(c):
     for i, spans in enumerate([[(0, None, "opus·hi")], [(0, None, "opus·hi")], [(0, None, "haiku·lo")],
                                [(0, 3.4, "haiku·lo"), (3.4, 5.6, "opus·lo"), (5.6, None, "opus·hi")]]):
         for (t0, t1, s_) in spans:
-            k = m.tl.show(t0, t1, dur=0.15)
+            k = m.tl.show(t0, t1, dur=0.01)
             m.chrome.append(f'<text class="{k}" x="{m.W - 24}" y="{90 + i * 22}" text-anchor="end" font-size="12" fill="{c["acc"] if t0 else c["faint"]}">{s_}</text>')
     m.main(0.2, "release is on haiku: release notes are a chore.")
     press(m, 0.9, "⌥3"); m.row(1.2, f'{m.dim("⌥3 · now talking to release")}', size=13, gap=8)
@@ -990,9 +913,108 @@ def t_model(c):
     m.composer([(1.7, 2.8), (3.9, 5.0)], who=[(0, 1.2, "main"), (1.2, None, "release")])
     return m.svg("each agent shows its model in the panel. you switch to release and type /model opus, then /reasoning hi: its line goes from haiku·lo to opus·hi.")
 
+def spans_css(m, spans):
+    """a class shown during each (t0, t1) span (t1 None: to the loop's end), hard switches."""
+    T = m.T; p = lambda v: f"{max(0, min(100, v / T * 100)):.2f}%"
+    m.tl.n += 1; k = f"s{m.tl.n}"; fr = ["0%{opacity:0}"]
+    for (a, b) in spans:
+        b = b if b is not None else T - 0.8
+        fr.append(f"{p(a)}{{opacity:0}}{p(a + .12)},{p(b)}{{opacity:1}}{p(b + .12)}{{opacity:0}}")
+        m.tl.starts.append(a + .12)
+    m.tl.css.append(f"@keyframes {k}{{{''.join(fr)}100%{{opacity:0}}}}.{k}{{opacity:0;animation:{k} {T}s linear infinite}}")
+    return k
+
+def pane(m, spans, rows, title="~/acme", hide_keys="ctrl+` hide   it keeps running while hidden"):
+    """the terminal panel (ctrl+`): a shell in your repo over the feed. rows: [(t, html)] or [(t0, t1, text)] typed."""
+    c = m.c; k = spans_css(m, spans); y0, y1 = 48, m.top - 8
+    inner = [f'<rect x="12" y="{y0}" width="{m.W - 24}" height="{y1 - y0}" rx="6" fill="{c["foot"]}" stroke="{c["faint"]}"/>'
+             f'<rect x="24" y="{y0 - 7}" width="{(cells(title) + 13) * 7.3:.0f}" height="14" fill="{c["bg"]}"/>'
+             f'<text x="30" y="{y0 + 4}" font-size="12" fill="{c["dim"]}" xml:space="preserve">terminal · {E(title)}</text>']
+    for i, r in enumerate(rows):
+        yy = y0 + 24 + i * 19
+        if len(r) == 3:  # a command, typed after its prompt
+            t0, t1, cmd = r
+            inner.append(f'<text class="{m.tl.show(t0 - .3)}" x="30" y="{yy}" font-size="13" fill="{c["acc"]}">$</text>')
+            m.type(t0, t1, cmd, x=30 + 2 * 7.85, y=yy, size=13)
+            inner.append(m.typed.pop()[1])
+        else:
+            t0, html = r
+            inner.append(f'<text class="{m.tl.show(t0)}" x="30" y="{yy}" font-size="13" fill="{c["dim"]}" xml:space="preserve">{html}</text>')
+    m.over.append(f'<g class="{k}">{"".join(inner)}</g>')
+    m.last.append(f'<g class="{k}"><rect x="60" y="{m.H - 30}" width="{m.W - 80}" height="20" fill="{c["foot"]}"/>'
+                  f'<text x="64" y="{m.H - 16}" font-size="12" fill="{c["faint"]}" xml:space="preserve">{hide_keys}</text></g>')
+
+def t_shell(c):
+    """a real shell, one key away: ctrl+` opens a terminal in your repo; hidden, it keeps running."""
+    m = Tui(c, 10); m.typed = []
+    m.header([(0, 4.6, f'{m.gust()} 2 working'), (4.6, None, f'<tspan fill="{c["acc"]}">$</tspan> npm run dev · {m.gust()} 2 working')])
+    m.main(0.2, "perf and dark-mode are on it.")
+    m.main(5.0, "perf: signup is 0.9 s on a phone now.", gap=8)
+    press(m, 0.7, "ctrl+`"); press(m, 4.2, "ctrl+`"); press(m, 6.2, "ctrl+`")
+    pane(m, [(1.0, 4.5), (6.5, None)], [(1.4, 2.1, "npm run dev"), (2.5, f'ready on {m.acc("localhost:3000")}'),
+                                         (3.0, "GET /signup 200 · 4.1 s"), (5.0, "GET /signup 200 · 0.9 s")])
+    m.composer([])
+    return m.svg("ctrl+` opens a terminal in your repo; you start the dev server and hide it; it keeps running; ctrl+` again and the new requests are there.")
+
+def t_proof(c):
+    """agent communication is proven correct: PROOF.bend, run in the terminal panel."""
+    m = Tui(c, 8.5); m.typed = []
+    m.header([(0, None, f'{m.gust()} 3 working')])
+    ck = lambda s_: f'{m.acc("✓")} <tspan fill="{c["text"]}">{s_}</tspan>'
+    pane(m, [(0, None)], [(0.4, 1.3, "bend PROOF.bend"), (1.9, ck("no message lost")), (2.4, ck("none delivered twice")),
+                          (2.9, ck("a restart = the same state")), (3.4, ck("nothing waits forever")),
+                          (4.2, f'<tspan fill="{c["acc"]}" font-weight="700">ALL PROOFS CHECK</tspan>')],
+         title="~/bise", hide_keys="ctrl+` hide")
+    m.composer([])
+    return m.svg("in bise's terminal you run bend PROOF.bend: no message lost, none delivered twice, a restart is the same state, nothing waits forever. all proofs check.")
+
+def t_restart(c):
+    """restart whenever you like: bise goes away and comes back; the agents resume, your draft is still there."""
+    m = Tui(c, 8.5); m.typed = []
+    draft = "and the release notes once they're all done"
+    m.header([(0, None, f'{m.gust()} 3 working')])
+    m.main(0.2, "perf, dark-mode and cookies are on it.")
+    m.type(0.5, 1.8, draft)
+    m.row(4.3, f'{m.acc("↻")} back. perf, dark-mode and cookies picked up where they were.', gap=8)
+    m.row(4.9, f'{m.dim("  your thread and your draft are here too.")}', size=13)
+    # the restart: the screen goes, bise starts again
+    k = m.tl.show(2.3, 3.9, dur=0.2)
+    m.last.append(f'<g class="{k}"><rect width="{m.W}" height="{m.H}" fill="{c["bg"]}"/>'
+                  f'<text x="{m.W / 2:.0f}" y="{m.H / 2 - 6:.0f}" text-anchor="middle" font-size="14" font-weight="700" fill="{c["text"]}">bise {m.acc(":*")}</text>'
+                  f'<text x="{m.W / 2:.0f}" y="{m.H / 2 + 18:.0f}" text-anchor="middle" font-size="12" fill="{c["faint"]}">restarting…</text></g>')
+    m.composer([(0.5, m.T)])
+    return m.svg("you are typing a draft while three agents work. bise restarts. it comes back at once: the agents pick up where they were, your draft is still in the composer.")
+
+def t_theme(c):
+    """your terminal: your colors, light or dark, text at a reading width. the same screen in both."""
+    other = PAL["light" if c["mode"] == "dark" else "dark"]
+    def screen(cc):
+        m = Tui(cc, 9)
+        m.chrome.append(f'<text x="24" y="28" font-size="13" font-weight="700" fill="{cc["text"]}">bise {m.acc(":*")}</text>'
+                        f'<line x1="0" y1="42" x2="{m.W}" y2="42" stroke="{cc["line"]}"/>'
+                        f'<text x="{m.W - 24}" y="28" text-anchor="end" font-size="12" fill="{cc["dim"]}">{m.gust()} 1 working · {m.acc("✓")} 1 done</text>')
+        rows = [f'{m.acc(":*")} dark-mode is done. every page follows your system',
+                f'   theme now, and the borders use the gray in tokens.css.',
+                f'<tspan class="g" fill="{cc["acc"]}">∿</tspan> perf {m.dim("· timing signup on a phone")}']
+        for i, r in enumerate(rows):
+            m.feed.append(f'<text x="{m.fx}" y="{72 + i * 27 + (8 if i == 2 else 0)}" font-size="14" fill="{cc["text"]}" xml:space="preserve">{r}</text>')
+        # the reading width: the text stops at a comfortable measure, whatever the window's width
+        rw = m.fx + 62 * CW
+        m.feed.append(f'<path d="M{rw:.0f} 56 V{m.top - 14}" stroke="{cc["faint"]}" stroke-dasharray="2 4"/>'
+                      f'<text x="{rw + 8:.0f}" y="{m.top - 18}" font-size="11" fill="{cc["faint"]}">reading width</text>')
+        m.composer([])
+        return m.body("theme")
+    a, css = screen(c); b, _ = screen(other)
+    T = 9; p = lambda v: f"{v / T * 100:.2f}%"
+    css += (f"@keyframes sw{{0%,{p(2.4)}{{opacity:0}}{p(3.0)},{p(5.6)}{{opacity:1}}{p(6.2)},100%{{opacity:0}}}}"
+            f".sw{{opacity:0;animation:sw {T}s ease-in-out infinite}}")
+    return svg(680, 270, a + f'<g class="sw">{b}</g>', css,
+               "the same bise screen in your terminal's dark colors, then light, then dark again; the text stops at a reading width.", c, pad=16)
+
 SCENES = [("talk", t_talk), ("zen", t_zen), ("screenshot", t_screenshot),
           ("resume", t_resume), ("worktree", t_worktree), ("card", t_card), ("sync", t_sync), ("tools", t_tools), ("plugins", t_plugins),
-          ("direct", t_direct), ("prs", t_prs), ("tokens", t_tokens), ("voice", t_voice), ("quote", t_quote), ("model", t_model)]
+          ("direct", t_direct), ("prs", t_prs), ("tokens", t_tokens), ("voice", t_voice), ("quote", t_quote), ("model", t_model),
+          ("shell", t_shell), ("restart", t_restart), ("proof", t_proof), ("theme", t_theme)]
 
 FEATS = [("quiet", f_quiet), ("steer", f_steer)] + SCENES
 
