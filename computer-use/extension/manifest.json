@@ -10,8 +10,7 @@
     "tabGroups",
     "debugger",
     "nativeMessaging",
-    "scripting",
-    "downloads"
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
