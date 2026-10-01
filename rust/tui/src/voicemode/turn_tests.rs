@@ -386,7 +386,14 @@ fn the_on_it_line_comes_from_the_small_model_else_a_canned_one_and_never_after_t
     let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
     r.turn(" fix the tests");
     r.quiet(800);
-    assert_eq!(r.f.synth.lock().unwrap()[0].text, super::super::ack::canned(0));
+    assert_eq!(r.f.synth.lock().unwrap()[0].text, super::super::ack::canned_in(0, Some("en")));
+
+    // you spoke French: the canned line is French
+    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
+    r.turn(" corrige les tests qui échouent dans le module de voix");
+    r.quiet(800);
+    assert_eq!(r.f.synth.lock().unwrap()[0].text, super::super::ack::canned_in(0, Some("fr")));
+    assert_ne!(super::super::ack::canned_in(0, Some("fr")), super::super::ack::canned_in(0, Some("en")));
 
     // the answer came first: no ack
     let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);

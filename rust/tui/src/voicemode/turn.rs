@@ -239,6 +239,8 @@ struct Ack {
     rx: Receiver<String>,
     cancel: Arc<AtomicBool>,
     deadline: Instant,
+    /// the language you spoke (the canned line follows it)
+    lang: Option<&'static str>,
 }
 
 pub struct VoiceMode {
@@ -677,7 +679,7 @@ impl VoiceMode {
         let Some(a) = &self.ack else { return };
         let line = match a.rx.try_recv() {
             Ok(l) if !l.trim().is_empty() => Some(l),
-            _ if now >= a.deadline => Some(super::ack::canned(self.acks).to_string()),
+            _ if now >= a.deadline => Some(super::ack::canned_in(self.acks, a.lang).to_string()),
             _ => None,
         };
         if let Some(line) = line {
@@ -884,8 +886,9 @@ impl VoiceMode {
         if let Some(job) = self.ack_job.clone() {
             let (tx, rx) = mpsc::channel();
             let cancel = Arc::new(AtomicBool::new(false));
+            let lang = super::speak::language(&text);
             self.acker.start(job, text, tx, cancel.clone());
-            self.ack = Some(Ack { rx, cancel, deadline: now + ACK_DEADLINE });
+            self.ack = Some(Ack { rx, cancel, deadline: now + ACK_DEADLINE, lang });
         }
     }
 
