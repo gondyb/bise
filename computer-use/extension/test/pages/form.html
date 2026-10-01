@@ -1,0 +1,22 @@
+<!doctype html>
+<title>Test shop</title>
+<h1>Test shop</h1>
+<p id="status">nothing yet</p>
+<button id="buy" onclick="window.clicks=(window.clicks||0)+1; document.getElementById('status').textContent='bought ' + window.clicks">Add to cart</button>
+<button disabled>Pay now</button>
+<button>More</button> <button>More</button>
+<form id="f" onsubmit="event.preventDefault(); document.getElementById('status').textContent='searched ' + document.getElementById('q').value">
+  <label>Search <input id="q" type="search" value="old text"></label>
+</form>
+<label>Email <input id="email" type="email"></label>
+<label>Password <input id="pw" type="password" value="hunter2"></label>
+<label>Size <select id="size"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select></label>
+<label><input id="remember" type="checkbox"> Remember me</label>
+<div id="hoverme" role="button" tabindex="0" onmouseenter="this.textContent='hovered'">Menu</div>
+<p id="price">Price: 12,50 €</p>
+<div id="keys" contenteditable="true" aria-label="Notes"></div>
+<a href="next.html">Next page</a>
+<script>
+  window.keyLog = [];
+  addEventListener("keydown", (e) => keyLog.push(e.key));
+</script>

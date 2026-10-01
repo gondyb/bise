@@ -1,0 +1,13 @@
+<!doctype html>
+<title>Polling page</title>
+<h1>Polling page</h1>
+<p id="state">waiting</p>
+<button onclick="setTimeout(() => (document.getElementById('state').textContent = 'done ' + Date.now()), 100)">Start job</button>
+<script>
+  // A page that polls every second with a chain of timers (what intensive
+  // throttling slows down after 5 min hidden), and a button whose result
+  // shows up through a 100 ms timer.
+  window.ticks = [];
+  const tick = () => { ticks.push(Date.now()); if (ticks.length > 2000) ticks.shift(); setTimeout(tick, 1000); };
+  setTimeout(tick, 1000);
+</script>
