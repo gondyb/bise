@@ -638,7 +638,9 @@ pub(crate) fn lines(rows: &[Row], sel: usize, a: &Around, w: usize) -> Vec<Line<
     let st = if theme::ascii_mode() { "shift+tab" } else { "⇧⇥" };
     match a.mode.as_str() {
         "yolo" => v.push(Line::from(s(cut(&format!(" in yolo, agents act without asking, purchases included. {st} for auto."), w), theme::dim()))),
-        "auto" => v.push(Line::from(s(cut(" in auto, buying, sending and logging in ask you first.", w), theme::dim()))),
+        // honest until cu-approvals (ship plan §6): no card yet, the skill
+        // tells agents to ask in their thread; passwords are always refused
+        "auto" => v.push(Line::from(s(cut(" in auto, agents ask you in their thread before buying, sending or posting; they never type passwords.", w), theme::dim()))),
         _ => {}
     }
     if let Some(d) = &a.drivers {

@@ -90,7 +90,7 @@ fn the_live_test_runs_then_says_ready() {
     assert!(t.contains(" ✓ live test           opened a tab, clicked a button. all set"), "{t}");
     // Chrome only: only what's true (m_3904)
     assert!(t.contains(" ✓ Chrome is ready. ask any agent to use it."), "{t}");
-    assert!(t.contains(" in auto, buying, sending and logging in ask you first."), "{t}");
+    assert!(t.contains(" in auto, agents ask you in their thread before buying"), "{t}");
     assert!(t.ends_with(" ↑↓ step   esc later"), "{t}");
     let failed = rows(&base(row("live_test", "failed", "the click did not land", Some("run_live_test"))), &Busy::default());
     assert_eq!((failed[2].st, failed[2].action.as_deref()), (St::Failed, Some("try again")));
