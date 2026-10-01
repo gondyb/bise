@@ -77,6 +77,15 @@ fn mic_access_hint() -> &'static str {
     }
 }
 
+/// Why the microphone did not open, as the user reads it (dictation and
+/// voice mode).
+pub(crate) fn start_error_line(e: StartError) -> String {
+    match e {
+        StartError::NoInputDevice => format!("no audio input device found.{}", mic_access_hint()),
+        StartError::Backend(m) => format!("audio backend is unavailable: {}", m),
+    }
+}
+
 /// A muted or refused microphone (BISE-298: macOS gives silence when the
 /// terminal may not use it).
 fn no_audio_detected_message() -> String {
@@ -186,6 +195,12 @@ impl Resampler {
     }
 
     pub fn process(&mut self, input: &[f32]) -> Vec<i16> {
+        self.process_f32(input).into_iter().map(to_i16).collect()
+    }
+
+    /// [`Resampler::process`] without the i16 step (voice mode's
+    /// speaker: the TTS's f32 to the output device's rate).
+    pub fn process_f32(&mut self, input: &[f32]) -> Vec<f32> {
         if input.is_empty() {
             return Vec::new();
         }
@@ -200,7 +215,7 @@ impl Resampler {
             let frac = (p - i0 as f64) as f32;
             let a = at(i0);
             let b = if i0 < (input.len() - 1) as isize { at(i0 + 1) } else { a };
-            out.push(to_i16(a + (b - a) * frac));
+            out.push(a + (b - a) * frac);
             self.pos += self.step;
         }
         self.pos -= input.len() as f64;
@@ -541,10 +556,7 @@ impl Voice {
             return Ok(());
         }
         let (audio_tx, audio_rx) = mpsc::channel();
-        let capture = self.recorder.start(SAMPLE_RATE, audio_tx.clone()).map_err(|e| match e {
-            StartError::NoInputDevice => format!("no audio input device found.{}", mic_access_hint()),
-            StartError::Backend(m) => format!("audio backend is unavailable: {}", m),
-        })?;
+        let capture = self.recorder.start(SAMPLE_RATE, audio_tx.clone()).map_err(start_error_line)?;
         let (ev_tx, ev_rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         self.transcriber.start(job, audio_rx, ev_tx, cancel.clone());
@@ -762,27 +774,38 @@ impl Recorder for MicRecorder {
 #[cfg(not(target_os = "linux"))]
 impl Recorder for MicRecorder {
     fn start(&mut self, sample_rate: u32, audio: Sender<AudioMsg>) -> Result<Box<dyn Capture>, StartError> {
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-        use cpal::SampleFormat;
-        let host = cpal::default_host();
-        let device = host.default_input_device().ok_or(StartError::NoInputDevice)?;
-        let config = device
-            .default_input_config()
-            .map_err(|_| StartError::NoInputDevice)?;
         let level = Arc::new(Level::default());
-        let stream_config: cpal::StreamConfig = config.config();
-        let channels = stream_config.channels as usize;
-        let rate = stream_config.sample_rate.0;
-        let stream = match config.sample_format() {
-            SampleFormat::F32 => build_stream::<f32>(&device, &stream_config, channels, rate, sample_rate, audio, level.clone()),
-            SampleFormat::I16 => build_stream::<i16>(&device, &stream_config, channels, rate, sample_rate, audio, level.clone()),
-            SampleFormat::U16 => build_stream::<u16>(&device, &stream_config, channels, rate, sample_rate, audio, level.clone()),
-            SampleFormat::I32 => build_stream::<i32>(&device, &stream_config, channels, rate, sample_rate, audio, level.clone()),
-            other => Err(StartError::Backend(format!("unsupported sample format {}", other))),
-        }?;
-        stream.play().map_err(|e| StartError::Backend(e.to_string()))?;
+        let l = level.clone();
+        let stream = open_input(sample_rate, move |block| l.block(block, &audio))?;
         Ok(Box::new(CpalCapture { _stream: stream, level }))
     }
+}
+
+/// The default input device, playing: mono PCM at `to_rate` to
+/// `on_block`, one call per device buffer (on the audio thread). Dropping
+/// the stream closes the device. Shared by dictation ([`MicRecorder`])
+/// and voice mode's mic (`voicemode::audio::CpalMic`).
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn open_input(to_rate: u32, on_block: impl FnMut(Vec<i16>) + Send + 'static) -> Result<cpal::Stream, StartError> {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::SampleFormat;
+    let host = cpal::default_host();
+    let device = host.default_input_device().ok_or(StartError::NoInputDevice)?;
+    let config = device
+        .default_input_config()
+        .map_err(|_| StartError::NoInputDevice)?;
+    let stream_config: cpal::StreamConfig = config.config();
+    let channels = stream_config.channels as usize;
+    let rate = stream_config.sample_rate.0;
+    let stream = match config.sample_format() {
+        SampleFormat::F32 => build_stream::<f32>(&device, &stream_config, channels, rate, to_rate, on_block),
+        SampleFormat::I16 => build_stream::<i16>(&device, &stream_config, channels, rate, to_rate, on_block),
+        SampleFormat::U16 => build_stream::<u16>(&device, &stream_config, channels, rate, to_rate, on_block),
+        SampleFormat::I32 => build_stream::<i32>(&device, &stream_config, channels, rate, to_rate, on_block),
+        other => Err(StartError::Backend(format!("unsupported sample format {}", other))),
+    }?;
+    stream.play().map_err(|e| StartError::Backend(e.to_string()))?;
+    Ok(stream)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -792,8 +815,7 @@ fn build_stream<T>(
     channels: usize,
     from_rate: u32,
     to_rate: u32,
-    audio: Sender<AudioMsg>,
-    level: Arc<Level>,
+    mut on_block: impl FnMut(Vec<i16>) + Send + 'static,
 ) -> Result<cpal::Stream, StartError>
 where
     T: cpal::SizedSample,
@@ -806,7 +828,7 @@ where
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 let floats: Vec<f32> = data.iter().map(|s| cpal::Sample::to_sample::<f32>(*s)).collect();
-                level.block(resampler.process(&to_mono(&floats, channels)), &audio);
+                on_block(resampler.process(&to_mono(&floats, channels)));
             },
             |_err| {},
             None,
