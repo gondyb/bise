@@ -531,8 +531,204 @@ def f_quiet(c):
     m.row(0.3, f'{m.dim("what matters to you shows. the rest is one key away, in full.")}', size=13, y=m.H - 22)
     return m.svg("the work between agents stays folded into one line; ctrl+o opens every tool call and message, ctrl+o folds them back.")
 
-FEATS = [("talk", f_talk), ("sync", f_sync), ("tools", f_tools), ("card", f_card), ("quiet", f_quiet), ("direct", f_direct),
-         ("steer", f_steer), ("resume", f_resume), ("worktree", f_worktree)]
+# ---------- the README's feature scenes: a tiny bise, drawn like the TUI ----------
+# one scene per feature of bise.dev (site/index.html: the cards, then "and so much more"), adapted
+# from the site's mini demos (the `plays` scripts). the screen: the header (bise :* and the counts),
+# the feed, the composer under its divider (you → main), the key bar. only the lines the idea needs.
+def cells(s):
+    """the terminal columns of s: an emoji takes two."""
+    return sum(2 if ord(ch) > 0xFFFF else 1 for ch in s)
+
+class Tui(Mini):
+    """a Mini with the TUI's chrome. the chrome (header, panel, key bar, rules) sits in groups that zen can fade."""
+    W = 680
+    def __init__(s, c, T, H=270, panel=False, keys="⏎ send   @ agent   ⌥0-9 switch   ctrl+o open   ? help"):
+        s.c, s.T, s.H, s.W = c, T, H, 680
+        s.tl = TL(T); s.fx, s.y = 40, 72
+        s.chrome, s.feed, s.over = [], [], []  # the chrome (fades in zen), the feed and the composer (never fade)
+        s.o = s.feed  # Mini's row/you/swap/chip draw into the feed
+        s.top = H - 84  # the divider's row
+        s.px = s.W - 168 if panel else None  # the agents panel's left edge
+        s.keys = keys
+        s.fade = []  # (t0, t1): zen spans
+        s.marks = []  # (t, baseline) of each feed row: the feed scrolls to keep the newest one in view
+        s.comp = None
+    def row(s, t, html, color="text", size=14, gap=0, out=None, x=None, y=None):
+        yy = Mini.row(s, t, html, color, size, gap, out, x, y)
+        s.marks.append((t, yy)); return yy
+    def acc_b(s, t): return f'<tspan fill="{s.c["acc"]}" font-weight="700">{t}</tspan>'
+    def gust(s): return f'<tspan class="g" fill="{s.c["acc"]}">∿</tspan>'
+    def header(s, spans):
+        """spans: [(t0, t1, html)] for the counts on the right of the header."""
+        c = s.c
+        s.chrome.append(f'<text x="24" y="28" font-size="13" font-weight="700" fill="{c["text"]}">bise {s.acc(":*")}</text>'
+                        f'<line x1="0" y1="42" x2="{s.W}" y2="42" stroke="{c["line"]}"/>')
+        for (t0, t1, html) in spans:
+            k = s.tl.show(t0, t1, dur=0.15)
+            s.chrome.append(f'<text class="{k}" x="{s.W-24}" y="28" text-anchor="end" font-size="12" fill="{c["dim"]}" xml:space="preserve">{html}</text>')
+    def agents(s, rows):
+        """rows: [(t0, name, [(t, mark_html)])]: one row per agent in the panel; its mark changes at each t."""
+        c, x = s.c, s.px
+        s.chrome.append(f'<line x1="{x-16}" y1="42" x2="{x-16}" y2="{s.top}" stroke="{c["line"]}"/>'
+                        f'<text x="{x}" y="66" font-size="12" fill="{c["faint"]}">agents</text>')
+        for i, (t0, name, marks) in enumerate(rows):
+            yy = 90 + i * 22
+            k = s.tl.show(t0)
+            s.chrome.append(f'<text class="{k}" x="{x+20}" y="{yy}" font-size="14" fill="{c["text"]}">{E(name)}</text>')
+            for j, (t, mk) in enumerate(marks):
+                t1 = marks[j + 1][0] if j + 1 < len(marks) else None
+                kk = s.tl.show(t, t1, dur=0.15)
+                s.chrome.append(f'<text class="{kk}" x="{x}" y="{yy}" font-size="14" fill="{c["acc"]}">{mk}</text>')
+    def you(s, t, text, gap=8, read=0.5, html=None, w=None):
+        """your message in the feed: a pen bar, bold, ✓ then ✓✓ once read."""
+        s.y += gap; yy = s.y; s.y += 27
+        k = s.tl.show(t); r = s.tl.show(t + read, dur=0.1); s.marks.append((t, yy))
+        w = w if w is not None else cells(text)
+        s.feed.append(f'<g class="{k}"><rect x="{s.fx-14}" y="{yy-15}" width="3" height="19" fill="{s.c["acc"]}"/>'
+                      f'<text x="{s.fx}" y="{yy}" font-size="14" font-weight="700" fill="{s.c["text"]}" xml:space="preserve">{html or E(text)} <tspan font-weight="400" fill="{s.c["faint"]}">✓</tspan></text></g>'
+                      f'<rect class="{r}" x="{s.fx + (w + 1) * CW - 1:.1f}" y="{yy-15}" width="{CW+2:.1f}" height="19" fill="{s.c["bg"]}"/>'
+                      f'<text class="{r}" x="{s.fx + (w + 1) * CW:.1f}" y="{yy}" font-size="14" fill="{s.c["acc"]}">✓✓</text>')
+    def main(s, t, text, gap=0): return s.row(t, f'{s.acc(":*")} {text}', gap=gap)
+    def type(s, t, t2, text, x=None, row=0):
+        """text typed in the composer between t and t2, one cell a step; it stays until the send (s.sent)."""
+        x = x if x is not None else 64
+        n = cells(text); w = n * CW + 2
+        s.n_type = getattr(s, "n_type", 0) + 1
+        s.tl.n += 1; r = f"r{s.tl.n}"; T = s.T; p = lambda v: f"{v / T * 100:.2f}%"
+        s.tl.css.append(f"@keyframes {r}{{0%,{p(t)}{{width:0}}{p(t2)},100%{{width:{w:.1f}px}}}}.{r}{{animation:{r} {T}s steps({n},end) infinite}}")
+        cid = f"ty{s.tl.n}"; yy = s.top + 34 + row * 22
+        s.typed.append((t, f'<clipPath id="{cid}"><rect class="{r}" x="{x}" y="{yy-18}" height="26" width="0"/></clipPath>'
+                           f'<text x="{x}" y="{yy}" font-size="14" fill="{s.c["text"]}" clip-path="url(#{cid})" xml:space="preserve">{E(text)}</text>'))
+        return x + w
+    typed = None
+    def composer(s, sends, who=None):
+        """sends: [(t_start_typing, t_send)]: the typed text shows between them; the placeholder fills the gaps.
+        drawn at the end (svg), under whatever the scene puts in s.over (chips, the key it presses)."""
+        s.comp = (sends, who)
+    def _composer(s):
+        sends, who = s.comp; o = []
+        c, W = s.c, s.W; top = s.top
+        who = who or s.acc_b("main")
+        o.append(f'<rect x="0" y="{top}" width="{W}" height="{s.H-top}" fill="{c["foot"]}"/>')
+        s.chrome.append(f'<path d="M0 {top} H16 M{24 + 12 * 7.3 + 8:.0f} {top} H{W}" stroke="{c["line"]}"/>')
+        o.append(f'<text x="24" y="{top+4}" font-size="12" fill="{c["dim"]}">you → {who}</text>')
+        o.append(f'<rect x="48" y="{top+19}" width="2" height="21" fill="{c["acc"]}"/>')
+        ends = [0] + [b for (_, b) in sends]; starts = [a for (a, _) in sends] + [s.T]
+        for a, b in zip(ends, starts):
+            if b - a > 0.3:
+                k = s.tl.show(a + 0.1, b, dur=0.1)
+                o.append(f'<text class="{k}" x="64" y="{top+34}" font-size="14" fill="{c["faint"]}">what\'s on your mind?</text>')
+        for (a, b) in sends:
+            k = s.tl.show(a - 0.05, b, dur=0.05)
+            o.append(f'<g class="{k}">{"".join(h for (t, h) in (s.typed or []) if a - 0.06 <= t < b)}</g>')
+        s.chrome.append(f'<text x="64" y="{s.H-16}" font-size="12" fill="{c["faint"]}" xml:space="preserve">{s.keys}</text>')
+        return "".join(o)
+    def _scroll(s):
+        """the feed sticks to the bottom: when a new row would pass the divider, it scrolls up (ease-out)."""
+        T = s.T; p = lambda v: f"{v / T * 100:.2f}%"; view = s.top - 14
+        fr, cur = ["0%{transform:translateY(0)}"], 0
+        for t, yb in sorted(s.marks):
+            need = max(0, yb + 6 - view)
+            if need > cur:
+                fr.append(f"{p(t)}{{transform:translateY(-{cur}px);animation-timing-function:ease-out}}{p(t + 0.35)}{{transform:translateY(-{need}px)}}")
+                cur = need
+        if not cur: return "", ""
+        fr.append(f"{p(T - 0.3)}{{transform:translateY(-{cur}px)}}100%{{transform:translateY(0)}}")
+        return f"@keyframes scr{{{''.join(fr)}}}.scr{{animation:scr {T}s linear infinite}}", ' class="scr"'
+    def zen(s, t0, t1, depth=.42):
+        """the chrome fades between t0 and t1 (zen.rs: 250 ms, mixed toward its background)."""
+        s.fade.append((t0, t1, depth))
+    def svg(s, label):
+        T = s.T; p = lambda v: f"{v / T * 100:.2f}%"
+        css = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
+        cls = ""
+        if s.fade:
+            fr = ["0%{opacity:1}"]
+            for (a, b, d) in s.fade: fr.append(f"{p(a)}{{opacity:1}}{p(a+.25)},{p(b)}{{opacity:{d}}}{p(b+.25)}{{opacity:1}}")
+            css += f"@keyframes zen{{{''.join(fr)}100%{{opacity:1}}}}.zen{{animation:zen {T}s linear infinite}}"
+            cls = ' class="zen"'
+        comp = s._composer() if s.comp else ""
+        scss, scls = s._scroll(); css += scss
+        feedclip = f'<clipPath id="feed"><rect x="0" y="52" width="{(s.px - 17) if s.px else s.W}" height="{s.top - 52}"/></clipPath>'
+        body = (f'<rect width="{s.W}" height="{s.H}" fill="{s.c["bg"]}"/>' + feedclip +
+                f'<g clip-path="url(#feed)"><g{scls}>{"".join(s.feed)}</g></g>' + comp + "".join(s.over) + f'<g{cls}>{"".join(s.chrome)}</g>')
+        return svg(s.W, s.H, body, "".join(s.tl.css) + css, label, s.c, pad=16)
+
+def t_talk(c):
+    """talk whenever. you never wait: you type the next idea while main answers the last one."""
+    m = Tui(c, 10); m.typed = []
+    one, two, three = "signup is slow on mobile", "and the csv export crashes on emoji 😭", "oh, the cookie banner hides the buy button"
+    m.header([(2.1, 4.0, f'{m.gust()} 1 working'), (4.0, 6.3, f'{m.gust()} 2 working'), (6.3, None, f'{m.gust()} 3 working')])
+    m.type(0.3, 1.3, one); m.you(1.4, one, gap=0)
+    m.type(1.7, 3.2, two); m.main(2.1, "on it. perf started.")
+    m.you(3.4, two, gap=8)
+    m.type(3.7, 5.5, three); m.main(4.0, "emoji-csv started. it's always unicode.")
+    m.you(5.7, three, gap=8)
+    m.main(6.3, "cookies started. 3 agents working, you're free.")
+    m.composer([(0.3, 1.4), (1.7, 3.4), (3.7, 5.7)])
+    return m.svg("you send three ideas in a row. main starts an agent for each while you type the next one: you never wait.")
+
+def t_zen(c):
+    """zen mode while you type: the chrome steps back, the feed keeps coming, the send brings it all back."""
+    m = Tui(c, 11, panel=True)
+    m.typed = []
+    msg = "release notes for all of this, when they're done"
+    m.header([(0, 3.0, f'{m.gust()} 3 working'), (3.0, 4.9, f'{m.gust()} 2 working · {m.acc("✓")} 1 done'),
+              (4.9, 6.9, f'{m.gust()} 1 working · {m.acc("✓")} 2 done'), (6.9, None, f'{m.gust()} 2 working · {m.acc("✓")} 2 done')])
+    m.agents([(0, "main", [(0, ":*")]), (0, "perf", [(0, m.gust()), (3.0, "✓")]), (0, "dark-mode", [(0, m.gust()), (4.9, "✓")]),
+              (0, "cookies", [(0, m.gust())]), (6.9, "release", [(6.9, m.gust())])])
+    m.main(0.1, "on it: perf, dark-mode and cookies started.")
+    m.row(0.1, f'{m.dim("▸ 9 messages between 3 agents")}', size=13)
+    m.type(1.6, 5.4, msg)
+    m.row(3.0, f'{m.acc("✓")} perf done {m.dim("· signup 4.1 s → 0.9 s")}', gap=8)
+    m.row(4.2, f'{m.dim("▸ 4 more messages")}', size=13)
+    m.you(6.2, msg, gap=8)
+    m.main(6.9, "on it: release started.")
+    m.zen(1.6, 6.2)
+    k = m.tl.show(1.6, 6.2, dur=0.25)
+    m.over.append(f'<text class="{k}" x="{m.W-24}" y="{m.top+34}" text-anchor="end" font-size="12" fill="{c["acc"]}">zen</text>')
+    m.composer([(1.6, 6.2)])
+    return m.svg("you start typing and everything else fades: the agents, the counts. perf finishes meanwhile. you send, and it all comes back.")
+
+def t_screenshot(c):
+    """show it a screenshot: ctrl+v pastes an image; it is one chip in your text."""
+    m = Tui(c, 10, keys="ctrl+v paste image   @ file   ⏎ send   ? help")
+    m.typed = []
+    a, b = "the cookie banner hides the buy button ", "on mobile"
+    m.header([(0, None, f'{m.gust()} 2 working')])
+    m.main(0.1, "perf and dark-mode are on it.")
+    x1 = m.type(0.4, 2.0, a)
+    chip_w = 5 * CW  # ` ▣ 1 `: 5 cells
+    m.type(3.4, 4.1, b, x=x1 + chip_w + CW)
+    # ctrl+v: the key lights up, the box 'attached' opens above the text, the chip lands in the text
+    kp = m.tl.show(2.5, 3.0, dur=0.1)
+    m.over.append(f'<g class="{kp}"><rect x="58" y="{m.H-31}" width="{6*7.3+12:.0f}" height="20" rx="3" fill="{c["chip"]}"/></g>')
+    send = 4.7
+    top = m.top
+    bx, by, bw = 64, top - 58, 300
+    kb = m.tl.show(2.8, send, dur=0.15)
+    m.over.append(f'<g class="{kb}"><rect x="{bx-6}" y="{by-8}" width="{bw+12}" height="56" fill="{c["bg"]}"/>'
+                  f'<rect x="{bx}" y="{by}" width="{bw}" height="44" rx="6" fill="{c["foot"]}" stroke="{c["faint"]}"/>'
+                  f'<rect x="{bx+10}" y="{by-8}" width="{8*7.3+10:.0f}" height="14" fill="{c["foot"]}"/>'
+                  f'<text x="{bx+14}" y="{by+4}" font-size="12" fill="{c["dim"]}">attached</text>'
+                  f'<text x="{bx+16}" y="{by+29}" font-size="14" fill="{c["text"]}" xml:space="preserve"><tspan fill="{c["acc"]}">▣ 1</tspan>  Screenshot 1.png  <tspan fill="{c["faint"]}">1440×900</tspan></text></g>')
+    kc = m.tl.show(2.8, send, dur=0.1)
+    chip = lambda x, y: (f'<rect x="{x:.1f}" y="{y-15}" width="{chip_w:.1f}" height="20" rx="3" fill="{c["chip"]}"/>'
+                         f'<text x="{x + CW:.1f}" y="{y}" font-size="14" fill="{c["acc"]}">▣ 1</text>')
+    m.over.append(f'<g class="{kc}">{chip(x1, top + 34)}</g>')
+    full = cells(a) + 5 + 1 + cells(b)
+    m.you(send, a + b, gap=8, w=full, html=E(a) + " " * 6 + E(b))  # the chip is drawn over the 5 blank cells
+    ky = m.y - 27
+    k = m.tl.show(send)
+    m.feed.append(f'<g class="{k}">{chip(m.fx + cells(a) * CW, ky)}</g>')
+    m.main(5.4, "cookies started. it has the screenshot.", gap=0)
+    m.composer([(0.4, send)])
+    return m.svg("you type a message, paste a screenshot with ctrl+v: it lands as one chip in your text, and the agent gets the image.")
+
+SCENES = [("talk", t_talk), ("zen", t_zen), ("screenshot", t_screenshot)]
+
+FEATS = [("sync", f_sync), ("tools", f_tools), ("card", f_card), ("quiet", f_quiet), ("direct", f_direct),
+         ("steer", f_steer), ("resume", f_resume), ("worktree", f_worktree)] + SCENES
 
 for mode, c in PAL.items():
     for name, f in [("hero", hero), ("demo", demo), ("demo-b", demo_b), ("team", team)]:
