@@ -25,7 +25,10 @@ import scripted_ts  # noqa: E402  (EXE, jsrt_env, run_session)
 
 PRIVATE = ("BEND_SESSION_FILE", "BEND_CONTEXT_FILE", "BEND_WIRE_LOG", "BEND_REPL_PORT",
            "BEND_DEBUG_DIR", "BEND_EXTRA_PROMPT", "BEND_WORKDIR", "SB_SOCKET", "SB_AGENT",
-           "SB_TASK", "SB_CORE_BIN", "SB_PORT_OFFSET")
+           "SB_TASK", "SB_CORE_BIN", "SB_PORT_OFFSET",
+           # the calling agent's tmp/bg and run/ (tools_env::temp_env): its
+           # bg dir won over BEND_BG_ROOT, the slots were the agent's
+           "BEND_BG_DIR", "BEND_AGENT_RUN")
 
 
 def clean_env(home):

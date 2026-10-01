@@ -29,7 +29,9 @@ EXE = os.path.join(os.path.abspath(os.environ.get("CARGO_TARGET_DIR") or os.path
 # (SB_BUILD_DIR made tui_version_tmux's build of tree succeed in the
 # real build dir instead of failing in its throwaway BISE_HOME)
 AGENT_VARS = ("SB_CORE_BIN", "SB_SOCKET", "SB_AGENT", "SB_TASK", "SB_PORT_OFFSET",
-              "SB_BUILD_DIR", "SB_VERSIONS_DIR", "SB_LAUNCH_DIR", "BISE_ROLE", "BISE_EXPORTS_FOR")
+              "SB_BUILD_DIR", "SB_VERSIONS_DIR", "SB_LAUNCH_DIR", "BISE_ROLE", "BISE_EXPORTS_FOR",
+              # its tmp/bg and run/ (approvals-mode, gate file, sandbox profiles)
+              "BEND_BG_DIR", "BEND_AGENT_RUN")
 
 
 def load_factor():
