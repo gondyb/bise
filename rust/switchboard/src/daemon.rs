@@ -140,6 +140,11 @@ enum Msg {
         req: Box<crate::approvals::check::CheckReq>,
         out: crate::approvals::check::CheckOut,
     },
+    /// A land joined the line or ended (`sb land`): the views refresh
+    /// (the lids); `line`: main's feed line, (kind, text).
+    Land {
+        line: Option<(String, String)>,
+    },
     /// `keep`: leave the REPLs running for the next hub to adopt.
     Shutdown {
         keep: bool,
@@ -238,6 +243,8 @@ struct Shell {
     down: BTreeSet<String>,
     /// The approvals mode and gate (approvals-design.md §8-§10).
     gates: gate::Gates,
+    /// `sb land`'s line: one land at a time per target ref (dev-flow §5).
+    lands: crate::land::Queue,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -434,9 +441,43 @@ impl Shell {
     /// The client snapshot with each agent's model and effort: its full
     /// id, the effort ("" when the model takes none), and the words it
     /// takes (the `/reasoning` list).
+    /// `sb land` (dev-flow §5) in a thread: in line on the queue (the
+    /// views say who waits), git and the check never on the hub's loop;
+    /// the answer to the agent, and a line in main's feed.
+    fn land(&mut self, token: Token, mut job: crate::land::Job) {
+        let Some(mut stream) = self.replies.remove(&token) else {
+            return;
+        };
+        job.flow = crate::flow::FlowConfig::load(&self.opts.paths);
+        let (queue, tx) = (self.lands.clone(), self.tx.clone());
+        std::thread::spawn(move || {
+            let txj = tx.clone();
+            let res = crate::land::run(&job, &queue, &mut || {
+                let _ = txj.send(Msg::Land { line: None });
+            });
+            let (body, line) = match res {
+                Ok(o) => {
+                    let mut text = crate::flow::land_line(&job.agent, o.commits, &o.target, &o.sha, o.pushed);
+                    if let Some(e) = &o.push_error {
+                        text = format!("{} ({})", text, e);
+                    }
+                    (json!({"ok": true, "text": text}), ("info".to_string(), text))
+                }
+                Err(e) => (
+                    json!({"ok": false, "error": e}),
+                    ("warn".to_string(), format!("@{} can't land: {}", job.agent, e)),
+                ),
+            };
+            write_json(&mut stream, &body);
+            let _ = tx.send(Msg::Land { line: Some(line) });
+        });
+    }
+
     fn snapshot(&mut self) -> Value {
         // the repo's flow, as config.toml says now (flow-prompts saves it)
         self.hub.flow = crate::flow::FlowConfig::load(&self.opts.paths).mode;
+        // who lands, who waits in line (the boxes' lids)
+        self.hub.lids = self.lands.lids();
         let mut snap = self.hub.snapshot(now_ms());
         // one gate card for several agents' identical calls: it names them all
         self.gate_card_agents(&mut snap);
@@ -797,6 +838,7 @@ impl Shell {
                     write_json(&mut s, &body);
                 }
             }
+            Effect::Land { token, job } => self.land(token, *job),
             Effect::ToClient { client, body } => {
                 if let Some(s) = self.clients.get_mut(&client) {
                     write_json(s, &body);
@@ -1817,6 +1859,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             std::env::var(crate::approvals::mode::ENV).ok().as_deref(),
             runner,
         ),
+        lands: crate::land::Queue::default(),
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -2094,6 +2137,13 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             Msg::BuildEnded { rev } => {
                 sh.building.remove(&rev);
                 sh.broadcast_versions();
+            }
+            Msg::Land { line } => {
+                if let Some((kind, text)) = line {
+                    sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
+                }
+                let snap = sh.snapshot();
+                sh.broadcast(&snap);
             }
             Msg::Shutdown { keep } => {
                 keep_agents = keep;

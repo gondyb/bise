@@ -105,6 +105,20 @@ pub enum AgentReq {
         brief: Brief,
         worktree: bool,
         with_changes: bool,
+        /// `--place <agent>|<branch>` (dev-flow §3.1): join that worktree;
+        /// "" = the shared folder, or a new worktree with `worktree`.
+        place: String,
+    },
+    /// `sb move <agent> new|shared|<agent>|<branch>` (dev-flow §3.1).
+    Move {
+        agent: String,
+        place: String,
+    },
+    /// `sb land [--here] "<message>"` (dev-flow §5): run by the daemon,
+    /// off the hub's loop (`Effect::Land`).
+    Land {
+        here: bool,
+        message: String,
     },
     Interrupt {
         agent: String,
@@ -245,6 +259,15 @@ impl AgentReq {
                     .get("with_changes")
                     .and_then(|x| x.as_bool())
                     .unwrap_or(false),
+                place: jstr(v, "place"),
+            },
+            "move" => AgentReq::Move {
+                agent: jstr(v, "agent"),
+                place: jstr(v, "place"),
+            },
+            "land" => AgentReq::Land {
+                here: v.get("here").and_then(|x| x.as_bool()).unwrap_or(false),
+                message: jstr(v, "message"),
             },
             "interrupt" => AgentReq::Interrupt {
                 agent: jstr(v, "agent"),
@@ -410,6 +433,12 @@ pub enum Effect {
     Reply {
         token: Token,
         body: Value,
+    },
+    /// `sb land` (dev-flow §5): the daemon runs it in a thread, in line
+    /// on its land queue, then answers `token`.
+    Land {
+        token: Token,
+        job: Box<crate::land::Job>,
     },
     ToClient {
         client: ClientId,
@@ -975,6 +1004,62 @@ impl Hub {
 
     /// BISE-136: the private worktree `a` works in (None: its own
     /// workspace, shared checkout or hub worktree).
+    /// `sb move <agent> <place>`: the target's ws (None: a new worktree,
+    /// /isolate's path). An agent alone in its worktree does not leave
+    /// it: the folder would be left behind with no one (drop it instead).
+    fn move_target(&self, agent: &str, place: &str) -> Result<Option<Workspace>, String> {
+        let name = self.st.resolve(agent).ok_or_else(|| format!("no agent named {}", agent))?;
+        let a = &self.st.agents[&name];
+        let target = match place {
+            "new" => None,
+            crate::place::SHARED => self.st.agents.get(MAIN).map(|m| m.ws.clone()),
+            p => Some(crate::place::find_worktree(&self.st, p)?),
+        };
+        if a.ws.mode == Mode::Worktree && !a.ws.dropped {
+            let id = a.ws.place_id(&a.dir);
+            let others = crate::place::places(&self.st, &BTreeMap::new())
+                .into_iter()
+                .find(|p| p.id == id)
+                .is_some_and(|p| p.agents.iter().any(|n| *n != name));
+            let same = target.as_ref().is_some_and(|w| w.place_id(&a.dir) == id);
+            if !others && !same {
+                return Err(format!(
+                    "@{} is alone in its worktree: moving it would leave the folder behind; drop it instead",
+                    name
+                ));
+            }
+        }
+        Ok(target)
+    }
+
+    /// `sb land` (dev-flow §5): what the land needs from the state. The
+    /// daemon adds the repo's flow and runs it (`land::run`).
+    fn land_job(&self, from: &str, here: bool, message: &str) -> Result<crate::land::Job, String> {
+        let name = self.st.resolve(from).ok_or_else(|| format!("unknown agent: {}", from))?;
+        let a = &self.st.agents[&name];
+        let place = a.ws.place_id(&a.dir);
+        let others = self
+            .st
+            .agents
+            .values()
+            .filter(|b| b.name != name && b.lifecycle != Lifecycle::Archived)
+            .filter(|b| b.ws.place_id(&b.dir) == place)
+            .map(|b| (b.name.clone(), b.files.iter().cloned().collect()))
+            .collect();
+        Ok(crate::land::Job {
+            agent: name.clone(),
+            here,
+            message: message.trim().to_string(),
+            worktree: a.ws.mode == Mode::Worktree,
+            place,
+            dir: std::path::PathBuf::from(&a.ws.path),
+            shared: std::path::PathBuf::from(&self.workspace),
+            files: a.files.iter().cloned().collect(),
+            others,
+            flow: crate::flow::FlowConfig::default(),
+        })
+    }
+
     fn place_of(&self, a: &Agent) -> Option<String> {
         let p = &self.places.get(&a.dir)?.path;
         (!p.is_empty() && *p != a.ws.path).then(|| p.clone())
@@ -1763,15 +1848,35 @@ impl Hub {
                 brief,
                 worktree,
                 with_changes,
+                place,
             } => {
                 let name = Some(name.as_str()).filter(|n| !n.is_empty());
-                match new_task(name, &brief, worktree, with_changes) {
-                    Ok(mut v) => {
+                let join = match place.as_str() {
+                    "" | "new" | crate::place::SHARED => Ok(None),
+                    p => crate::place::find_worktree(&self.st, p).map(Some),
+                };
+                match join.and_then(|j| new_task(name, &brief, worktree || place == "new", with_changes).map(|v| (j, v))) {
+                    Ok((join, mut v)) => {
                         v["cmd"] = json!("spawn");
+                        if let Some(ws) = join {
+                            v["join"] = json!(ws);
+                            v["worktree"] = json!(false);
+                        }
                         v
                     }
                     Err(e) => json!({"cmd": "spawn", "pre_err": e}),
                 }
+            }
+            AgentReq::Move { agent, place } => match self.move_target(&agent, &place) {
+                Ok(ws) => json!({"cmd": "move", "agent": agent, "ws": ws}),
+                Err(e) => json!({"cmd": "move", "agent": agent, "pre_err": e}),
+            },
+            AgentReq::Land { here, message } => {
+                match self.land_job(from, here, &message) {
+                    Ok(job) => fx.push(Effect::Land { token, job: Box::new(job) }),
+                    Err(e) => reply(fx, json!({"ok": false, "error": e})),
+                }
+                return;
             }
             AgentReq::Interrupt { agent } => json!({"cmd": "interrupt", "agent": agent}),
             AgentReq::Stop { agent, reason } => {

@@ -725,3 +725,12 @@ def Agent.snap(x: Agent) -> Maybe<&2, String>:
   match x:
     case Agent{_, _, _, _, _, _, _, _, _, _, _, _, _, _, +snap}:
       snap
+
+# dev-flow §3.1: the place of a ws: "shared", or its worktree's id (the
+# Rust Workspace::place_id; an older journal's worktree has none: its
+# agent's own place, wt:<dir>)
+def ws_place(+ws: J.Json, +dir: String) -> String:
+  Bool.pick(String, ws_worktree(ws), J.get_str_or(ws, "place", String.append("wt:", dir)), "shared")
+
+def Agent.place(+a: Agent) -> String:
+  ws_place(Agent.ws(a), Agent.dir(a))

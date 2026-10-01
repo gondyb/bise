@@ -148,6 +148,7 @@ impl T {
                 },
                 worktree: false,
                 with_changes: false,
+                place: String::new(),
             },
         );
         assert!(
@@ -257,6 +258,7 @@ fn the_board_of_main_follows_the_tasks() {
             },
             worktree: false,
             with_changes: false,
+            place: String::new(),
         },
     );
     let ctx = fx
@@ -909,6 +911,7 @@ fn journal_replay_rebuilds_the_same_state() {
             },
             worktree: false,
             with_changes: false,
+            place: String::new(),
         },
     );
     record(fx);
@@ -1615,6 +1618,131 @@ fn main_restores_and_isolates_a_task_and_tasks_cannot() {
     assert!(t.hub.st.agents["a"].ws.mode == crate::model::Mode::Worktree);
     let (tok, fx) = t.req(MAIN, AgentReq::Isolate { agent: "a".into() });
     assert!(err_of(&fx, tok).contains("already"), "{:?}", reply(&fx, tok));
+}
+
+fn patch_line(f: &str) -> String {
+    format!("tool #1 apply_patch : {{\"arg\":\"*** Begin Patch\\n*** Update File: {}\\n@@\\n-x\\n+y\\n*** End Patch\"}}", f)
+}
+
+fn spawn_in(t: &mut T, name: &str, place: &str) -> (u64, Vec<Effect>) {
+    t.req(
+        MAIN,
+        AgentReq::Spawn {
+            name: name.into(),
+            brief: Brief { objective: format!("objective of {}", name), ..Brief::default() },
+            worktree: place == "new",
+            with_changes: false,
+            place: if place == "new" { String::new() } else { place.into() },
+        },
+    )
+}
+
+/// dev-flow §3.1: places are shared, not owned. Two agents in one
+/// worktree; a drop keeps the folder while another agent is in it, the
+/// last one takes it (and marks it gone for the first); a restore brings
+/// the place back once, the other agent rejoins it.
+#[test]
+fn a_worktree_shared_by_two_agents_goes_with_its_last_one() {
+    let mut t = T::new();
+    let (tok, fx) = spawn_in(&mut t, "a", "new");
+    assert!(reply(&fx, tok).is_some(), "{:?}", fx);
+    let (tok, fx) = spawn_in(&mut t, "b", "a");
+    assert_eq!(reply(&fx, tok).unwrap()["path"], "/state/worktrees/a", "{:?}", fx);
+    let (wa, wb) = (t.hub.st.agents["a"].ws.clone(), t.hub.st.agents["b"].ws.clone());
+    assert_eq!(wa, wb, "one place, the same ws");
+    assert_eq!(wa.place.as_deref(), Some("wt:a"));
+    // by its branch too; an unknown place or a shared agent is refused
+    let (tok, fx) = spawn_in(&mut t, "c", "sb/a");
+    assert_eq!(reply(&fx, tok).unwrap()["path"], "/state/worktrees/a");
+    let (tok, fx) = spawn_in(&mut t, "d", "nowhere");
+    assert!(err_of(&fx, tok).contains("no place nowhere"), "{:?}", fx);
+    // the snapshot: one box, its agents in order
+    let snap = t.hub.snapshot(0);
+    assert_eq!(snap["places"], json!([{"id": "wt:a", "branch": "sb/a", "agents": ["a", "b", "c"], "pr": null, "lid": null}]));
+    assert_eq!(snap["agents"][1]["place_id"], "wt:a");
+    assert_eq!(snap["agents"][0]["place_id"], "shared");
+    // files are tracked in a worktree too; an overlap is within the place
+    // (b's change of src/x.rs is one, the shared folder's s's is not)
+    t.spawn_task("s");
+    for n in ["a", "b", "s"] {
+        t.go(Input::ReplLine { agent: n.into(), line: patch_line("src/x.rs") });
+    }
+    assert_eq!(t.hub.st.agents["a"].files.iter().collect::<Vec<_>>(), ["src/x.rs"]);
+    let overlaps: Vec<&String> = t.hub.st.main_notes.iter().filter(|n| n.contains("file overlap")).collect();
+    assert_eq!(overlaps.len(), 1, "{:?}", overlaps);
+    assert!(overlaps[0].contains("changed by @b and by @a"), "{:?}", overlaps);
+    for n in ["a", "b", "c"] {
+        t.go(Input::ReplIdle { agent: n.into(), leftover: false });
+    }
+    t.hub.force_run("a", Run::Idle);
+    // drop a, then c: the worktree stays with the others
+    let fx = t.user(MAIN, "/drop a --force");
+    assert!(has_line(&fx, MAIN, "@a archived — its worktree stays with @b, @c"), "{:?}", fx);
+    t.user(MAIN, "/drop c --force");
+    assert!(t.env.dropped.is_empty(), "no folder removed yet");
+    assert!(!t.hub.st.agents["a"].ws.dropped);
+    // b is the last: the folder goes, saved work included, for a and c too
+    t.env.loss = Loss { dirty: 1, unpushed: 0 };
+    let fx = t.user(MAIN, "/drop b --force");
+    assert_eq!(t.env.dropped, vec!["b".to_string()], "{:?}", fx);
+    for n in ["a", "b", "c"] {
+        let a = &t.hub.st.agents[n];
+        assert!(a.ws.dropped, "{} dropped", n);
+        assert_eq!(a.snapshot_ref.as_deref(), Some("refs/switchboard/trash/b/1"), "{}", n);
+    }
+    assert_eq!(t.hub.snapshot(0)["places"], json!([]));
+    // a's restore brings the place back; c rejoins it, no second folder
+    let (tok, fx) = t.req(MAIN, AgentReq::Restore { agent: "a".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "a", "{:?}", fx);
+    let (tok, fx) = t.req(MAIN, AgentReq::Restore { agent: "c".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "c", "{:?}", fx);
+    let (wa, wc) = (&t.hub.st.agents["a"].ws, &t.hub.st.agents["c"].ws);
+    assert!(!wa.dropped && wa == wc, "{:?} {:?}", wa, wc);
+    assert_eq!(t.hub.st.agents["c"].snapshot_ref, None);
+    assert_eq!(t.hub.snapshot(0)["places"][0]["agents"], json!(["a", "c"]));
+}
+
+/// `sb move`: an agent that changed nothing yet joins another place,
+/// goes back to the shared folder, or gets a new worktree (/isolate).
+#[test]
+fn sb_move_between_places() {
+    let mut t = T::new();
+    spawn_in(&mut t, "a", "new");
+    t.spawn_task("s");
+    t.spawn_task("busy");
+    for n in ["a", "s", "busy"] {
+        t.go(Input::ReplIdle { agent: n.into(), leftover: false });
+    }
+    let mv = |t: &mut T, from: &str, who: &str, to: &str| t.req(from, AgentReq::Move { agent: who.into(), place: to.into() });
+    let (tok, fx) = mv(&mut t, "s", "s", "a");
+    assert!(err_of(&fx, tok).contains("reserved for main"), "{:?}", fx);
+    // a is alone in its worktree: it does not leave it
+    let (tok, fx) = mv(&mut t, MAIN, "a", "shared");
+    assert!(err_of(&fx, tok).contains("alone in its worktree"), "{:?}", fx);
+    let (tok, fx) = mv(&mut t, MAIN, "s", "a");
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "s", "{:?}", fx);
+    assert!(has_line(&fx, MAIN, "@s moved to the worktree sb/a"), "{:?}", fx);
+    assert!(fx.iter().any(|e| matches!(e, Effect::Kill { agent } if agent == "s")));
+    assert_eq!(t.hub.st.agents["s"].ws, t.hub.st.agents["a"].ws);
+    let (tok, fx) = mv(&mut t, MAIN, "s", "a");
+    assert!(err_of(&fx, tok).contains("already there"), "{:?}", fx);
+    // back to the shared folder (a stays with its worktree), once s read
+    // the move's message (its turn ended)
+    t.go(Input::ReplIdle { agent: "s".into(), leftover: false });
+    t.go(Input::ReplIdle { agent: "s".into(), leftover: false });
+    let (tok, fx) = mv(&mut t, MAIN, "s", "shared");
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "s", "{}", err_of(&fx, tok));
+    assert_eq!(t.hub.st.agents["s"].ws.mode, crate::model::Mode::Shared);
+    // an agent that changed a file does not move
+    t.go(Input::ReplLine { agent: "busy".into(), line: patch_line("src/y.rs") });
+    let (tok, fx) = mv(&mut t, MAIN, "busy", "a");
+    assert!(err_of(&fx, tok).contains("already changed files (src/y.rs)"), "{:?}", fx);
+    // new: a worktree of its own (/isolate)
+    t.go(Input::ReplIdle { agent: "s".into(), leftover: false });
+    t.go(Input::ReplIdle { agent: "s".into(), leftover: false });
+    let (tok, fx) = mv(&mut t, MAIN, "s", "new");
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "s", "{:?}", fx);
+    assert_eq!(t.hub.st.agents["s"].ws.place.as_deref(), Some("wt:s"));
 }
 
 /// Found while stating the law L4 (no message stuck in a queue): a message

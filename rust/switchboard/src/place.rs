@@ -160,6 +160,36 @@ pub fn places(st: &State, prs: &BTreeMap<String, PrSnapshot>) -> Vec<Place> {
     out
 }
 
+/// The worktree a task joins (`sb spawn --place`, `sb move`): the one of
+/// agent `target` (a name or an old name), or the live place whose
+/// branch is `target`. Its `ws`, with the place id set.
+pub fn find_worktree(st: &State, target: &str) -> Result<crate::model::Workspace, String> {
+    let live = |a: &&crate::model::Agent| {
+        a.ws.mode == Mode::Worktree && !a.ws.dropped && a.lifecycle != Lifecycle::Archived
+    };
+    let by_agent = st.resolve(target).and_then(|n| st.agents.get(&n));
+    if let Some(a) = by_agent {
+        if !live(&a) {
+            return Err(format!(
+                "@{} works in the shared folder, not a worktree: `--place new` makes one",
+                a.name
+            ));
+        }
+    }
+    let a = by_agent
+        .or_else(|| {
+            st.order
+                .iter()
+                .filter_map(|n| st.agents.get(n))
+                .filter(live)
+                .find(|a| a.ws.branch.as_deref() == Some(target))
+        })
+        .ok_or_else(|| format!("no place {}: name an agent in a worktree, or its branch", target))?;
+    let mut ws = a.ws.clone();
+    ws.place = Some(a.ws.place_id(&a.dir));
+    Ok(ws)
+}
+
 /// The place of agent `name` (its id), if it has one.
 pub fn place_of(st: &State, name: &str) -> Option<String> {
     st.agents.get(name).map(|a| a.ws.place_id(&a.dir))

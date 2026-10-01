@@ -68,14 +68,24 @@ pub const COMMANDS: &[CmdDoc] = &[
         "open a hit: the entry with its neighbors, the commands to move earlier/later, and the agents, messages and commits it mentions.",
     ),
     cmd(
+        "sb land [--here] \"<message>\"",
+        Who::Everyone,
+        "commit the files you changed (only yours, never another agent's) with that message. `--here`: on your place's branch (the shared folder: its branch, main). Without it, from a worktree: the branch is rebased on main, checked, and main moves to it (pushed when the repo says so); from the shared folder, the same as `--here`. A file another agent also changed is refused: main decides.",
+    ),
+    cmd(
         "sb inspect main --origin",
         Who::Task,
         "the user message that led to your creation, verbatim, and main's turn up to the spawn.",
     ),
     cmd(
-        "sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]",
+        "sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--place new|<agent>|<branch> [--with-changes]]",
         Who::Main,
-        "create a task (names: [a-z0-9-], at most 24 chars).",
+        "create a task (names: [a-z0-9-], at most 24 chars). Where it works: the shared folder by default; `--place new` a new git worktree (`--worktree` says the same); `--place <agent>` or `<branch>` the worktree of agents already on that change (they share it and its branch).",
+    ),
+    cmd(
+        "sb move <agent> new|shared|<agent>|<branch>",
+        Who::Main,
+        "move a task that has changed nothing yet to a new worktree, back to the shared folder, or into another agent's worktree.",
     ),
     cmd("sb interrupt <task>", Who::Main, "stop a task's current turn."),
     cmd("sb stop <task> \"<reason>\"", Who::Main, "stop the task."),
@@ -101,9 +111,9 @@ pub const COMMANDS: &[CmdDoc] = &[
     ),
     cmd("sb rename <task> <new-name>", Who::Main, "rename a task (unique name; the old name still works)."),
     cmd(
-        "sb restore <task> | sb isolate <task>",
+        "sb restore <task>",
         Who::Main,
-        "reopen a stopped or archived task / move a task that has changed nothing yet into its own git worktree. Use them ONLY when the user explicitly asks; never on your own initiative.",
+        "reopen a stopped or archived task (and its saved worktree). Use it ONLY when the user explicitly asks; never on your own initiative.",
     ),
     cmd(
         "sb history \"<query>\"",
@@ -417,6 +427,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     "constraint",
                     "done-when",
                     "report-format",
+                    "place",
                 ],
                 &["worktree", "with-changes"],
             )?;
@@ -436,8 +447,24 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             req.insert("constraints".into(), json!(list_of(o.get("constraint"))));
             req.insert("done_when".into(), json!(str_of(&o, "done-when")));
             req.insert("report_format".into(), json!(str_of(&o, "report-format")));
-            req.insert("worktree".into(), json!(o.contains_key("worktree")));
+            // dev-flow §3.1: --place new (= --worktree) | <agent> | <branch>
+            let place = str_of(&o, "place");
+            req.insert("worktree".into(), json!(o.contains_key("worktree") || place == "new"));
+            if !place.is_empty() && place != "new" {
+                req.insert("place".into(), json!(place));
+            }
             req.insert("with_changes".into(), json!(o.contains_key("with-changes")));
+        }
+        "move" => {
+            let (pos, _) = parse_args(rest, &[], &[])?;
+            let usage = "usage: sb move <agent> new|shared|<agent>|<branch>";
+            req.insert("agent".into(), json!(agent_arg(&pos, usage)?));
+            req.insert("place".into(), json!(pos.get(1).ok_or(usage)?));
+        }
+        "land" => {
+            let (pos, o) = parse_args(rest, &[], &["here"])?;
+            req.insert("here".into(), json!(o.contains_key("here")));
+            req.insert("message".into(), json!(pos.join(" ")));
         }
         "interrupt" | "drop" | "restore" | "isolate" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
@@ -765,7 +792,9 @@ mod tests {
         assert!(usage().contains("sb worktree <path>|none"));
         let h = help_for("spawn");
         assert!(h.starts_with("sb spawn <name> --objective") && !h.contains("sb send"), "{h}");
-        assert!(help_for("restore").contains("sb isolate <task>"), "the shared line");
+        assert!(help_for("restore").starts_with("sb restore <task>"));
+        assert!(help_for("move").starts_with("sb move <agent> new|shared|<agent>|<branch>"));
+        assert!(help_for("land").starts_with("sb land [--here]"));
         assert!(help_for("worktree").starts_with("sb worktree"));
         assert_eq!(help_for("nosuch"), usage());
         assert_eq!(main(&a(&["spawn", "--help"])), 0);
