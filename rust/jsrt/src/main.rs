@@ -116,6 +116,7 @@ const __finish = (p) => Promise.resolve(p).then(
     : JSON.stringify(v === undefined ? '' : v)),
   (e) => __fail(JSON.stringify(String((e && e.message) || e)))
 );
+__COMPUTER_SDK__
 const __out = (async function () {
   with (new Proxy({}, __gh)) {
 "#;
@@ -143,6 +144,26 @@ __finish(__out.then((v) => {
   return v;
 }));
 "#;
+
+// the `computer` object of code mode (docs/computer-use-design.md §6),
+// in the prelude when the session loaded the built-in `computer` plugin:
+// its tools are in this session's plugin index (rust/plugins bridge,
+// bend/runtime/plugins.bend: $BEND_RUN_DIR/<repl port>/plugins/), lines
+// `<cid> computer <tool> : …`
+const COMPUTER_TS: &str = include_str!("computer.ts");
+
+fn computer_loaded() -> bool {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let run = var("BEND_RUN_DIR")
+        .or_else(|| var("HOME").map(|h| format!("{h}/.bend-harness/run")))
+        .unwrap_or_default();
+    let port = var("BEND_REPL_PORT").unwrap_or_else(|| "0".to_string());
+    let index = std::fs::read_to_string(format!("{run}/{port}/plugins/mcp-index.txt")).unwrap_or_default();
+    index.lines().any(|l| {
+        let mut f = l.split_whitespace().skip(1);
+        f.next() == Some("computer") && f.next() == Some("act")
+    })
+}
 
 // does the (transpiled) program declare a `main` function?
 // `function main` followed (after spaces) by `(` or `<` — covers
@@ -295,9 +316,16 @@ fn run(program: &str, results: &str) -> ! {
     } else {
         ""
     };
+    let sdk = if computer_loaded() {
+        transpile(COMPUTER_TS).unwrap_or_else(|e| fail(&format!("computer.ts: {e}")))
+    } else {
+        String::new()
+    };
     let source = format!(
         "{}{}{}{}",
-        PRELUDE.replace("__RESULTS_PLACEHOLDER__", &results_lit),
+        PRELUDE
+            .replacen("__COMPUTER_SDK__", &sdk, 1)
+            .replace("__RESULTS_PLACEHOLDER__", &results_lit),
         fb,
         js,
         EPILOGUE
