@@ -388,6 +388,12 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                 None => glyph_line(G_FAILED, err_st, t.clone(), err_st, width),
             },
         },
+        // voice mode's transcript lines (design §5): plain faint notes,
+        // `· voice mode · 14:02`, `· voice mode ended · 7 min · …`
+        Ev::Info(t) if t.starts_with("· voice mode") => {
+            let faint_st = Style::default().fg(faint());
+            crate::wrap_line(Line::from(vec![Span::raw(" "), Span::styled(t.clone(), faint_st)]), width.max(1))
+        }
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
         Ev::Pr { tone, number, url, text, url_row } => pr_lines(tone, *number, url, text, *url_row, width),
         Ev::Approval { ok, text, note, asked, open } => answer_lines(*ok, text, note, asked, *open, width),

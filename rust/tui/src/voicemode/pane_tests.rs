@@ -304,13 +304,13 @@ fn the_header_the_divider_and_the_keys() {
     m.elapsed = Duration::from_secs(61);
     assert_eq!(text(header(&m)), "○ voice mode 1:01");
     assert_eq!(header(&m)[0].style.fg, Some(theme::faint()));
-    assert_eq!(text(divider(&v)), "you ⇄ main · voice mode · headphones");
+    assert_eq!(text(divider(&v)), " you ⇄ main · voice mode · headphones ");
     let mut s = view(Phase::Listening);
     s.route = Route::Speakers;
     s.agent = "cookies".into();
-    assert_eq!(text(divider(&s)), "you ⇄ cookies · voice mode · speakers");
+    assert_eq!(text(divider(&s)), " you ⇄ cookies · voice mode · speakers ");
     s.route = Route::Unknown;
-    assert_eq!(text(divider(&s)), "you ⇄ cookies · voice mode");
+    assert_eq!(text(divider(&s)), " you ⇄ cookies · voice mode ");
     assert_eq!(keys(&v, 120).to_string(), " esc leave   m mute   space send now · hold: keep the floor   tab type");
     assert_eq!(keys(&v, 78).to_string(), " esc leave   m mute   space send · hold");
     assert_eq!(keys(&view(Phase::AboutToAnswer { fill: 0.2 }), 120).to_string(), " keep talking, or   space send now   hold space i'm thinking");

@@ -81,7 +81,14 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let card_gap = u16::from(card_h > 0 && area.height >= 24 && left(pane_h + 1 + card_h) > 0);
     // the no-vision line names the model of the agent in view
     attach::set_model(&crate::sb::focus_model(app));
-    let composer_h = pad_top + text_rows + rows.pad_bottom;
+    // voice mode (plan §4.6): the pane takes the composer's place, half
+    // the screen (the lanes under 30 rows); tab shows the composer again
+    let voice = app.voice_mode.as_ref().map(|vm| (vm.view(app.frame_at), vm.typing()));
+    let pane_view = voice.as_ref().filter(|(_, typing)| !typing).map(|(v, _)| v.clone());
+    let composer_h = match &pane_view {
+        Some(_) => crate::voicemode::pane::height(area.height).min(left(0).max(1)),
+        None => pad_top + text_rows + rows.pad_bottom,
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -113,11 +120,19 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if cols.framed {
         let title = sb.title();
         let role = sb.role_spans();
-        chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, |room| sb.summary(room, short, words, &gust), divider_y);
+        let summary = |room: usize| voice_header(voice.as_ref().map(|(v, _)| v), room, |room| sb.summary(room, short, words, &gust));
+        chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, summary, divider_y);
         crate::textlayer::text(Rect { height: 1, ..area }); // BISE-290: the title row
     } else if chunks[0].height > 0 {
         let r = Rect { height: 1, ..chunks[0] };
-        frame.render_widget(Paragraph::new(sb.header(r.width, short, words, &gust)), r);
+        let mut head = sb.header(r.width, short, words, &gust);
+        if let Some((v, _)) = &voice {
+            let mut spans = crate::voicemode::pane::header(v);
+            spans.push(Span::raw("  "));
+            spans.append(&mut head.spans);
+            head.spans = spans;
+        }
+        frame.render_widget(Paragraph::new(head), r);
         crate::textlayer::text(r); // BISE-290
     }
     // the panel: from the history's first row down to the blank row
@@ -256,7 +271,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         }
         l
     });
-    let (state_rect, label_rect) = match card_label.or_else(|| sb::palette::divider_label(app)) {
+    // voice mode: `you ⇄ main · voice mode · headphones`
+    let voice_label = voice.as_ref().map(|(v, _)| crate::voicemode::pane::divider(v));
+    let (state_rect, label_rect) = match card_label.or_else(|| sb::palette::divider_label(app)).or(voice_label) {
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
         None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state),
     };
@@ -288,7 +305,10 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // around the text too), the text from x0 + `lead`
     let body_rect = pane(chunks[10]);
     let composer = Rect { width: (inner_w as u16 + lead).min(body_rect.width), ..body_rect };
-    if sb::palette::is_open(app) {
+    if let Some(v) = &pane_view {
+        crate::voicemode::pane::draw(frame.buffer_mut(), body_rect, v, app.pulse_ms);
+        crate::textlayer::text(body_rect); // BISE-290: the captions select and copy
+    } else if sb::palette::is_open(app) {
         sb::palette::draw(app, frame, Rect { height: composer_h.saturating_sub(rows.pad_bottom), ..composer }, inner_w, lead, pad_top.min(composer_h));
         let bar = Span::styled("│", Style::default().fg(accent()));
         for y in composer.y + composer_h.saturating_sub(rows.pad_bottom)..composer.y + composer_h {
@@ -312,7 +332,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         sb::draw_box(app, frame, r, fit);
         app.zen.keep.push(r.intersection(area));
     }
-    if app.find.is_none() && !sb::palette::is_open(app) {
+    if app.find.is_none() && !sb::palette::is_open(app) && pane_view.is_none() {
         draw_popup(app, frame, text);
     }
     // the key bar, from x0 to the right margin (from 60 columns, from
@@ -320,7 +340,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let kb = pane(chunks[11]);
     let kb = Rect { x: kb.x + shift, width: kb.width.saturating_sub(shift), ..kb };
     if kb.height > 0 {
-        frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
+        let keys = match &pane_view {
+            Some(v) => crate::voicemode::pane::keys(v, kb.width),
+            None => crate::keybar::line(app, kb.width),
+        };
+        frame.render_widget(Paragraph::new(keys), kb);
         crate::textlayer::text(kb); // BISE-290
     }
     // last: the "type ask about it" popup over a selection in the history
@@ -423,6 +447,9 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
     let mut vis_events: Vec<usize> = Vec::with_capacity(area_h + 2);
     let mut vis_rows: Vec<usize> = Vec::with_capacity(area_h + 2);
     let mut tail_visible = true;
+    // voice mode: the reply being said, lit (its rows restyled each frame)
+    let lit = lit_event(app);
+    let mut lit_rows: Option<Vec<Line<'static>>> = None;
     for pass in 0..2 {
         vis.clear();
         vis_events.clear();
@@ -431,7 +458,10 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         let (mut i, mut skip) = anchor;
         while i < n {
             ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick);
-            let rows = app.cache[i].as_ref().map(|c| &c.rows[..]).unwrap_or(&[]);
+            let mut rows = app.cache[i].as_ref().map(|c| &c.rows[..]).unwrap_or(&[]);
+            if let Some((_, l)) = lit.as_ref().filter(|(li, _)| *li == i) {
+                rows = lit_rows.get_or_insert_with(|| crate::voicemode::pane::lit::light(rows, &l.text, &l.spans));
+            }
             for (ri, r) in rows.iter().enumerate().skip(skip) {
                 if vis.len() >= area_h {
                     tail_visible = false;
@@ -561,6 +591,39 @@ fn hover_time(app: &App, buf: &mut ratatui::buffer::Buffer, area: Rect, vis_even
     rows.sort_by_key(|&r| r.abs_diff(row));
     let Some(r) = rows.into_iter().find(|&r| blank(buf, r)) else { return };
     buf.set_string(x0, area.y + r as u16, &label, Style::default().fg(dim()));
+}
+
+/// The header's summary in voice mode (design §0): `● voice mode 2:14`
+/// first, in every view, then the summary in the room left (it goes
+/// whole when there is none).
+fn voice_header(v: Option<&crate::voicemode::PaneView>, room: usize, summary: impl Fn(usize) -> Vec<Span<'static>>) -> Vec<Span<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let Some(v) = v else {
+        return summary(room);
+    };
+    let mut head = crate::voicemode::pane::header(v);
+    let w: usize = head.iter().map(|s| s.content.width()).sum();
+    if w > room {
+        return summary(room);
+    }
+    let rest = summary(room.saturating_sub(w + 3));
+    let rest_w: usize = rest.iter().map(|s| s.content.width()).sum();
+    if !rest.is_empty() && w + 3 + rest_w <= room {
+        head.push(Span::styled(" · ", Style::default().fg(crate::theme::faint())));
+        head.extend(rest);
+    }
+    head
+}
+
+/// The rows of the event the voice is saying, lit in step (plan §4.6):
+/// the last reply of the agent in view whose text is `lit.text`.
+fn lit_event(app: &App) -> Option<(usize, crate::voicemode::Lit)> {
+    let lit = app.voice_mode.as_ref()?.lit()?;
+    if lit.agent != app.sb.focus_name() {
+        return None;
+    }
+    let i = app.events.iter().rposition(|e| matches!(e, Ev::Assistant(t) if *t == lit.text))?;
+    Some((i, lit))
 }
 
 /// A status note (flash, voice) still worth showing: younger than 2 s.

@@ -469,12 +469,13 @@ pub fn divider(v: &PaneView) -> Vec<Span<'static>> {
     let d = |s: &str| Span::styled(s.to_string(), fg(theme::dim(), form));
     let a = |s: &str| Span::styled(s.to_string(), fg(theme::accent(), form));
     let dot = || Span::styled(" · ", fg(theme::faint(), form));
-    let mut s = vec![d("you"), Span::raw(" "), a("⇄"), Span::raw(" "), a(&v.agent), dot(), d("voice mode")];
+    let mut s = vec![Span::raw(" "), d("you"), Span::raw(" "), a("⇄"), Span::raw(" "), a(&v.agent), dot(), d("voice mode")];
     match v.route {
         Route::Headphones => s.extend([dot(), d("headphones")]),
         Route::Speakers => s.extend([dot(), d("speakers")]),
         Route::Unknown => {}
     }
+    s.push(Span::raw(" "));
     s
 }
 
@@ -552,6 +553,14 @@ fn put(buf: &mut Buffer, x: u16, y: u16, end: u16, spans: &[Span]) {
     }
 }
 
+/// The thread's lighting from [`super::Lit`].
+#[path = "pane_lit.rs"]
+pub mod lit;
+
 #[cfg(test)]
 #[path = "pane_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pane_screens_tests.rs"]
+mod screens_tests;
