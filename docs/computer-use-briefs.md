@@ -88,11 +88,15 @@ Namespace `computer` (the built-in plugin). Targets are strings:
 | `status` | `{}` | `{ browsers: [{ name, version, connected, extension_version }], apps: { helper: "absent"\|"stopped"\|"running", accessibility, screen_recording }, me: { stopped, paused: [target] } }` |
 | `open` | `{ url, browser? }` | `{ target, url, title }` (a background tab in the agent's group) |
 | `tabs` | `{}` | `[{ target, url, title, user_touched }]` (this agent's tabs only) |
-| `apps` | `{}` | `[{ target, name, pid, windows }]` |
-| `snapshot` | `{ target, max_nodes? = 400 }` | `{ target, url?, title, text, refs, truncated }` |
-| `screenshot` | `{ target, ref?, max_width? = 1280 }` | `{ path, mime, width, height }` (a JPEG in the agent's `TMPDIR`) |
-| `act` | `{ target, action, ref? \| locator?, text?, keys?, value?, url?, direction?, amount?, timeout_ms? = 5000 }` | `{ ok: true, url?, title, changed, summary }` |
+| `apps` | `{}` | `[{ target, name, pid, windows: [{ title, focused }] }]` |
+| `snapshot` | `{ target, window?, max_nodes? = 400 }` | `{ target, url?, title, text, refs, truncated }` |
+| `screenshot` | `{ target, window?, ref?, max_width? = 1280 }` | `{ path, mime, width, height }` (a JPEG in the agent's `TMPDIR`) |
+| `act` | `{ target, window?, action, ref? \| locator?, text?, keys?, value?, url?, direction?, amount?, timeout_ms? = 5000 }` | `{ ok: true, url?, title, changed, summary }` |
 
+- `window` (app targets only, ignored for `tab:`): a window title, exact
+  match first, else a unique substring; 0 or several → `not_found` /
+  `ambiguous` with the titles as candidates; absent = the app's main
+  window. Refs belong to the window they came from. (Amended m_3611.)
 - `action`: `click`, `fill`, `type`, `press`, `select`, `check`,
   `hover`, `scroll`, `goto`, `close`, `wait`, `read` (`read` returns the
   element's text in `changed`).
@@ -109,6 +113,23 @@ Namespace `computer` (the built-in plugin). Targets are strings:
   `ambiguous`, `stale_ref`, `stopped`, `paused`, `refused`, `timeout`,
   `needs_front`, `bad_args`. `message` is one sentence the agent can
   act on ("the user stopped you in Chrome; ask before you start again").
+
+Settled details (cu-extension m_3613, cu-apps m_3609; the same on web
+and apps):
+
+- `snapshot.refs` = the number of `[eN]` refs in `text`.
+- A 6th tab for one agent: `refused`, "you already have 5 tabs open;
+  close one (act close) first".
+- `scroll`: `direction` `up|down|left|right`; `amount` in CSS px (web)
+  or points (apps), default 80 % of the visible height.
+- `wait`: with a ref/locator, until visible; `text` alone, until the
+  page/window contains it; nothing, sleeps `amount` ms (≤ `timeout_ms`).
+- `check`: `value: false` unchecks.
+- `press`: Playwright key names (`Enter`, `Control+A`, `Meta+C`),
+  several chords space-separated (`"Tab Tab Enter"`); with a
+  ref/locator, it focuses that element first.
+- `read` without ref/locator: the page's (window's) text, cut at 4000
+  characters.
 
 ### C2. The snapshot text
 
@@ -150,18 +171,42 @@ pair and commits the public key; the Web Store keeps the same id).
 - host → ext: `{"stop":"<agent>"}`, `{"resume":"<agent>"}`,
   `{"release":"<agent>"}` (end of turn: detach, keep the tabs),
   `{"drop":"<agent>"}` (close the group unless `user_touched`).
+- `hello.browser`: unbranded Chromium (Vivaldi, Arc) looks like
+  `chrome` from the service worker; the extension says `chrome` unless
+  the brand says `edge`/`brave`/`opera`, and the broker refines it from
+  the native host's parent process (the browser's bundle).
+- `stop`/`release`/`drop` from the host emit no event; only user-caused
+  ones do.
 - ext → host events: `{"event":"stopped","agent","reason":"cancel_bar|group_closed"}`,
   `{"event":"paused","agent","target"}`, `{"event":"resumed","agent"}`.
 
 ### C5. Broker ↔ helper app
 
-The helper (`dev.bise.computer-use`, started with `open -g`) listens on
-`~/.bise/run/computer-use-app.sock`; the broker connects. Same request
-shape as C3 for `app:` targets (`apps`, `snapshot`, `screenshot`, `act`)
-plus `{"op":"permissions"}` → `{accessibility, screen_recording}` and
-`{"op":"request","what":"accessibility|screen_recording"}` (shows the
-macOS prompt, opens the right System Settings pane). Events as in C4
-(`paused` when the user types or clicks in the driven app).
+The helper (`dev.bise.computer-use`) is started by the broker with
+`open -g -a "bise Computer Use" --args --socket <path>` (default path
+`~/.bise/run/computer-use-app.sock`; tests use a short path under
+`~/.bise/gate`). It listens; the broker connects. Settled with cu-apps
+(m_3609, m_3611):
+
+- The helper speaks first: `{"hello":{"helper":"dev.bise.computer-use",
+  "version":"…","accessibility":bool,"screen_recording":bool}}`.
+- Requests as C4, with the agent (the broker adds it from the C3 hello;
+  the helper needs it for the cursor's name pill and `paused`):
+  `{"id":n,"agent":"…","op":"apps|snapshot|screenshot|act","args":{…}}`
+  → `{"id":n,"ok":…,"result"|"error":…}` (C1 shapes, `window` included).
+- `screenshot` returns `{"data":"<base64 jpeg>","mime":"image/jpeg",
+  "width","height"}`; the broker writes the file, as in C4.
+- No agent: `{"id":n,"op":"permissions"}` → `{accessibility,
+  screen_recording}`; `{"id":n,"op":"request","what":"accessibility|
+  screen_recording"}` (shows the macOS prompt, opens the right System
+  Settings pane).
+- Control lines, no reply: `{"stop":agent}`, `{"resume":agent}`,
+  `{"release":agent}` (end of turn: hide the cursor, keep the refs),
+  `{"drop":agent}`.
+- Events as in C4 (`paused` when the user types or clicks in the driven
+  app).
+- The helper refuses the targets of design §5.2 too (`refused`); the
+  broker's list is the first check.
 
 ### C6. Broker ↔ bise (hub and TUI)
 
