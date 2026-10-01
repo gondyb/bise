@@ -52,10 +52,12 @@ one gate seed for everybody).
   old=$(git rev-parse $B) && git read-tree $old
   git add -A -- <your owned paths>          # whole files: you own them
   new=$(git commit-tree $(git write-tree) -p $old -m "<long subject: what and why>")
-  git update-ref $B $new $old && git checkout -q --detach $new   # CAS: on failure redo from read-tree
-  unset GIT_INDEX_FILE
+  git update-ref $B $new $old    # CAS: on failure redo from read-tree
+  unset GIT_INDEX_FILE && git checkout -q --detach $new          # after the unset, never before
   ```
   The checkout brings the others' work into your worktree; your owned files are unchanged by it.
+  (Checked out with the private index still set, your worktree's index stays behind: `git
+  read-tree HEAD` in your own worktree fixes it.)
 - Gates: `tests/gate.sh quick` before each commit (green: clippy -D warnings + the tests). The lead
   runs the full gate (`ulimit -n 8192; tests/gate.sh full`) once at integration.
 - The machine: the bash tool caps files at 50 MB: a release build or a big binary goes through
