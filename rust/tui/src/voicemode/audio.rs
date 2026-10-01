@@ -36,13 +36,13 @@ fn samples_len(n: usize, rate: u32) -> Duration {
 
 /// A level shared with the audio thread (f32 bits).
 #[derive(Default)]
-struct SharedLevel(AtomicU32);
+pub struct SharedLevel(AtomicU32);
 
 impl SharedLevel {
-    fn set(&self, x: f32) {
+    pub fn set(&self, x: f32) {
         self.0.store(x.to_bits(), Ordering::Relaxed);
     }
-    fn get(&self) -> f32 {
+    pub fn get(&self) -> f32 {
         f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 }
@@ -403,10 +403,22 @@ impl Speaker for QueueSpeaker {
     }
 }
 
-/// Round 2: the mic and the speaker together, the speaker's echo
-/// cancelled in the mic when the platform can (macOS VoiceProcessingIO,
-/// voice-echo); until then the plain devices, `aec: false`.
+/// The voice-processing unit (macOS): the mic and the speaker in one,
+/// the speaker's echo removed from the mic (voice-echo; voicemode/aec.rs).
+#[path = "aec.rs"]
+pub mod aec;
+
+/// The mic and the speaker together (plan §8 #6): on macOS one
+/// VoiceProcessingIO unit, the speaker's echo cancelled in the mic,
+/// `aec: true`; when it cannot open (another OS, a unit or device
+/// error) or `BISE_VOICE_AEC=0`, the plain devices, `aec: false`.
+/// Never opened by a test.
 pub fn open_voice_io() -> Result<super::VoiceIo, String> {
+    if aec::wanted(std::env::var("BISE_VOICE_AEC").ok().as_deref()) {
+        if let Ok((mic, speaker)) = aec::open() {
+            return Ok(super::VoiceIo { mic, speaker, aec: true });
+        }
+    }
     Ok(super::VoiceIo { mic: Box::new(CpalMic), speaker: open_speaker()?, aec: false })
 }
 

@@ -41,12 +41,16 @@ pub mod source {
 /// The route of an output device from what CoreAudio says of it.
 /// `name`: the device's name ("MacBook Pro Speakers", "AirPods Pro").
 /// Unsure stays Unknown: the user is asked once, which beats an agent
-/// that cuts itself off on a speaker.
+/// that talks over itself on a speaker read as headphones (a Bluetooth
+/// device is Unknown unless its name says headset or speaker).
 pub fn classify(transport: u32, source: Option<u32>, name: &str) -> Route {
     let name = name.to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| name.contains(w));
-    let speaker_name = has(&["speaker", "soundbar", "homepod", "sonos", "soundlink", "boom"]);
-    let headset_name = has(&["headphone", "headset", "airpods", "earpods", "earbuds", "buds", "beats", "casque", "écouteurs"]);
+    let speaker_name = has(&["speaker", "soundbar", "homepod", "sonos", "soundlink", "boom", "pill", "enceinte"]);
+    let headset_name = has(&[
+        "headphone", "headset", "earphone", "airpods", "earpods", "earbuds", "buds", "beats", "casque", "écouteurs",
+        "quietcomfort", "wh-", "wf-",
+    ]);
     match transport {
         transport::BUILT_IN => match source {
             Some(source::HEADPHONES) => Route::Headphones,
@@ -55,9 +59,13 @@ pub fn classify(transport: u32, source: Option<u32>, name: &str) -> Route {
             _ if headset_name => Route::Headphones,
             _ => Route::Speakers,
         },
-        // AirPods and other Bluetooth headsets; a Bluetooth speaker says so
+        // Bluetooth is headphones or a speaker, and only the name tells:
+        // a speaker by its name, a headset by its name, else ask (round 2:
+        // the user's speaker "Bose Mini Gabriel" read as headphones, so
+        // the agent talked over its own voice)
         transport::BLUETOOTH | transport::BLUETOOTH_LE if speaker_name => Route::Speakers,
-        transport::BLUETOOTH | transport::BLUETOOTH_LE => Route::Headphones,
+        transport::BLUETOOTH | transport::BLUETOOTH_LE if headset_name => Route::Headphones,
+        transport::BLUETOOTH | transport::BLUETOOTH_LE => Route::Unknown,
         // a USB headset says so; a USB DAC to monitors does not
         transport::USB | transport::THUNDERBOLT if headset_name => Route::Headphones,
         transport::USB | transport::THUNDERBOLT if speaker_name => Route::Speakers,
@@ -187,12 +195,18 @@ mod tests {
     }
 
     #[test]
-    fn bluetooth_is_headphones_unless_it_is_a_speaker() {
+    fn bluetooth_says_what_it_is_by_its_name_or_stays_unknown() {
         assert_eq!(classify(transport::BLUETOOTH, None, "Gabriel's AirPods Pro"), Headphones);
         assert_eq!(classify(transport::BLUETOOTH, None, "WH-1000XM4"), Headphones);
+        assert_eq!(classify(transport::BLUETOOTH, None, "Bose QuietComfort 45"), Headphones);
         assert_eq!(classify(transport::BLUETOOTH_LE, None, "Galaxy Buds2"), Headphones);
         assert_eq!(classify(transport::BLUETOOTH, None, "JBL Flip Speaker"), Speakers);
         assert_eq!(classify(transport::BLUETOOTH, None, "Bose SoundLink Mini"), Speakers);
+        assert_eq!(classify(transport::BLUETOOTH, None, "Beats Pill"), Speakers);
+        // the user's speaker, renamed: nothing in the name says which
+        assert_eq!(classify(transport::BLUETOOTH, None, "Bose Mini Gabriel"), Unknown);
+        assert_eq!(classify(transport::BLUETOOTH, None, "JBL Charge 5"), Unknown);
+        assert_eq!(classify(transport::BLUETOOTH_LE, None, ""), Unknown);
     }
 
     #[test]
