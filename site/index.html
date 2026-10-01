@@ -625,7 +625,7 @@
   .org { margin:72px 0 88px; }
   @media (max-width: 640px) { .org { margin:44px 0 56px; } }
 </style>
-<script>{ const r = document.documentElement; r.classList.add('v2'); let d = null; try { d = localStorage.getItem('lbd'); } catch {} if ((d ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1') r.classList.add('pd'); }</script>
+<script>{ const r = document.documentElement; r.classList.add('v2'); let d = null; try { d = localStorage.getItem('bise-theme'); } catch {} if ((d ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1') r.classList.add('pd'); }</script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -1761,8 +1761,8 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   });
   // dark paper: the ◐ button, the d key, ?dark
   const r = document.documentElement, q = new URLSearchParams(location.search);
-  const dark = (on, keep) => { r.classList.toggle('pd', on); if (keep) localStorage.setItem('lbd', on ? '1' : '0'); document.querySelector('meta[name=theme-color]').content = on ? '#171513' : '#f2ede2'; };
-  dark(q.has('dark') || (!q.has('light') && (localStorage.getItem('lbd') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1'));
+  const dark = (on, keep) => { r.classList.toggle('pd', on); if (keep) localStorage.setItem('bise-theme', on ? '1' : '0'); document.querySelector('meta[name=theme-color]').content = on ? '#171513' : '#f2ede2'; };
+  dark(q.has('dark') || (!q.has('light') && (localStorage.getItem('bise-theme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0')) === '1'));
   document.getElementById('theme').onclick = () => dark(!r.classList.contains('pd'), true);
   addEventListener('keydown', (e) => { if (e.key === 'd' && !e.metaKey && !e.ctrlKey && !e.altKey && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) dark(!r.classList.contains('pd'), true); });
 }</script>
