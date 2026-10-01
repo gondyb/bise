@@ -21,7 +21,7 @@ page("overview/intro", "introduction",
 r"""
 bise is a terminal app: one thread where you talk to main, your team lead, while agents work behind it. everything on screen is text in cells, so this system is made of cells too: colors, glyphs, rows, keys and words.
 
-this site is the layer above the [brand book](/book/). the book keeps every exact spec with its issue number. here you get the patterns and the reasons, so a new screen feels like the old ones without anyone having to ask. when the two disagree, the book wins and this site gets fixed.
+**agents: read [design.md](/design.md)**, the same system in about 3,000 tokens. this site is the layer above the [brand book](/book/). the book keeps every exact spec with its issue number. here you get the patterns and the reasons, so a new screen feels like the old ones without anyone having to ask. when the two disagree, the book wins and this site gets fixed.
 
 ## start here
 

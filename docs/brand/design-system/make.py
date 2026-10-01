@@ -169,6 +169,8 @@ def build():
     tpl = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "shell.html"), encoding="utf-8").read()
     doc = tpl.replace("@@NAV@@", "\n".join(nav)).replace("@@ARTICLES@@", "\n".join(arts)).replace("@@FIRST@@", order[0])
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    # the dense reference for agents, served as text at bise.dev/design.md
+    import shutil; shutil.copy(os.path.join(ROOT, "docs/brand/design-system.md"), os.path.join(ROOT, "site/design.md"))
     open(OUT, "w", encoding="utf-8").write(doc)
     print(len(order), "pages", len(doc), "bytes")
     for w, s, why in BAD: print("BAD", w, why, "|", s)
