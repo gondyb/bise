@@ -344,7 +344,7 @@ r"""
 | `·` | starting, sending | `.` |
 | `•` | unread (accent) | `!` |
 | `ψ` | its own worktree | `Y` |
-| `↑` | its pull request | `^` |
+| `↑` | its pull request *(designed)* | `P` |
 | `$` | a bash call | `$` |
 | `ƒ` | a TypeScript call | `f` |
 | `±` | a file edit | `%` |
