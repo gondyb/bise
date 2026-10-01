@@ -344,7 +344,8 @@ fi
 # ---- quick
 t0=$SECONDS
 cache="${CARGO_TARGET_DIR:-$root/rust/target}/gate-cache"
-# no dot in its path (mktemp -t adds one): the PROOF shards import from it
+# the PROOF shards sit in a copy of bend/ in it and import it relatively
+# (bend refuses an absolute import path with a dot, like ~/.bise/gate/...)
 out="$(mktemp -d "${TMPDIR:-/tmp}/sbgateXXXXXX")"
 mkdir -p "$cache"
 fail() {  # <name> <log>: the failures, the log kept
