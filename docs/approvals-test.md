@@ -20,15 +20,17 @@ you saw.
 
 ## The steps
 
-1. **yolo first.** Start bise. The key bar ends with `⇧⇥ yolo`. Ask an
+1. **yolo first.** Start bise. The divider names the mode after the model:
+   `you → main · opus 5.5 · high · yolo` (the key bar says nothing of it). Ask an
    agent for anything, even `git push --force` to a scratch branch: nothing
    asks.
-2. **Switch to auto.** Press `shift+tab`. For 3 s the key bar says
+2. **Switch to auto.** Press `shift+tab`. For 3 s the divider's word says
+   `auto` in the accent color and the key bar says
    `auto · safe calls run, risky ones ask you`; the first time, a tip says
    what leaves the machine (Jev: "the command, the script it runs, and your
    request"; a chat model: "<model> checks the commands that aren't
-   clearly safe"). Quit and start bise again: the bar still says
-   `⇧⇥ auto` (`approvals = "auto"` in `~/.bise/config.toml`).
+   clearly safe"). Quit and start bise again: the divider still says
+   `· auto` (`approvals = "auto"` in `~/.bise/config.toml`).
 3. **Work in the repo.** Ask an agent to read and edit files, then to run
    `ls`, `rg`, `git status`, a `sed -i` on a repo file, and a commit on a
    private index (`GIT_INDEX_FILE=… git commit-tree …`). No card, and they
@@ -77,7 +79,7 @@ card is still there and answering it reaches the agent.
 `tests/approvals_restart_e2e.py` (a restart keeps the card, rule removal),
 `tests/approvals_sandbox_e2e.py` (steps 3-5 with the sandbox),
 `tests/edit_tools_e2e.py`, `tests/agent_tmp_e2e.py`,
-`tests/tui_approvals_tmux.py` (the key bar, the flash, `/approvals`, the
+`tests/tui_approvals_tmux.py` (the divider's mode, the flash, `/approvals`, the
 cards and folds on screen, the sandbox card), `tests/tui_checker_tmux.py`
 (the `checker` row in `/models`). Not covered: a real Jev call (no
 TypeSafe or OpenRouter key on the build machine) and a real chat model as

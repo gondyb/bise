@@ -831,7 +831,8 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
 /// What the divider says after the name of the agent you view
-/// (BISE-135, BISE-136): its model and effort, where it works.
+/// (BISE-135, BISE-136): its model and effort, the session's approvals
+/// mode, where it works.
 pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
     let sb = &app.sb;
     let Some(a) = sb.agent(&sb.focus) else {
@@ -843,6 +844,8 @@ pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
         effort: a.effort.clone(),
         tag: crate::models::tag(&a.model, &a.effort, &others),
         place: place_label(a),
+        mode: sb.approvals.mode.clone(),
+        flash: crate::keybar::flashing(&sb.approvals),
     }
 }
 

@@ -83,6 +83,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").top(),
     r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").top(),
     r(TALK, "/", "the commands, then their arguments (agents, inbox items, versions…): tab completes, ⏎ runs").top(),
+    r(TALK, "⇧⇥", "switch the approvals mode: yolo / auto (the word after the model, on the divider)").top(),
     r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
     r(TALK, "hold ctrl|hold ⌥|hold cmd", "show that key's shortcuts where they act (Ghostty, kitty; cmd once a cmd key reached bise; typing a ⌥ character hides them)").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
@@ -326,11 +327,11 @@ fn spans_width(spans: &[Span]) -> usize {
     spans.iter().map(|s| s.content.width()).sum()
 }
 
-/// A key as drawn: in ASCII mode `⌥` reads `alt` and `…` reads `...`
+/// A key as drawn: in ASCII mode `⌥` reads `alt`, `⇧⇥` `shift+tab` and `…` reads `...`
 /// (QA 12: the cell-by-cell net would give `M + 0;9`).
 fn key_text(step: &str) -> String {
     if theme::ascii_mode() {
-        step.replace('⌥', "alt").replace('…', "...")
+        step.replace('⌥', "alt").replace('…', "...").replace("⇧⇥", "shift+tab")
     } else {
         step.to_string()
     }

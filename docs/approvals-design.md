@@ -701,18 +701,24 @@ by an edit is lost (said in `/help`). A recursive delete of a root itself
   restart: the last pick. `bise config get/set approvals` works.
   `BISE_APPROVALS` wins for that session and is never written; a `shift+tab`
   then switches this session only and the flash says so.
-- **Indicator** (designer): at the right end of the key bar, always on, dim,
-  with its key: `⇧⇥ yolo` / `⇧⇥ auto` (ASCII `shift+tab yolo`). The same
-  dim for both modes; never the error color, never accent at rest. Zen fades it
-  like the rest of the chrome. On a narrow screen the key bar drops its
-  other hints first.
-- **Switch flash** (designer): for 3 s the key bar becomes one line, the
-  mode word in accent and a dim sentence:
+- **Indicator** (designer; the user's feedback on the branch): on the
+  divider, after the model and its effort, the same faint ` · `:
+  `you → main · opus 5.5 · high · yolo`, on every agent's divider (the mode
+  is the session's). Dim for both modes; never the error color, never
+  accent at rest. Zen fades it like the rest of the chrome. Short on room
+  it goes last: `… · high · yolo · ψ place` → `… · yolo · ψ` →
+  `opus·hi · yolo · ψ` → `yolo · ψ` → `yolo`. The key bar does not show
+  the mode; `⇧⇥` lives in the first-launch tip, in help (`⇧⇥ switch the
+  approvals mode`) and on `/approvals`.
+- **Switch flash** (designer): for 3 s the divider's mode word is in accent
+  (bold under `NO_COLOR`) and the key bar becomes one line, the mode word
+  in accent and a dim sentence; both end together:
   - `yolo · everything runs, nothing asks`
   - `auto · safe calls run, risky ones ask you`
   - `auto · edits run, commands ask you` (checker off)
-- **First launch**: a one-time tip (the BISE-61 box): "you're in yolo:
-  agents run commands without asking. ⇧⇥ changes it."
+- **First launch**: a one-time tip (the BISE-61 box) right above the
+  divider's mode word: "you're in yolo: agents run commands without asking.
+  ⇧⇥ changes it."
 - **First switch to `auto`** with a checker that sends data out, a one-time
   tip that says exactly what leaves the machine (designer):
   - Jev: "in auto, commands that aren't clearly safe go to Jev by TypeSafe

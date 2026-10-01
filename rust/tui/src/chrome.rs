@@ -9,7 +9,7 @@ use crate::layout::Cols;
 use crate::theme::{self, accent, dim, faint};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::symbols::border;
 use ratatui::text::Span;
 use unicode_width::UnicodeWidthStr;
@@ -217,11 +217,12 @@ pub(crate) struct Working {
 }
 
 /// What the divider says after the name (BISE-135, BISE-136): the model
-/// the agent runs and its reasoning effort (dim, ` · ` faint), then `ψ
-/// place` when it does not work in the shared checkout. Short on room,
-/// before the state loses anything: the place's name goes (ψ stays),
-/// then the long `opus 5.5 · high` becomes the tag `opus·hi`, then the
-/// tag goes ([`Who::tails`]).
+/// the agent runs and its reasoning effort (dim, ` · ` faint), the
+/// session's approvals mode (`yolo`, dim; accent for 3 s after a switch),
+/// then `ψ place` when it does not work in the shared checkout. Short on
+/// room, before the state loses anything: the place's name goes (ψ
+/// stays), then the long `opus 5.5 · high` becomes the tag `opus·hi`,
+/// then the tag goes, then ψ; the mode goes last ([`Who::tails`]).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Who {
     /// the long name, `opus 5.5`; "" = not known yet
@@ -231,6 +232,10 @@ pub(crate) struct Who {
     /// the short form, `opus·hi`
     pub(crate) tag: String,
     pub(crate) place: Option<String>,
+    /// the approvals mode, `yolo`; "" = the hub has not said yet
+    pub(crate) mode: String,
+    /// shift+tab switched it less than 3 s ago: the word in accent
+    pub(crate) flash: bool,
 }
 
 impl Who {
@@ -263,12 +268,25 @@ impl Who {
                 vec![sep(), d(&self.tag)]
             }
         };
+        // approvals-design.md §8: the word that says whether commands ask
+        let mode = || -> Vec<Span<'static>> {
+            if self.mode.is_empty() {
+                return Vec::new();
+            }
+            let st = match self.flash {
+                false => Style::default().fg(dim()),
+                true if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) => Style::default().add_modifier(Modifier::BOLD),
+                true => Style::default().fg(accent()),
+            };
+            vec![sep(), Span::styled(self.mode.clone(), st)]
+        };
         let mut out: Vec<Vec<Span<'static>>> = Vec::new();
         for t in [
-            [long(), place(true)].concat(),
-            [long(), place(false)].concat(),
-            [short(), place(false)].concat(),
-            place(false),
+            [long(), mode(), place(true)].concat(),
+            [long(), mode(), place(false)].concat(),
+            [short(), mode(), place(false)].concat(),
+            [mode(), place(false)].concat(),
+            mode(),
         ] {
             if out.last().is_none_or(|l| width_of(l) != width_of(&t)) {
                 out.push(t);
@@ -501,6 +519,7 @@ mod tests {
             effort: "high".into(),
             tag: "opus·hi".into(),
             place: Some("fix-login".into()),
+            ..Who::default()
         };
         let state = "idle · 42k";
         let row = |w| divider_row_who(w, "auth-fix", &who, None, state);
@@ -517,12 +536,47 @@ mod tests {
         let r = divider_row_who(90, "main", &main, None, state);
         assert!(r.contains("you → main · opus 5.5 · high ─"), "{r}");
         // a model with no effort: the model alone
-        let plain = Who { model: "gpt-4.1".into(), effort: String::new(), tag: "gpt-4.1".into(), place: None };
+        let plain = Who { model: "gpt-4.1".into(), tag: "gpt-4.1".into(), ..Who::default() };
         assert!(divider_row_who(90, "docs", &plain, None, state).contains("you → docs · gpt-4.1 ─"));
         // while it works, the tail goes before the gust's steps
         let w = Working { motion: crate::gust::Motion::Still, age: Some("42s".into()) };
         let r = divider_row_who(90, "auth-fix", &who, Some(&w), "31%");
         assert!(r.contains("auth-fix · opus 5.5 · high · ψ fix-login ") && r.contains("working · 42s"), "{r}");
+    }
+
+    /// The user's feedback on approvals (item 1): the mode after the
+    /// model, `· yolo`, dim; short on room it goes last, after ψ.
+    #[test]
+    fn the_divider_says_the_approvals_mode_after_the_model() {
+        let who = Who {
+            model: "opus 5.5".into(),
+            effort: "high".into(),
+            tag: "opus·hi".into(),
+            place: Some("fix-login".into()),
+            mode: "yolo".into(),
+            flash: false,
+        };
+        let state = "idle · 42k";
+        let row = |w| divider_row_who(w, "auth-fix", &who, None, state);
+        assert!(row(90).contains("you → auth-fix · opus 5.5 · high · yolo · ψ fix-login ─"), "{}", row(90));
+        assert!(row(65).contains("you → auth-fix · opus 5.5 · high · yolo · ψ ─"), "{}", row(65));
+        assert!(row(52).contains("you → auth-fix · opus·hi · yolo · ψ ─"), "{}", row(52));
+        assert!(row(42).contains("you → auth-fix · yolo · ψ ─"), "{}", row(42));
+        assert!(row(38).contains("you → auth-fix · yolo ─"), "{}", row(38));
+        for w in [90, 65, 52, 42, 38] {
+            assert!(row(w).contains(" idle · 42k "), "{}", row(w));
+        }
+        let main = Who { place: None, ..who.clone() };
+        assert!(divider_row_who(90, "main", &main, None, state).contains("you → main · opus 5.5 · high · yolo ─"));
+        // the word's style: dim at rest, accent for the switch's 3 s
+        let style = |who: &Who| {
+            let t = who.tails().remove(0);
+            t.iter().find(|s| s.content == "yolo").map(|s| s.style.fg).expect("the mode")
+        };
+        assert_eq!(style(&who), Some(dim()));
+        assert_eq!(style(&Who { flash: true, ..who.clone() }), Some(accent()));
+        // the hub has not said the mode yet: no word
+        assert!(!divider_row_who(90, "main", &Who { mode: String::new(), ..main }, None, state).contains("yolo"));
     }
 
     fn divider_row(width: u16, working: Option<&Working>, state: &str) -> String {

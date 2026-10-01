@@ -324,16 +324,34 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
             let read = theme::glyph(theme::G_READ);
             rows(feed).filter(|(_, t)| t.trim_start().starts_with(theme::glyph(theme::G_YOU)) && t.contains(read)).map(|(y, _)| y).next_back()
         }
-        // the key bar's mode (approvals-design.md §8): the box sits right
-        // above the composer pane, at its right end, never over your text
-        Hint::FirstYolo | Hint::FirstAuto => {
-            let area = buf.area;
-            let rows = |r: Rect| (r.y..r.bottom()).rev().map(move |y| (y, row_text(buf, y, r.x, r.right())));
-            let bar = rows(area).find(|(_, t)| t.contains(crate::keybar::MODE_KEY) || t.contains("shift+tab"))?.0;
-            // the composer's top border: the last `├` row above the key bar
-            rows(Rect { height: bar.saturating_sub(area.y), ..area }).find(|(_, t)| t.trim_start().starts_with('├')).map(|(y, _)| y)
-        }
+        // the divider's mode word (approvals-design.md §8, designer):
+        // the box sits right above it, never over your text
+        Hint::FirstYolo | Hint::FirstAuto => mode_word(buf, h).map(|(_, y)| y),
     }
+}
+
+/// Where the divider says the mode of hint `h` (`you → main · opus 5.5 ·
+/// high · yolo`): the word's first column and its row, the lowest such row.
+fn mode_word(buf: &Buffer, h: Hint) -> Option<(u16, u16)> {
+    let word = if h == Hint::FirstAuto { " · auto" } else { " · yolo" };
+    let area = buf.area;
+    let arrow = theme::glyph("→");
+    (area.y..area.bottom()).rev().find_map(|y| {
+        let cells: Vec<&str> = (area.x..area.right()).map(|x| buf[(x, y)].symbol()).collect();
+        let t: String = cells.concat();
+        if !t.contains(&format!("you {arrow} ")) {
+            return None;
+        }
+        let at = t.find(word)?;
+        // the byte offset to a column: count the cells before it
+        let mut len = 0;
+        let col = cells.iter().position(|c| {
+            let here = len >= at;
+            len += c.len();
+            here
+        })?;
+        Some((area.x + col as u16 + 3, y))
+    })
 }
 
 /// The row of the last card title in `feed`, else the inbox's label.
@@ -377,7 +395,8 @@ pub(crate) fn place(h: Hint, y: u16, lines: u16, area: Rect, feed: Rect, panel: 
         }
         // above the card, the arrow pointing down at it
         Hint::FirstCard => (feed.x + 4, y.checked_sub(bh)?.max(area.y)),
-        // above the key bar's mode, at the right end
+        // above the divider's mode word, at the right end ([`draw`]
+        // moves it over the word)
         Hint::FirstYolo | Hint::FirstAuto => (area.right().checked_sub(bw + 1)?, y.checked_sub(bh)?.max(area.y)),
     };
     Some(Rect { x, y, width: bw, height: bh }.intersection(area))
@@ -408,7 +427,12 @@ pub(crate) fn draw(f: &mut Frame) {
     };
     let Some((h, y)) = found else { return };
     let lines = hint_lines(h, TEXT_W);
-    let Some(r) = place(h, y, lines.len() as u16, area, feed, panel) else { return };
+    let Some(mut r) = place(h, y, lines.len() as u16, area, feed, panel) else { return };
+    // the mode's tip: its left edge 2 columns before the word, as far
+    // right as the screen lets it
+    if let (Hint::FirstYolo | Hint::FirstAuto, Some((x, _))) = (h, mode_word(f.buffer_mut(), h)) {
+        r.x = x.saturating_sub(2).max(area.x).min(r.x);
+    }
     draw_box(f, r, lines);
     if active.is_none() {
         bring_up(h);

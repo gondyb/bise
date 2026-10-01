@@ -1,6 +1,7 @@
 """Approvals (docs/approvals-design.md §8-§10) in a real terminal (tmux)
 against the fake provider, the checker off, a temp HOME and BISE_HOME:
-the key bar's `⇧⇥ yolo`, shift+tab and its 3-second flash, the mode kept
+the divider's mode word (`you → main · <model> · yolo`, none in the key
+bar), shift+tab and its 3-second flash, the mode kept
 in config.toml, the `/approvals` screen (mode, checker, the saved rules
 with their age and source), a force push to main in auto: the tool row
 `? waiting for you`, the card in the inbox (main's view and a task's),
@@ -78,16 +79,21 @@ def main():
 def session(E, env, home, bise, shot):
     with tui_session(COLS, ROWS, env=env, E=E) as t:
         t.wait("bise :*")
-        sc = t.wait("⇧⇥ yolo")
-        last = sc.rstrip("\n").split("\n")
-        bar = [l for l in last if "⇧⇥ yolo" in l][0]
-        assert bar.rstrip().rstrip("│").rstrip().endswith("⇧⇥ yolo"), bar
-        shot(t, "yolo-key-bar", sc)
+        sc = t.wait(" · yolo ")
+        rows = sc.rstrip("\n").split("\n")
+        div = [l for l in rows if "you → main" in l][-1]
+        assert " · yolo " in div, div
+        # the key bar no longer says it (the user's feedback, item 1)
+        assert "⇧⇥" not in sc and "shift+tab" not in sc, sc
+        shot(t, "yolo-divider", sc)
         # shift+tab: the flash, then the tag says auto; config.toml keeps it
         t.keys("BTab")
         sc = t.wait("auto · edits run, commands ask you")
         shot(t, "switch-flash", sc)
-        t.wait("⇧⇥ auto", timeout=10)
+        # the explanation leaves the key bar after 3 s; the divider says auto
+        t.wait_gone("edits run, commands ask you", timeout=10)
+        div = [l for l in t.screen().split("\n") if "you → main" in l][-1]
+        assert " · auto " in div and " · yolo " not in div, div
         cfg = open(os.path.join(bise, "config.toml")).read()
         assert 'approvals = "auto"' in cfg, cfg
         # /approvals: the mode, the checker, the rules (designer's mock A, 17)
