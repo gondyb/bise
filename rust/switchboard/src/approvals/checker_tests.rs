@@ -110,40 +110,65 @@ fn the_state_is_cut() {
 }
 
 #[test]
-fn jev_is_asked_three_nouls_and_two_without_a_task() {
+fn jev_is_asked_five_risks_with_their_criteria() {
     let ps = parts("cargo test -p x");
     let with = checker_state(&call("bash", json!({})), &ps, "fix the tests", &[], None);
     let r = jev_request(&with, "jev-1.13.0");
     assert_eq!(r["model"], "jev-1.13.0");
     let q = r["questions"].as_object().unwrap();
-    assert_eq!(q.len(), 3);
-    assert_eq!(q["contained"]["type"], "noul");
-    assert!(q["secrets"]["instructions"].as_str().unwrap().contains("credentials"));
+    let mut ids: Vec<&str> = q.keys().map(String::as_str).collect();
+    ids.sort();
+    assert_eq!(ids, ["destroys", "machine", "others_processes", "publishes", "secrets"]);
+    for (id, v) in q {
+        assert_eq!(v["type"], "noul", "{id}");
+        assert!(!v["criteria"]["true"].as_str().unwrap().is_empty() && !v["criteria"]["false"].as_str().unwrap().is_empty(), "{id}");
+    }
+    // the risks judge the command text, not what a project script might do
+    assert!(q["destroys"]["instructions"].as_str().unwrap().contains("Judge what the command text itself does"));
+    assert!(q["secrets"]["instructions"].as_str().unwrap().contains("credential"));
     assert_eq!(r["state"]["commands"][0], "cargo test -p x");
+    // the task goes in the state; the questions are the same without one
+    assert_eq!(r["state"]["task"], "fix the tests");
     let headless = checker_state(&call("bash", json!({})), &ps, "", &[], None);
-    let q = jev_request(&headless, "m")["questions"].as_object().unwrap().clone();
-    assert!(!q.contains_key(SERVES_TASK) && q.len() == 2);
+    assert_eq!(jev_request(&headless, "m")["questions"].as_object().unwrap().len(), 5);
 }
 
 #[test]
 fn jev_answers_are_read_strictly() {
-    let st = checker_state(&call("bash", json!({})), &parts("ls"), "t", &[], None);
-    let ok = json!({"model": "jev-1.13.0", "answers": {
-        "contained": {"type": "noul", "noul": 0.97},
-        "serves_task": {"type": "noul", "noul": 0.9},
-        "secrets": {"type": "noul", "noul": 0.01}},
-        "usage": {"input_tokens": 1200, "output_tokens": 3}});
-    let s = jev_scores(&st, &ok).unwrap();
-    assert_eq!(s.scores.len(), 3);
-    assert_eq!(s.input_tokens, 1200);
-    assert!((s.scores[0].1 - 0.97).abs() < 1e-6);
+    let ok: Value = serde_json::from_str(&answers(0.03, 0.01)).unwrap();
+    let s = jev_scores(&ok).unwrap();
+    assert_eq!(s.scores.len(), 5);
+    assert_eq!(s.input_tokens, 1000);
+    assert_eq!(s.scores[0].0, PUBLISHES);
+    assert!((s.scores[0].1 - 0.03).abs() < 1e-6);
     let mut missing = ok.clone();
     missing["answers"].as_object_mut().unwrap().remove("secrets");
-    assert!(matches!(jev_scores(&st, &missing), Err(CheckErr::BadAnswer(_))));
+    assert!(matches!(jev_scores(&missing), Err(CheckErr::BadAnswer(_))));
     let mut out_of_range = ok.clone();
-    out_of_range["answers"]["contained"]["noul"] = json!(1.7);
-    assert!(jev_scores(&st, &out_of_range).is_err());
-    assert!(jev_scores(&st, &json!({"error": "x"})).is_err());
+    out_of_range["answers"]["destroys"]["noul"] = json!(1.7);
+    assert!(jev_scores(&out_of_range).is_err());
+    // some routes wrap the number
+    let mut wrapped = ok.clone();
+    wrapped["answers"]["machine"]["noul"] = json!({"probability": 0.04});
+    assert!(jev_scores(&wrapped).is_ok());
+    assert!(jev_scores(&json!({"error": "x"})).is_err());
+}
+
+#[test]
+fn jevs_rule_and_its_reason_words() {
+    let at = |risk: f32, secrets: f32| -> Vec<(String, f32)> {
+        JEV_QUESTIONS.iter().map(|q| (q.id.to_string(), if q.id == SECRETS { secrets } else { risk })).collect()
+    };
+    assert!(decide_jev(&at(0.2, 0.15)).allow);
+    assert_eq!(decide_jev(&at(0.21, 0.0)).reason, WHY_UNDOABLE);
+    assert_eq!(decide_jev(&at(0.0, 0.16)).reason, WHY_SECRETS);
+    assert_eq!(decide_jev(&at(0.9, 0.9)).reason, WHY_SECRETS);
+    // one risk is enough
+    let mut one = at(0.01, 0.01);
+    one[2].1 = 0.5;
+    assert_eq!(decide_jev(&one).reason, WHY_UNDOABLE);
+    // a missing score counts against
+    assert!(!decide_jev(&at(0.01, 0.01)[1..]).allow);
 }
 
 #[test]
@@ -293,11 +318,13 @@ fn server(reply: fn(&Value) -> (u16, String)) -> (u16, Seen) {
     (port, seen)
 }
 
-fn answers(c: f64, t: f64, s: f64) -> String {
-    json!({"model": "jev-1.13.0", "answers": {
-        "contained": {"type": "noul", "noul": c}, "serves_task": {"type": "noul", "noul": t},
-        "secrets": {"type": "noul", "noul": s}}, "usage": {"input_tokens": 1000, "output_tokens": 0}})
-    .to_string()
+/// Jev's reply: every risk at `risk`, `secrets` at `secrets`.
+fn answers(risk: f64, secrets: f64) -> String {
+    let a: serde_json::Map<String, Value> = JEV_QUESTIONS
+        .iter()
+        .map(|q| (q.id.to_string(), json!({"type": "noul", "noul": if q.id == SECRETS { secrets } else { risk }})))
+        .collect();
+    json!({"model": "jev-1.13.0", "answers": a, "usage": {"input_tokens": 1000, "output_tokens": 0}}).to_string()
 }
 
 fn env_with(k: &'static str, v: &'static str) -> Env {
@@ -309,9 +336,9 @@ fn jev_through_typesafe_against_a_fake_server() {
     let (port, seen) = server(|v| {
         let cmd = v["state"]["commands"][0].as_str().unwrap_or("");
         if cmd.contains("rm") {
-            (200, answers(0.2, 0.9, 0.0))
+            (200, answers(0.8, 0.0))
         } else {
-            (200, answers(0.97, 0.95, 0.01))
+            (200, answers(0.03, 0.01))
         }
     });
     let (h, dir) = home(&format!(
@@ -324,7 +351,7 @@ fn jev_through_typesafe_against_a_fake_server() {
     match r.check(&req("rm -rf ../other")) {
         CheckOut::Card { reason, detail } => {
             assert_eq!(reason, WHY_UNDOABLE);
-            assert!(detail.contains("contained 0.20"), "{detail}");
+            assert!(detail.contains("destroys 0.80"), "{detail}");
         }
         o => panic!("{o:?}"),
     }
@@ -343,7 +370,7 @@ fn jev_through_typesafe_against_a_fake_server() {
 
 #[test]
 fn jev_through_openrouter_when_picked() {
-    let (port, seen) = server(|_| (200, answers(0.95, 0.95, 0.0)));
+    let (port, seen) = server(|_| (200, answers(0.02, 0.0)));
     // unset with OpenRouter's key there: never Jev (the small jobs
     // model, none in this home)
     let (h, dir) = home(&format!("[providers.openrouter]\nbase_url = \"http://127.0.0.1:{port}/api/v1\"\n"));

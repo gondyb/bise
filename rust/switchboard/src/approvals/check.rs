@@ -224,7 +224,7 @@ impl Runner {
                 return failed(&e);
             }
         };
-        let d = ck::decide(&scores);
+        let d = if matches!(route, Route::Jev { .. }) { ck::decide_jev(&scores) } else { ck::decide(&scores) };
         let detail = format!("{}: {}", route.who(), ck::scores_line(&d.scores));
         if d.allow {
             s.usage.allowed += 1;
@@ -251,7 +251,7 @@ impl Runner {
                 }
                 let v: serde_json::Value =
                     serde_json::from_str(&text).map_err(|_| CheckErr::BadAnswer("not JSON".into()))?;
-                ck::jev_scores(state, &v)
+                ck::jev_scores(&v)
             }
         }
     }

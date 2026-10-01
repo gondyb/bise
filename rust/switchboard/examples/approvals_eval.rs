@@ -1,7 +1,8 @@
 //! The checker eval (design §4, docs/approvals-eval/): labeled commands
 //! through the real checker, one route at a time. Prints one JSON line per
 //! command, then the table: dangerous allowed, share to the user, latency,
-//! cost. The route is the `checker` role's value:
+//! cost (a fresh runner per command: no cool-down between them; a failed
+//! check is tried 3 times). The route is the `checker` role's value:
 //!
 //!   EVAL_MODEL=mistral/mistral-small-latest EVAL_REPL=./repl-live \
 //!   cargo run -p switchboard --example approvals_eval -- docs/approvals-eval/checker-40.jsonl
@@ -35,13 +36,17 @@ fn main() {
         let _ = std::os::unix::fs::symlink(a, root.join("auth.json"));
     }
     let home = bise_home::Home::at(&root);
-    let mut runner = Runner::new(&home);
-    if let Ok(repl) = std::env::var("EVAL_REPL") {
-        let repl = std::fs::canonicalize(repl).expect("EVAL_REPL");
-        let app = repl.parent().map(PathBuf::from).unwrap_or_default();
-        runner = runner.with_oneshot(repl, app);
-    }
-    eprintln!("route: {:?}", runner.route());
+    let mk = || {
+        let mut runner = Runner::new(&home);
+        if let Ok(repl) = std::env::var("EVAL_REPL") {
+            let repl = std::fs::canonicalize(repl).expect("EVAL_REPL");
+            let app = repl.parent().map(PathBuf::from).unwrap_or_default();
+            runner = runner.with_oneshot(repl, app);
+        }
+        runner
+    };
+    eprintln!("route: {:?}", mk().route());
+    let (mut u_tokens, mut u_usd) = (0u64, 0f64);
     let text = std::fs::read_to_string(&file).expect("the labeled file");
     let mut rows: Vec<(String, bool, f64, String)> = vec![];
     let mut chat_chars = 0usize;
@@ -70,9 +75,20 @@ fn main() {
             denied: None,
         };
         chat_chars += chat_request(&checker_state(&req.call, &req.parts, &req.task, &[], None)).len();
-        let t = Instant::now();
-        let out = runner.check(&req);
-        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        // a fresh runner per command (no cool-down between them), one retry on a failed check
+        let mut tries = 0;
+        let (out, ms) = loop {
+            let runner = mk();
+            let t = Instant::now();
+            let out = runner.check(&req);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let u = runner.usage();
+            u_tokens += u.input_tokens;
+            u_usd += u.usd;
+            tries += 1;
+            let failed = matches!(&out, CheckOut::Card { reason, .. } if reason.starts_with("i couldn't check"));
+            if !failed || tries >= 3 { break (out, ms); }
+        };
         let (allowed, detail) = match &out {
             CheckOut::Allow { .. } => (true, String::new()),
             CheckOut::Card { reason, detail } => (false, format!("{} | {}", reason, detail)),
@@ -88,15 +104,14 @@ fn main() {
     let mut ms: Vec<f64> = rows.iter().map(|r| r.2).collect();
     ms.sort_by(|a, b| a.total_cmp(b));
     let pct = |p: f64| ms.get(((ms.len() as f64 - 1.0) * p).round() as usize).copied().unwrap_or(0.0);
-    let u = runner.usage();
     let chat = !model.contains("jev");
     let (tokens, usd) = if chat {
         let t = (chat_chars / 4) as u64;
         (t, t as f64 * CHAT_USD_PER_M.0 / 1e6 + (30 * n) as f64 * CHAT_USD_PER_M.1 / 1e6)
     } else {
-        (u.input_tokens, u.usd)
+        (u_tokens, u_usd)
     };
-    println!("| checker | dangerous allowed | fine asked | share to the user | errors | latency p50 / p90 / max | input tokens (chat: estimated) | cost of the 40 |");
+    println!("| checker | dangerous allowed | fine asked | share to the user | errors | latency p50 / p90 / max | input tokens (chat: estimated) | cost of the set |");
     println!(
         "| {} | {} / {} | {} / {} | {:.0} % | {} | {:.0} / {:.0} / {:.0} ms | {} | ${:.5} |",
         model,
