@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise :* · privacy</title>
+<meta name="description" content="what bise and its browser extension, bise computer use, do with your data.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<script>
+(function(){var t=null;try{t=localStorage.getItem("bise-theme")}catch(e){}
+var d=t?t==="1":matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=d?"dark":"light";})();
+</script>
+<style>
+  :root, [data-theme="light"] { --paper:#f2ede2; --ink:#1d1a17; --dim:#5a5349; --kick:#8a8174; --pen:#c8264a; --rule:#d9d1c2; --chip:#e8e1d3; }
+  [data-theme="dark"] { --paper:#171513; --ink:#ece6da; --dim:#b8b0a3; --kick:#8d8579; --pen:#f4a6b0; --rule:#34302b; --chip:#25211e; }
+  * { box-sizing:border-box; }
+  html { -webkit-font-smoothing:antialiased; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:Newsreader, Georgia, serif; font-size:19px; line-height:1.6; }
+  .top { max-width:40em; margin:0 auto; padding:28px 24px 0; display:flex; gap:1ch; align-items:baseline; color:var(--dim); font-size:16px; }
+  .top a { color:var(--ink); text-decoration:none; font-weight:600; }
+  .kiss { font-family:Caveat, cursive; color:var(--pen); font-size:1.35em; }
+  main { max-width:40em; margin:0 auto; padding:36px 24px 96px; }
+  h1 { font-size:44px; font-weight:600; letter-spacing:-.02em; line-height:1.1; margin:0 0 .2em; }
+  .date { color:var(--kick); font-style:italic; margin:0 0 2em; }
+  h2 { font-size:26px; font-weight:600; letter-spacing:-.01em; margin:1.8em 0 .5em; }
+  p { margin:0 0 1em; }
+  ul { margin:0 0 1em; padding-left:1.2em; }
+  li { margin:.45em 0; }
+  li::marker { color:var(--pen); content:"* "; font-family:Caveat, cursive; }
+  b { font-weight:600; }
+  code { font-family:"JetBrains Mono", ui-monospace, monospace; font-size:.8em; background:var(--chip); border-radius:4px; padding:1px 5px; }
+  a { color:var(--ink); text-decoration-color:var(--pen); text-underline-offset:3px; }
+  footer { border-top:1px solid var(--rule); margin-top:3em; padding-top:1em; color:var(--kick); font-size:16px; }
+</style>
+</head>
+<body>
+<div class="top"><a href="/">bise <span class="kiss">:*</span></a><span>· privacy</span></div>
+<main>
+<h1>privacy</h1>
+<p class="date">last updated: October 2026</p>
+
+<p>bise is an app that runs on your Mac. It has no account, no server of its own and no analytics. This page says what bise and its browser extension, <b>bise computer use</b>, do with your data.</p>
+
+<h2>what stays on your Mac</h2>
+<ul>
+<li>Your conversations with the agents, their work, their files and settings live in <code>~/.bise</code> on your Mac.</li>
+<li>Your provider keys stay on your Mac (in your config or your keychain). bise never sends them anywhere but to that provider.</li>
+</ul>
+
+<h2>what goes to your AI provider</h2>
+<p>bise sends the agents' conversations to the AI model provider <b>you</b> chose (for example Anthropic, OpenAI or Mistral), with your key, to get the agents' answers. That provider's own privacy policy applies to what it receives.</p>
+
+<h2>computer use (off unless you turn it on)</h2>
+<p>Computer use is off by default. When you turn it on with <code>/computer-use</code>:</p>
+<ul>
+<li><b>What the agents see.</b> An agent reads the pages it opens in its own tabs (as text, and screenshots when it needs to see the page), and the windows of the Mac apps it drives. That content goes only to the AI provider that agent uses, for that agent's task. It is not sent to bise or to anyone else.</li>
+<li><b>Your tabs stay yours.</b> Agents work in their own tab groups. They don't read or change your other tabs, your history or your bookmarks.</li>
+<li><b>No passwords.</b> Agents never type into password fields. When a site needs you to sign in, the agent asks you to do it.</li>
+<li><b>Some places are always off limits:</b> browser settings, extension stores, password managers, Keychain, Terminal and macOS privacy settings.</li>
+<li><b>Screenshots</b> are saved in the agent's temporary folder on your Mac and deleted with the agent.</li>
+<li><b>The extension</b> talks only to the bise app on the same Mac (Chrome's native messaging). It has no server and no remote code.</li>
+<li><b>Turning it off:</b> <code>/computer-use off</code> stops it; <code>/computer-use uninstall</code> also removes what it installed, and tells you how to remove the extension and the macOS permissions.</li>
+</ul>
+
+<h2>what bise collects</h2>
+<p>Nothing. bise has no telemetry. When you update it, the download comes from GitHub Releases, and GitHub counts downloads.</p>
+
+<h2>contact</h2>
+<p>Questions or concerns: open an issue at <a href="https://github.com/gvergnaud/bise/issues">github.com/gvergnaud/bise/issues</a>, or write to <a href="mailto:gabriel.vergnaud@gmail.com">gabriel.vergnaud@gmail.com</a>.</p>
+
+<footer>bise is open source under Apache-2.0 · <a href="/">bise.dev</a></footer>
+</main>
+</body>
+</html>
