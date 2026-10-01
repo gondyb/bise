@@ -53,7 +53,7 @@ const THEMES: &[(&str, &str)] =
 pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/voice",
-        desc: "turn voice (ctrl+r: you talk, it types) on or off: /voice [setup]",
+        desc: "voice mode's settings (ctrl+r twice: voice mode), dictation on or off: /voice [setup]",
         args: &[Arg::Voice],
     },
     Cmd {
@@ -253,16 +253,16 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
     }
 }
 
-/// `/voice`'s rows: the toggle first (⏎ on it runs the bare `/voice`:
-/// its usual use), then `setup`.
+/// `/voice`'s rows: the settings first (⏎ on it runs the bare `/voice`:
+/// voice mode's settings screen, dictation's on/off in it), then `setup`.
 fn voice_choices(on: bool, q: &str) -> Vec<Choice> {
-    let toggle = if on {
-        ("off", "turn voice off")
+    let desc = if on {
+        "voice mode, its voice, who hears you · dictation is on"
     } else {
-        ("on", "turn voice on (ctrl+r: you talk, it types)")
+        "voice mode, its voice, who hears you · dictation is off"
     };
     [
-        Choice { value: "/voice".into(), label: toggle.0.into(), desc: toggle.1.into(), mark: None },
+        Choice { value: "/voice".into(), label: "settings".into(), desc: desc.into(), mark: None },
         Choice::word("setup", "pick the model that listens to you"),
     ]
     .into_iter()
@@ -745,15 +745,16 @@ mod arg_tests {
         set_versions_dev(&mut app, true);
         assert_eq!(labels(&items(&mut app, "/restart ")), ["current", "abc1234"]);
         assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
-        // BISE-298: /voice's toggle row runs the bare /voice (its usual
-        // use), setup follows; the row says what ⏎ does now
+        // voice mode: /voice's first row runs the bare /voice (the
+        // settings screen, dictation's on/off in it), setup follows
         let v = items(&mut app, "/voice ");
-        assert_eq!(labels(&v), ["on", "setup"]);
+        assert_eq!(labels(&v), ["settings", "setup"]);
         assert_eq!(v[0].run.as_deref(), Some("/voice"));
+        assert!(v[0].desc.contains("dictation is off"), "{}", v[0].desc);
         assert_eq!(v[1].run.as_deref(), Some("/voice setup"));
         app.voice.enabled = true;
-        assert_eq!(labels(&items(&mut app, "/voice ")), ["off", "setup"]);
-        assert_eq!(labels(&items(&mut app, "/voice se")), ["setup"]);
+        assert!(items(&mut app, "/voice ")[0].desc.contains("dictation is on"));
+        assert_eq!(labels(&items(&mut app, "/voice setu")), ["setup"]);
         app.voice.enabled = false;
         // BISE-135: /model and /reasoning, for the agent in view
         app.sb.focus = "auth-fix".into();

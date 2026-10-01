@@ -722,3 +722,36 @@ fn the_ready_to_merge_item() {
     assert_eq!(sent(&mut hub), vec!["/answer 20 1"]);
     assert!(matches!(app.events.last(), Some(Ev::Approval { ok: true, text, .. }) if text == "you answered sad-404: squash and merge"));
 }
+
+/// Voice mode (design §5): the item to answer by voice and its options;
+/// `heard "…" → 1 …` on it for 1.5 s, gone on esc (undo), and the
+/// answer counts as the key would.
+#[test]
+fn an_answer_by_voice_shows_then_counts() {
+    let (mut app, mut hub) = app_with_hub();
+    app.sb.cards = cast();
+    // the top item: the approval, its options
+    let q = voice_question(&app).unwrap();
+    assert_eq!((q.id, q.approval), (14, true));
+    assert_eq!(q.options, vec!["allow once", "always here", "deny"]);
+    open(&mut app);
+    let now = std::time::Instant::now();
+    show_heard(14, "heard \"allow\" → allow once".into(), now);
+    let rows = draw(&mut app, 140, 40);
+    row_of(&rows, "heard \"allow\" → allow once");
+    // only on its item, only for 1.5 s
+    assert_eq!(heard_on(12, now), None);
+    assert_eq!(heard_on(14, now + std::time::Duration::from_millis(1600)), None);
+    // esc undoes: the line goes, nothing sent
+    undo_heard();
+    assert!(!draw(&mut app, 140, 40).iter().any(|r| r.contains("heard \"allow\"")));
+    assert!(sent(&mut hub).is_empty());
+    // it counts: the same answer as the key 1
+    show_heard(14, "heard \"allow\" → allow once".into(), now);
+    assert!(answer_by_voice(&mut app, 14, 0));
+    assert_eq!(heard_on(14, now), None);
+    assert_eq!(sent(&mut hub), vec!["/answer 14 allow once"]);
+    // then the question: its two options
+    let q = voice_question(&app).unwrap();
+    assert_eq!((q.id, q.approval, q.options.len()), (12, false, 2));
+}

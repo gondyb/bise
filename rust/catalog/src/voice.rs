@@ -26,6 +26,9 @@
 use crate::auth::Keys;
 use crate::{split_name, Catalog, Known, Setup, CLI};
 
+// voice mode's keys of `[voice]` (listen, the voice, speed…) are below:
+// [`VoiceModeKeys`].
+
 /// The speech-to-text wire families:
 ///   mistral    POST {base}/audio/transcriptions, multipart, context_bias
 ///   openai     POST {base}/audio/transcriptions, multipart, prompt
@@ -69,12 +72,344 @@ impl VoiceConfig {
                     Some(words) => c.vocabulary = words,
                     None => warn("vocabulary: a list of words, [\"bise\", \"config.toml\"]".into()),
                 },
-                other => warn(format!("{}: unknown key (model, language, vocabulary)", other)),
+                // voice mode's keys: read by [`VoiceModeKeys`], checked here
+                // too so a wrong value is a warning wherever the config is
+                k if MODE_KEYS.contains(&k) => {
+                    if let Err(e) = VoiceModeKeys::default().set(k, x) {
+                        warn(format!("{}: {}", k, e))
+                    }
+                }
+                other => warn(format!(
+                    "{}: unknown key (model, language, vocabulary, {})",
+                    other,
+                    MODE_KEYS.join(", ")
+                )),
             }
         }
         c
     }
 }
+
+// ---- voice mode (docs/voice-mode-plan.md §4.7, design §6) ----
+//
+// ```toml
+// [voice]
+// listen = "auto"          # auto (hands-free with headphones, hold on speakers), hands-free, hold
+// tts_model = "mistral/voxtral-mini-tts-2603"   # unset: the voice role's provider's
+// tts_voice = "…"          # unset: the default voice
+// speed = 1.0              # 0.8 to 1.6
+// read_aloud = "needs"     # needs (what needs you + what you asked), all, nothing
+// sounds = true
+// seen_privacy = true      # the first voice mode showed who hears you
+// ```
+
+/// Voice mode's keys of `[voice]` (the dictation's are model, language,
+/// vocabulary).
+pub const MODE_KEYS: [&str; 7] = ["listen", "tts_model", "tts_voice", "speed", "read_aloud", "sounds", "seen_privacy"];
+
+/// How fast the voice talks, 1 = as the model says it.
+pub const SPEED_MIN: f32 = 0.8;
+pub const SPEED_MAX: f32 = 1.6;
+
+/// When voice mode listens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ListenMode {
+    /// hands-free with headphones, hold space on speakers
+    #[default]
+    Auto,
+    HandsFree,
+    Hold,
+}
+
+impl ListenMode {
+    pub const ALL: [ListenMode; 3] = [ListenMode::Auto, ListenMode::HandsFree, ListenMode::Hold];
+
+    /// As config.toml writes it.
+    pub fn word(self) -> &'static str {
+        match self {
+            ListenMode::Auto => "auto",
+            ListenMode::HandsFree => "hands-free",
+            ListenMode::Hold => "hold",
+        }
+    }
+
+    pub fn of(s: &str) -> Option<ListenMode> {
+        let s = s.trim().to_lowercase().replace(['_', ' '], "-");
+        ListenMode::ALL.into_iter().find(|m| m.word() == s || (s == "handsfree" && *m == ListenMode::HandsFree))
+    }
+}
+
+/// What the agent's messages say aloud in voice mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ReadAloud {
+    /// what needs you + what you asked
+    #[default]
+    Needs,
+    /// everything the agent would write
+    All,
+    Nothing,
+}
+
+impl ReadAloud {
+    pub const ALL: [ReadAloud; 3] = [ReadAloud::Needs, ReadAloud::All, ReadAloud::Nothing];
+
+    pub fn word(self) -> &'static str {
+        match self {
+            ReadAloud::Needs => "needs",
+            ReadAloud::All => "all",
+            ReadAloud::Nothing => "nothing",
+        }
+    }
+
+    pub fn of(s: &str) -> Option<ReadAloud> {
+        let s = s.trim().to_lowercase();
+        ReadAloud::ALL.into_iter().find(|m| m.word() == s)
+    }
+}
+
+/// Voice mode's keys as config.toml sets them (unset: the defaults).
+#[derive(Clone, Debug, PartialEq)]
+pub struct VoiceModeKeys {
+    pub listen: ListenMode,
+    /// "provider/model"; None: the voice role's provider's ([`tts_model`])
+    pub tts_model: Option<String>,
+    /// None: the TTS's default voice
+    pub tts_voice: Option<String>,
+    /// [`SPEED_MIN`]..=[`SPEED_MAX`]
+    pub speed: f32,
+    pub read_aloud: ReadAloud,
+    pub sounds: bool,
+    pub seen_privacy: bool,
+}
+
+impl Default for VoiceModeKeys {
+    fn default() -> Self {
+        VoiceModeKeys {
+            listen: ListenMode::Auto,
+            tts_model: None,
+            tts_voice: None,
+            speed: 1.0,
+            read_aloud: ReadAloud::Needs,
+            sounds: true,
+            seen_privacy: false,
+        }
+    }
+}
+
+impl VoiceModeKeys {
+    /// Read voice mode's keys of `[voice]`; a wrong value keeps its
+    /// default (the warning is [`VoiceConfig::read`]'s).
+    pub fn read(t: &toml::Table) -> VoiceModeKeys {
+        let mut c = VoiceModeKeys::default();
+        if let Some(v) = t.get("voice").and_then(|v| v.as_table()) {
+            for (k, x) in v {
+                if MODE_KEYS.contains(&k.as_str()) {
+                    let _ = c.set(k, x);
+                }
+            }
+        }
+        c
+    }
+
+    /// [`VoiceModeKeys::read`] of config.toml's text; not TOML: the
+    /// defaults.
+    pub fn from_text(config: Option<&str>) -> VoiceModeKeys {
+        config.and_then(|t| t.parse::<toml::Table>().ok()).map(|t| VoiceModeKeys::read(&t)).unwrap_or_default()
+    }
+
+    /// One key; Err: what it takes.
+    pub fn set(&mut self, key: &str, v: &toml::Value) -> Result<(), String> {
+        let s = v.as_str().map(|s| s.trim().to_string());
+        let b = v.as_bool();
+        match key {
+            "listen" => self.listen = s.as_deref().and_then(ListenMode::of).ok_or("auto, hands-free or hold")?,
+            "read_aloud" => self.read_aloud = s.as_deref().and_then(ReadAloud::of).ok_or("needs, all or nothing")?,
+            "tts_model" => match s {
+                Some(m) if crate::split_name(&m).is_some() => self.tts_model = Some(m),
+                Some(m) if m.is_empty() => self.tts_model = None,
+                _ => return Err("a \"provider/model\" name".into()),
+            },
+            "tts_voice" => match s {
+                Some(m) => self.tts_voice = (!m.is_empty()).then_some(m),
+                None => return Err("a voice id (a string)".into()),
+            },
+            "speed" => {
+                let n = match v {
+                    toml::Value::Float(f) => *f as f32,
+                    toml::Value::Integer(i) => *i as f32,
+                    _ => f32::NAN,
+                };
+                if !(SPEED_MIN..=SPEED_MAX).contains(&n) {
+                    return Err(format!("a number from {} to {}", SPEED_MIN, SPEED_MAX));
+                }
+                self.speed = n;
+            }
+            "sounds" => self.sounds = b.ok_or("true or false")?,
+            "seen_privacy" => self.seen_privacy = b.ok_or("true or false")?,
+            _ => return Err("unknown key".into()),
+        }
+        Ok(())
+    }
+
+    /// Each key as config.toml writes it (`listen = "auto"`), in
+    /// [`MODE_KEYS`]' order; None: unset (the default).
+    pub fn written(&self) -> Vec<(&'static str, Option<String>)> {
+        let q = crate::toml_string;
+        vec![
+            ("listen", Some(q(self.listen.word()))),
+            ("tts_model", self.tts_model.as_deref().map(q)),
+            ("tts_voice", self.tts_voice.as_deref().map(q)),
+            ("speed", Some(speed_written(self.speed))),
+            ("read_aloud", Some(q(self.read_aloud.word()))),
+            ("sounds", Some(self.sounds.to_string())),
+            ("seen_privacy", Some(self.seen_privacy.to_string())),
+        ]
+    }
+}
+
+/// A speed as TOML: one decimal, always a float (`1.0`, `1.2`).
+pub fn speed_written(speed: f32) -> String {
+    format!("{:.1}", speed.clamp(SPEED_MIN, SPEED_MAX))
+}
+
+/// A provider's realtime transcription model (Voxtral Realtime: the
+/// words as you talk), its id; None: it has none (the voice role's batch
+/// model then transcribes each turn).
+pub fn realtime_model(provider: &str) -> Option<&'static str> {
+    match provider {
+        "mistral" => Some("voxtral-mini-transcribe-realtime-2602"),
+        _ => None,
+    }
+}
+
+/// A provider's text-to-speech model, its id; None: it does not speak
+/// (Mistral only for now).
+pub fn tts_model(provider: &str) -> Option<&'static str> {
+    match provider {
+        "mistral" => Some("voxtral-mini-tts-2603"),
+        _ => None,
+    }
+}
+
+/// The providers that speak, in the order the settings offer them.
+pub const TTS_PROVIDERS: [&str; 1] = ["mistral"];
+
+/// A provider call of voice mode resolved, with its key. Debug never
+/// shows the key.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModeCall {
+    /// "provider/id"
+    pub name: String,
+    pub provider: String,
+    /// "Mistral"
+    pub provider_name: String,
+    /// no trailing '/'
+    pub base_url: String,
+    pub model: String,
+    pub key: String,
+}
+
+impl std::fmt::Debug for ModeCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ModeCall {{ name: {:?}, provider: {:?}, base_url: {:?}, model: {:?}, key: <{} bytes> }}",
+            self.name,
+            self.provider,
+            self.base_url,
+            self.model,
+            self.key.len()
+        )
+    }
+}
+
+impl Setup {
+    /// The voice role's provider ("mistral").
+    pub fn voice_provider(&self) -> String {
+        self.catalog.resolve_stt(&self.voice.model).provider
+    }
+
+    /// Voice Realtime on the voice role's provider; None: it has none.
+    /// Err: its key is missing (the batch job says the same).
+    pub fn realtime_call(&self, keys: &Keys) -> Result<Option<ModeCall>, String> {
+        let p = self.voice_provider();
+        let Some(id) = realtime_model(&p) else { return Ok(None) };
+        self.mode_call(&format!("{}/{}", p, id), "voice mode's listening", keys).map(Some)
+    }
+
+    /// The TTS model voice mode speaks with: `tts_model`, else the voice
+    /// role's provider's (one key, one company hears you: never another
+    /// provider's by default). Err: the one-line reason.
+    pub fn tts_name(&self, keys: &VoiceModeKeys) -> Result<String, String> {
+        if let Some(m) = &keys.tts_model {
+            return Ok(m.clone());
+        }
+        let p = self.voice_provider();
+        match tts_model(&p) {
+            Some(id) => Ok(format!("{}/{}", p, id)),
+            None => Err(format!(
+                "{} can't speak yet: voice mode talks with Mistral (/voice picks its voice)",
+                self.catalog.provider(&p).map_or(p.clone(), |x| x.name.clone())
+            )),
+        }
+    }
+
+    /// The TTS call of voice mode, with its key.
+    pub fn tts_call(&self, mode: &VoiceModeKeys, keys: &Keys) -> Result<ModeCall, String> {
+        let name = self.tts_name(mode)?;
+        let (p, _) = split_name(&name).unwrap_or(("", ""));
+        if tts_model(p).is_none() {
+            let pname = self.catalog.provider(p).map_or(p.to_string(), |x| x.name.clone());
+            return Err(format!("voice mode's voice {}: {} can't speak yet (Mistral can)", name, pname));
+        }
+        self.mode_call(&name, "voice mode's voice", keys)
+    }
+
+    /// The small-jobs model's call (the spoken "on it"), with its key
+    /// and its chat wire family.
+    pub fn small_call(&self, keys: &Keys) -> Result<(ModeCall, String), String> {
+        let r = self.catalog.resolve(&self.small_model);
+        let call = self.mode_call(&r.name, "the small-jobs model", keys)?;
+        Ok((call, r.api))
+    }
+
+    /// A provider call by "provider/id", with its key (env > auth.json
+    /// > the old .env files, as the chat keys).
+    fn mode_call(&self, name: &str, what: &str, keys: &Keys) -> Result<ModeCall, String> {
+        let (pid, mid) = split_name(name).ok_or_else(|| format!("{} {}: not a \"provider/model\" name", what, name))?;
+        let Some(p) = self.catalog.provider(pid) else {
+            return Err(format!("{} {}: unknown provider '{}'", what, name, pid));
+        };
+        if !p.needs.is_empty() {
+            return Err(format!("{} {}: {} is not usable yet ({})", what, name, p.name, p.needs));
+        }
+        if p.base_url.is_empty() {
+            return Err(format!("{} {}: [providers.{}] has no base_url", what, name, pid));
+        }
+        let key = if p.key_env.is_empty() {
+            String::new()
+        } else {
+            match keys.find(pid, &p.key_env) {
+                Some(f) => f.key,
+                None => {
+                    return Err(format!("{} needs a {} key: set {} or run '{} login {}'", what, p.name, p.key_env, CLI, pid))
+                }
+            }
+        };
+        Ok(ModeCall {
+            name: name.to_string(),
+            provider: pid.to_string(),
+            provider_name: p.name.clone(),
+            base_url: p.base_url.trim_end_matches('/').to_string(),
+            model: mid.to_string(),
+            key,
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "voice_tests.rs"]
+mod tests;
 
 /// A list of strings, or one comma-separated string.
 fn vocabulary(v: &toml::Value) -> Option<Vec<String>> {

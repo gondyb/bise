@@ -552,9 +552,9 @@ fn the_voice_model_defaults_to_voxtral_and_the_config_picks_another() {
 
 #[test]
 fn a_bad_voice_table_is_a_warning() {
-    let s = setup("[voice]\nmodel = 3\nlanguage = [1]\nvocabulary = 2\nspeed = 1\n");
+    let s = setup("[voice]\nmodel = 3\nlanguage = [1]\nvocabulary = 2\npitch = 1\n");
     let w = s.catalog.warnings.join("\n");
-    for k in ["voice.model", "voice.language", "voice.vocabulary", "voice.speed: unknown key"] {
+    for k in ["voice.model", "voice.language", "voice.vocabulary", "voice.pitch: unknown key"] {
         assert!(w.contains(k), "{k}: {w}");
     }
     assert_eq!(s.voice.model, "mistral/voxtral-mini-latest");
