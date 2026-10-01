@@ -65,10 +65,12 @@ def main():
         # hide with the kitty encoding: the composer gets the keys back
         t.typed("\x1b[96;5u")
         t.wait_gone(TITLE)
-        t.typed("to the composer")
-        t.wait("to the composer")
+        # BISE-303: a needle no tip holds (the shorter key bar leaves the
+        # tip room: 'ctrl+r speaks into the composer')
+        t.typed("keys back in the composer")
+        t.wait("keys back in the composer")
         t.keys("C-u")
-        t.wait_gone("to the composer")
+        t.wait_gone("keys back in the composer")
         assert alive(pid), "hidden, the shell must keep running"
         # show again: same shell, same state
         t.keys("C-Space")
