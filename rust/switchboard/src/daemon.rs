@@ -53,7 +53,11 @@ pub struct Opts {
     pub repl_bin: PathBuf,
     /// Extra env of each REPL, computed at its spawn: the API keys
     /// resolved again (auth.json, .env), so a `login` since the hub
-    /// started applies to the next REPL. (name, None) = unset.
+    /// started applies to the next REPL, and the models file written
+    /// again (BISE_MODELS_FILE: a base_url set in config.toml or a .env
+    /// file since). Also called at each input and idle (keys_changed):
+    /// the live REPLs read the rewritten file at their next call.
+    /// (name, None) = unset.
     pub spawn_env: Option<SpawnEnv>,
 }
 

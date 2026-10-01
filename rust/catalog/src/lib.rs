@@ -219,6 +219,13 @@ pub struct Provider {
     pub api: String,
     /// no trailing '/'; "" when unknown
     pub base_url: String,
+    /// the env variables that give `base_url` when config.toml does not
+    /// (`base_url_env`, comma-separated, the first set wins; foundry:
+    /// ANTHROPIC_FOUNDRY_BASE_URL, Claude Code's name); "" = none
+    pub base_url_env: String,
+    /// where `base_url` came from: "built-in", "config", the env
+    /// variable's name; "" = no base URL
+    pub base_url_from: String,
     /// "" = no key needed
     pub key_env: String,
     /// "" = usable; else the issue that makes it usable ("BISE-149")
@@ -448,6 +455,40 @@ impl Catalog {
         (!p.small_model.is_empty()).then(|| format!("{}/{}", p.id, p.small_model))
     }
 
+    /// A provider's base URL from its `base_url_env` variables, the
+    /// first one set: config.toml's `base_url` wins (bise's own file, as
+    /// auth.json's key wins over the environment's, BISE-269); the env
+    /// wins over the built-in one. Run once the config layer is merged.
+    fn base_urls_from_env(&mut self, env: &dyn Fn(&str) -> Option<String>) {
+        for p in self.providers.iter_mut().filter(|p| p.base_url_from != "config") {
+            let found = p
+                .base_url_env
+                .split(',')
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .find_map(|k| env(k).map(|v| (k.to_string(), env_base_url(&p.api, &v))).filter(|(_, v)| !v.is_empty()));
+            if let Some((k, v)) = found {
+                p.base_url = v;
+                p.base_url_from = k;
+            }
+        }
+    }
+
+    /// What to do about a provider with no base URL, in one line: its
+    /// env variable when it has one, else the config.toml line. Never
+    /// "check your network": nothing was called.
+    pub fn no_base_url(&self, provider: &str) -> String {
+        let env = self.provider(provider).map(|p| p.base_url_env.as_str()).unwrap_or("");
+        let first = env.split(',').map(str::trim).find(|k| !k.is_empty());
+        match first {
+            Some(k) => format!(
+                "{} has no base URL: set {} (in your shell or ~/.vibe/.env), or base_url under [providers.{}] in ~/.bise/config.toml",
+                provider, k, provider
+            ),
+            None => format!("{} has no base URL: set base_url under [providers.{}] in ~/.bise/config.toml", provider, provider),
+        }
+    }
+
     /// The caps of a provider's unlisted models.
     pub fn provider_caps(&self, p: &Provider) -> Caps {
         p.caps.over(&DEFAULT_CAPS)
@@ -557,6 +598,8 @@ impl Catalog {
                                 name: id.clone(),
                                 api: "openai-chat".into(),
                                 base_url: String::new(),
+                                base_url_env: String::new(),
+                                base_url_from: String::new(),
                                 key_env: String::new(),
                                 needs: String::new(),
                                 small_model: String::new(),
@@ -587,13 +630,20 @@ impl Catalog {
                                             FAMILIES.join(", ")
                                         )),
                                     },
-                                    "base_url" => set_str(
-                                        &mut p.base_url,
-                                        s().map(|u| u.trim_end_matches('/').to_string()),
-                                        &where_,
-                                        fk,
-                                        &mut warn,
-                                    ),
+                                    // an empty one says nothing: it never
+                                    // hides the env's or the built-in URL
+                                    "base_url" => match s().map(|u| u.trim_end_matches('/').to_string()) {
+                                        Some(u) if u.is_empty() => {}
+                                        Some(u) => {
+                                            p.base_url = u;
+                                            p.base_url_from = match src {
+                                                Source::Builtin => "built-in".into(),
+                                                Source::Config => "config".into(),
+                                            };
+                                        }
+                                        None => warn(format!("{}.base_url: not a string", where_)),
+                                    },
+                                    "base_url_env" => set_str(&mut p.base_url_env, s(), &where_, fk, &mut warn),
                                     "key_env" => set_str(&mut p.key_env, s(), &where_, fk, &mut warn),
                                     "needs" => set_str(&mut p.needs, s(), &where_, fk, &mut warn),
                                     "small_model" => set_str(&mut p.small_model, s(), &where_, fk, &mut warn),
@@ -984,6 +1034,16 @@ impl Setup {
     /// is a warning: its tables are ignored, `model`/`agent_model` lines
     /// are still read.
     pub fn from_text(config: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Setup {
+        Setup::from_parts(config, env, env)
+    }
+
+    /// [`Setup::from_text`] with the base URLs' variables read through
+    /// `url_env` (the env, then the .env files: [`Setup::load`]).
+    pub fn from_parts(
+        config: Option<&str>,
+        env: &dyn Fn(&str) -> Option<String>,
+        url_env: &dyn Fn(&str) -> Option<String>,
+    ) -> Setup {
         let mut catalog = Catalog::builtin();
         let (mut model_cfg, mut agent_cfg, mut small_cfg) = (None, None, None);
         let (mut effort_cfg, mut agent_effort_cfg) = (None, None);
@@ -1034,6 +1094,7 @@ impl Setup {
                 }
             }
         }
+        catalog.base_urls_from_env(url_env);
         let envv = |k: &str| env(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         let (model, model_from) = if let Some(m) = envv("BISE_MODEL") {
             (m, "BISE_MODEL")
@@ -1120,9 +1181,15 @@ impl Setup {
     }
 
     /// Read `config` (a missing file is no config) with the real env.
+    /// The base URLs' variables (`base_url_env`) are also read from the
+    /// .env files, like the keys (bise's, then ~/.vibe/.env, where Vibe
+    /// keeps ANTHROPIC_FOUNDRY_BASE_URL): the TUI, `bise doctor` and the
+    /// hub see the same URL.
     pub fn load(config: &Path) -> Setup {
         let text = std::fs::read_to_string(config).ok();
-        Setup::from_text(text.as_deref(), &|k| std::env::var(k).ok())
+        let files = auth::EnvFile::read_all(&bise_home::Home::from_env().env_files());
+        let real = |k: &str| std::env::var(k).ok();
+        Setup::from_parts(text.as_deref(), &real, &|k| with_files(&real, &files, k))
     }
 
     /// The model of a role: "main" or "agent".
@@ -1184,7 +1251,14 @@ impl Setup {
             o.push_str(&format!("\n[providers.{}]\n", key(&p.id)));
             o.push_str(&format!("name = {}\n", q(&p.name)));
             o.push_str(&format!("api = {}\n", q(&p.api)));
-            o.push_str(&format!("base_url = {}\n", q(&p.base_url)));
+            // no URL: no line, never `base_url = ""` (the runtime then
+            // says the provider has none and how to set it, instead of
+            // calling "/messages"); the variables that would give it
+            if !p.base_url.is_empty() {
+                o.push_str(&format!("base_url = {}\n", q(&p.base_url)));
+            } else if !p.base_url_env.is_empty() {
+                o.push_str(&format!("base_url_env = {}\n", q(&p.base_url_env)));
+            }
             o.push_str(&format!("key_env = {}\n", q(&p.key_env)));
             o.push_str(&format!("needs = {}\n", q(&p.needs)));
             caps_lines(&mut o, &c.provider_caps(p));
@@ -1380,6 +1454,31 @@ fn q(s: &str) -> String {
     o
 }
 
+/// A base URL from an env variable, in the catalog's form (no trailing
+/// '/'). The Anthropic family's variables follow its SDK and Claude Code:
+/// no `/v1` (ANTHROPIC_FOUNDRY_BASE_URL=https://proxy/anthropic); the
+/// catalog's anthropic base_url ends with it (the runtime adds
+/// `/messages`), so it is added when missing. "" = blank.
+pub fn env_base_url(api: &str, raw: &str) -> String {
+    let u = raw.trim().trim_end_matches('/');
+    if u.is_empty() {
+        return String::new();
+    }
+    if api == "anthropic" && !u.ends_with("/v1") {
+        format!("{}/v1", u)
+    } else {
+        u.to_string()
+    }
+}
+
+/// `k` from `env` when set and not blank, else from the first .env file
+/// that has it (the keys' order, auth::EnvFile).
+pub fn with_files(env: &dyn Fn(&str) -> Option<String>, files: &[auth::EnvFile], k: &str) -> Option<String> {
+    env(k)
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| files.iter().find_map(|f| f.vars.get(k).filter(|v| !v.trim().is_empty()).cloned()))
+}
+
 /// A bare key when it can be one, else quoted.
 fn key(s: &str) -> String {
     if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
@@ -1391,9 +1490,12 @@ fn key(s: &str) -> String {
 
 /// Write the hand-off where the runtime will find it and return its
 /// path: `<cache_dir>/models.toml`, else the temp dir. None when neither
-/// is writable (the runtime then keeps its old table).
-pub fn export_handoff(config: &Path, cache_dir: &Path) -> Option<PathBuf> {
-    let setup = Setup::load(config);
+/// is writable (the runtime then keeps its old table). `env` gives the
+/// providers' `base_url_env` variables (the hub: its environment, then
+/// the .env files read again, so an edit reaches the next call).
+pub fn export_handoff(config: &Path, cache_dir: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(config).ok();
+    let setup = Setup::from_text(text.as_deref(), env);
     let fallback = std::env::temp_dir().join(format!("bise-models-{}.toml", std::process::id()));
     [cache_dir.join("models.toml"), fallback]
         .into_iter()

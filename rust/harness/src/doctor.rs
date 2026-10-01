@@ -511,6 +511,18 @@ fn no_key_fix(setup: &bise_catalog::Setup, r: &bise_catalog::Resolved, found: &[
     format!("`{} login {}` (or set {})", cli, r.provider, r.key_env)
 }
 
+/// A base URL as doctor shows it: no user:password, no query (a token
+/// may sit there).
+pub(crate) fn shown_url(u: &str) -> String {
+    let (scheme, rest) = u.split_once("://").unwrap_or(("", u));
+    let rest = rest.split(['?', '#']).next().unwrap_or("");
+    let rest = match rest.split_once('/') {
+        Some((auth, path)) => format!("{}/{}", auth.rsplit('@').next().unwrap_or(auth), path),
+        None => rest.rsplit('@').next().unwrap_or(rest).to_string(),
+    };
+    if scheme.is_empty() { rest } else { format!("{}://{}", scheme, rest) }
+}
+
 /// The keys, model and voice lines.
 fn keys_and_model(home: &bise_home::Home) -> (Check, Vec<Check>, Check) {
     let store = match Store::read(&home.auth_file()) {
@@ -551,6 +563,11 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Vec<Check>, Check) {
         if !r.needs.is_empty() {
             return Err((format!("{}: not usable yet ({})", what, r.needs), format!("pick another model (`{} models`)", bise_catalog::CLI)));
         }
+        if r.base_url.is_empty() {
+            let fix = setup.catalog.no_base_url(&r.provider);
+            let fix = fix.split_once(": ").map(|(_, f)| f.to_string()).unwrap_or(fix);
+            return Err((format!("{}: {} has no base URL", what, r.provider), fix));
+        }
         if !r.key_env.is_empty() && keys.find(&r.provider, &r.key_env).is_none() {
             return Err((format!("{}: no {} key", what, r.provider), no_key_fix(&setup, &r, &found)));
         }
@@ -588,6 +605,11 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Vec<Check>, Check) {
                 }
                 if !about.is_empty() {
                     parts.push(about.to_string());
+                }
+                // the URL in use when it is not the built-in one (config.toml,
+                // ANTHROPIC_FOUNDRY_BASE_URL): what the agents call
+                if let Some(p) = setup.catalog.provider(&r.provider).filter(|p| p.base_url_from != "built-in") {
+                    parts.push(format!("{} ({})", shown_url(&p.base_url), p.base_url_from));
                 }
                 ok(name, parts.join(" · "))
             }
@@ -819,6 +841,14 @@ mod tests {
         let none = keys_check(&[]);
         assert_eq!(none.mark, Mark::Fail);
         assert!(none.fix.unwrap().contains("bise login"));
+    }
+
+    /// A base URL in doctor's lines: never its user:password nor its query.
+    #[test]
+    fn shown_url_drops_credentials_and_query() {
+        assert_eq!(shown_url("https://proxy.example/anthropic/v1"), "https://proxy.example/anthropic/v1");
+        assert_eq!(shown_url("https://u:tok@proxy.example/a/v1?key=tok#x"), "https://proxy.example/a/v1");
+        assert_eq!(shown_url("http://tok@h:8080"), "http://h:8080");
     }
 
     /// qa G: doctor reads `[voice]` and shows config.toml's warnings.

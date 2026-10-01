@@ -214,25 +214,34 @@ static KEYS_SET_AT_START: std::sync::OnceLock<Vec<(String, Option<String>)>> = s
 /// the next REPL (spawn, respawn, restart) without restarting the hub.
 /// auth.json wins over the environment the hub started with (BISE-269);
 /// what load_keys set itself reads as the value it replaced. (name,
-/// None) = unset.
-fn keys_for_spawn() -> Vec<(String, Option<String>)> {
+/// None) = unset. Also the models file, written again from config.toml,
+/// this env and the .env files as they are now (a base URL set since the
+/// hub started), as BISE_MODELS_FILE: the runtime reads it at each call.
+fn env_for_spawn() -> Vec<(String, Option<String>)> {
     use bise_catalog::auth::{EnvFile, Keys, Store};
     let ours = KEYS_SET_AT_START.get().cloned().unwrap_or_default();
     let paths = auth_paths();
-    // a broken auth.json: the keys the hub started with
-    let Ok(store) = Store::read(&paths.auth_file) else {
-        return Vec::new();
-    };
     let files = EnvFile::read_all(&paths.env_files);
-    let setup = bise_catalog::Setup::load(&paths.config);
     // the user's real environment: what load_keys replaced reads as before
     let env = |k: &str| match ours.iter().find(|(o, _)| o == k) {
         Some((_, before)) => before.clone(),
         None => std::env::var(k).ok(),
     };
-    Keys { env: &env, store: &store, files: &files }
-        .resolve(&setup.catalog)
-        .spawn_env(&setup.catalog, &ours)
+    let url_env = |k: &str| bise_catalog::with_files(&env, &files, k);
+    let mut out = match Store::read(&paths.auth_file) {
+        Ok(store) => {
+            let setup = bise_catalog::Setup::from_parts(std::fs::read_to_string(&paths.config).ok().as_deref(), &|k| std::env::var(k).ok(), &url_env);
+            Keys { env: &env, store: &store, files: &files }
+                .resolve(&setup.catalog)
+                .spawn_env(&setup.catalog, &ours)
+        }
+        // a broken auth.json: the keys the hub started with
+        Err(_) => Vec::new(),
+    };
+    if let Some(p) = bise_catalog::export_handoff(&paths.config, &cache_dir(), &url_env) {
+        out.push(("BISE_MODELS_FILE".into(), Some(p.to_string_lossy().into_owned())));
+    }
+    out
 }
 
 // ---- the model catalog (BISE-142, rust/catalog) ----
@@ -248,9 +257,14 @@ fn cache_dir() -> std::path::PathBuf {
 }
 
 /// The merged catalog for the REPLs this process starts: BISE_MODELS_FILE
-/// (providers.md §7). Never stops a start.
+/// (providers.md §7), the base URLs' variables from the env, then the .env
+/// files. Never stops a start. The hub writes it again at each REPL spawn
+/// and each keys check ([`env_for_spawn`]): a config.toml or .env edit
+/// reaches the next call without a hub restart.
 fn export_models_file() {
-    if let Some(p) = bise_catalog::export_handoff(&config_file(), &cache_dir()) {
+    let files = bise_catalog::auth::EnvFile::read_all(&auth_paths().env_files);
+    let env = |k: &str| bise_catalog::with_files(&|k| std::env::var(k).ok(), &files, k);
+    if let Some(p) = bise_catalog::export_handoff(&config_file(), &cache_dir(), &env) {
         std::env::set_var("BISE_MODELS_FILE", p);
     }
 }
@@ -330,7 +344,7 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
         repl_bin: root.join("repl-live"),
         app_root: root,
         exe: std::env::current_exe()?,
-        spawn_env: Some(keys_for_spawn),
+        spawn_env: Some(env_for_spawn),
     })
 }
 

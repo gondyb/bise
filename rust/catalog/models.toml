@@ -126,7 +126,9 @@ cache_write_price = 1.25
 
 # an Anthropic proxy (the setup before BISE-142); the harness sends the
 # 1M-context beta header, so 1M. A private proxy: bise ships no URL, its
-# users set base_url under [providers.foundry] in ~/.bise/config.toml.
+# users set base_url under [providers.foundry] in ~/.bise/config.toml, or
+# ANTHROPIC_FOUNDRY_BASE_URL like Claude Code (its form, without /v1:
+# bise adds it), in the environment or a .env file; config.toml wins.
 # Its models: the ones that answered a real tool call through it,
 # 2026-09-30 (claude-fable-5-1: a 403, the proxy's account has not
 # enabled it).
@@ -135,6 +137,7 @@ name = "Anthropic (foundry proxy)"
 hidden = true
 api = "anthropic"
 key_env = "ANTHROPIC_FOUNDRY_API_KEY"
+base_url_env = "ANTHROPIC_FOUNDRY_BASE_URL"
 small_model = "claude-haiku-4-5"
 context = 1000000
 max_output = 32768

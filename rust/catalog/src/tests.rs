@@ -333,18 +333,18 @@ fn write_handoff_is_atomic_and_export_falls_back() {
     let cfg = dir.join("config.toml");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(&cfg, "model = \"openai/gpt-5\"\n").unwrap();
-    let p = export_handoff(&cfg, &dir.join("cache")).unwrap();
+    let p = export_handoff(&cfg, &dir.join("cache"), &no_env).unwrap();
     assert_eq!(p, dir.join("cache/models.toml"));
     assert!(std::fs::read_to_string(&p).unwrap().contains("[providers.openai]"));
     let left: Vec<_> = std::fs::read_dir(dir.join("cache")).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert_eq!(left.len(), 1, "{left:?}");
     // a cache dir that cannot be made (a file is in the way): the temp dir
     std::fs::write(dir.join("blocked"), "").unwrap();
-    let p = export_handoff(&cfg, &dir.join("blocked/cache")).unwrap();
+    let p = export_handoff(&cfg, &dir.join("blocked/cache"), &no_env).unwrap();
     assert!(p.starts_with(std::env::temp_dir()));
     let _ = std::fs::remove_file(&p);
     // no config file at all: fine
-    assert!(export_handoff(&dir.join("none.toml"), &dir.join("cache")).is_some());
+    assert!(export_handoff(&dir.join("none.toml"), &dir.join("cache"), &no_env).is_some());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -918,4 +918,151 @@ fn a_role_is_set_with_its_effort_or_unset() {
     assert_eq!(setup(&out).agent_model, "a/b");
     let out = set_role("[roles.agents]\nmodel = \"c/d\"\neffort = \"low\"\n\n[x]\ny = 1\n", "agents", None, None);
     assert_eq!(out, "[x]\ny = 1\n");
+}
+
+// ---- base URLs from the env (Ben's report, 2026-10-01: foundry's URL in
+// ANTHROPIC_FOUNDRY_BASE_URL was ignored, the hand-off kept base_url = "")
+
+fn env_of(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+    move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string())
+}
+
+const OPUS: &str = "model = \"foundry/claude-opus-5-5\"\n";
+
+#[test]
+fn foundry_base_url_comes_from_its_env_variable_in_claude_codes_form() {
+    // Claude Code's form, no /v1: bise adds it (the runtime adds /messages)
+    for raw in ["https://proxy.example/anthropic", "https://proxy.example/anthropic/", "https://proxy.example/anthropic/v1", " https://proxy.example/anthropic/v1/ "] {
+        let env = move |k: &str| (k == "ANTHROPIC_FOUNDRY_BASE_URL").then(|| raw.to_string());
+        let s = Setup::from_text(Some(OPUS), &env);
+        assert_eq!(s.model_for("main").base_url, "https://proxy.example/anthropic/v1", "{raw:?}");
+        assert_eq!(s.catalog.provider("foundry").unwrap().base_url_from, "ANTHROPIC_FOUNDRY_BASE_URL");
+    }
+    // blank: as unset
+    let s = Setup::from_text(Some(OPUS), &env_of(&[("ANTHROPIC_FOUNDRY_BASE_URL", "  ")]));
+    assert_eq!(s.model_for("main").base_url, "");
+    assert_eq!(s.catalog.provider("foundry").unwrap().base_url_from, "");
+    // only the Anthropic family adds /v1: an OpenAI-style variable keeps its path
+    assert_eq!(env_base_url("openai-chat", "https://x.example/v1/"), "https://x.example/v1");
+    assert_eq!(env_base_url("openai-chat", "https://x.example/api"), "https://x.example/api");
+    assert_eq!(env_base_url("anthropic", ""), "");
+}
+
+#[test]
+fn config_base_url_wins_over_the_env_and_an_empty_one_hides_nothing() {
+    let env = env_of(&[("ANTHROPIC_FOUNDRY_BASE_URL", "https://env.example/anthropic")]);
+    let cfg = format!("{OPUS}[providers.foundry]\nbase_url = \"https://cfg.example/anthropic/v1/\"\n");
+    let s = Setup::from_text(Some(&cfg), &env);
+    assert_eq!(s.model_for("main").base_url, "https://cfg.example/anthropic/v1");
+    assert_eq!(s.catalog.provider("foundry").unwrap().base_url_from, "config");
+    // base_url = "" in config.toml: never authoritative, the env's applies
+    let cfg = format!("{OPUS}[providers.foundry]\nbase_url = \"\"\n");
+    let s = Setup::from_text(Some(&cfg), &env);
+    assert_eq!(s.model_for("main").base_url, "https://env.example/anthropic/v1");
+    // and it does not blank a built-in URL either
+    let s = setup("[providers.anthropic]\nbase_url = \"\"\n");
+    assert_eq!(s.catalog.resolve("anthropic/claude-opus-5-5").base_url, "https://api.anthropic.com/v1");
+    assert_eq!(s.catalog.provider("anthropic").unwrap().base_url_from, "built-in");
+}
+
+#[test]
+fn a_config_provider_may_name_its_own_base_url_variable() {
+    let cfg = "[providers.work]\napi = \"openai-chat\"\nbase_url_env = \"WORK_URL, OTHER_URL\"\n";
+    let s = Setup::from_text(Some(cfg), &env_of(&[("OTHER_URL", "http://w.example/v1/")]));
+    assert_eq!(s.catalog.resolve("work/m").base_url, "http://w.example/v1");
+    let s = Setup::from_text(Some(cfg), &env_of(&[("WORK_URL", "http://first.example/v1"), ("OTHER_URL", "http://w.example/v1")]));
+    assert_eq!(s.catalog.resolve("work/m").base_url, "http://first.example/v1");
+}
+
+#[test]
+fn the_env_then_the_env_files_in_order() {
+    let files = vec![
+        auth::EnvFile::parse("/a/.env".into(), "ANTHROPIC_FOUNDRY_BASE_URL=\nX=from-a\n"),
+        auth::EnvFile::parse("/b/.vibe/.env".into(), "export ANTHROPIC_FOUNDRY_BASE_URL=\"https://vibe.example/anthropic\"\nX=from-b\n"),
+    ];
+    let none = |_: &str| None;
+    // a blank line in the first file does not hide the second's
+    assert_eq!(with_files(&none, &files, "ANTHROPIC_FOUNDRY_BASE_URL").as_deref(), Some("https://vibe.example/anthropic"));
+    assert_eq!(with_files(&none, &files, "X").as_deref(), Some("from-a"));
+    let env = env_of(&[("X", "from-env"), ("Y", " ")]);
+    assert_eq!(with_files(&env, &files, "X").as_deref(), Some("from-env"));
+    assert_eq!(with_files(&env, &files, "Y"), None);
+    // Ben's setup: key and URL in ~/.vibe/.env, nothing in config.toml
+    let s = Setup::from_parts(Some(OPUS), &none, &|k| with_files(&none, &files, k));
+    assert_eq!(s.model_for("main").base_url, "https://vibe.example/anthropic/v1");
+}
+
+#[test]
+fn no_base_url_says_what_to_set() {
+    let c = Catalog::builtin();
+    let m = c.no_base_url("foundry");
+    assert!(m.contains("ANTHROPIC_FOUNDRY_BASE_URL") && m.contains("[providers.foundry]"), "{m}");
+    assert!(!m.contains("network"), "{m}");
+    let m = c.no_base_url("nobody");
+    assert!(m.contains("[providers.nobody]") && !m.contains("_BASE_URL"), "{m}");
+}
+
+/// LAW: the hand-off never says `base_url = ""`: a provider without a URL
+/// has no base_url line (the runtime then names the fix), whatever the
+/// config and the env say.
+#[test]
+fn the_handoff_never_stores_an_empty_base_url() {
+    let cfgs = [
+        None,
+        Some(OPUS.to_string()),
+        Some(format!("{OPUS}[providers.foundry]\nbase_url = \"\"\n")),
+        Some("[providers.empty]\napi = \"anthropic\"\nbase_url = \"\"\n[providers.bare]\nkey_env = \"K\"\n".to_string()),
+    ];
+    let envs: [&'static [(&'static str, &'static str)]; 3] = [&[], &[("ANTHROPIC_FOUNDRY_BASE_URL", "")], &[("ANTHROPIC_FOUNDRY_BASE_URL", "https://p.example/anthropic")]];
+    for cfg in &cfgs {
+        for e in envs {
+            let s = Setup::from_text(cfg.as_deref(), &env_of(e));
+            let h = s.handoff_toml();
+            assert!(!h.contains("base_url = \"\""), "{cfg:?} {e:?}");
+            let t: toml::Table = h.parse().unwrap();
+            for (id, p) in t["providers"].as_table().unwrap() {
+                if let Some(u) = p.get("base_url") {
+                    assert!(!u.as_str().unwrap().is_empty(), "{id}");
+                }
+            }
+        }
+    }
+    // no URL: the variable that would give it, for the runtime's message
+    let h = Setup::from_text(Some(OPUS), &no_env).handoff_toml();
+    let foundry = h.split("[providers.foundry]").nth(1).unwrap().split("\n[").next().unwrap();
+    assert!(foundry.contains("base_url_env = \"ANTHROPIC_FOUNDRY_BASE_URL\"") && !foundry.contains("base_url ="), "{foundry}");
+    // a URL: the URL, not the variable
+    let h = Setup::from_text(Some(OPUS), &env_of(&[("ANTHROPIC_FOUNDRY_BASE_URL", "https://p.example/anthropic")])).handoff_toml();
+    let foundry = h.split("[providers.foundry]").nth(1).unwrap().split("\n[").next().unwrap();
+    assert!(foundry.contains("base_url = \"https://p.example/anthropic/v1\"") && !foundry.contains("base_url_env"), "{foundry}");
+}
+
+/// The hub writes the hand-off again (each spawn, each input): a config
+/// edit or a new variable replaces the old file, never kept from a
+/// first run without a URL.
+#[test]
+fn export_handoff_again_follows_config_and_env_edits() {
+    let dir = std::env::temp_dir().join(format!("bise-catalog-url-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let cfg = dir.join("config.toml");
+    let cache = dir.join("cache");
+    std::fs::write(&cfg, OPUS).unwrap();
+    let read = |p: &Path| std::fs::read_to_string(p).unwrap();
+    // the first run: no URL anywhere
+    let p = export_handoff(&cfg, &cache, &no_env).unwrap();
+    assert!(!read(&p).contains("foundry.example"));
+    // the variable shows up (a .env file edited): the next write has it
+    let env = env_of(&[("ANTHROPIC_FOUNDRY_BASE_URL", "https://env.foundry.example/anthropic")]);
+    assert_eq!(export_handoff(&cfg, &cache, &env).unwrap(), p);
+    assert!(read(&p).contains("base_url = \"https://env.foundry.example/anthropic/v1\""));
+    // config.toml edited: it wins at the next write
+    std::fs::write(&cfg, format!("{OPUS}[providers.foundry]\nbase_url = \"https://cfg.foundry.example/anthropic/v1\"\n")).unwrap();
+    export_handoff(&cfg, &cache, &env).unwrap();
+    assert!(read(&p).contains("base_url = \"https://cfg.foundry.example/anthropic/v1\""));
+    // both gone: no URL again, and no empty one
+    std::fs::write(&cfg, OPUS).unwrap();
+    export_handoff(&cfg, &cache, &no_env).unwrap();
+    assert!(!read(&p).contains("foundry.example") && !read(&p).contains("base_url = \"\""));
+    let _ = std::fs::remove_dir_all(&dir);
 }

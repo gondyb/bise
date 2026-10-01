@@ -925,6 +925,12 @@ def Laws.provider_legacy_claude_is_foundry():
 def Laws.provider_foundry_needs_a_base_url():
   {==}
 
+def Laws.provider_foundry_names_its_url_variable():
+  {==}
+
+def Laws.provider_empty_base_url_is_none():
+  {==}
+
 def Laws.provider_legacy_glm_is_mistral():
   {==}
 

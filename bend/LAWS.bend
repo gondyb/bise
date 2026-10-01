@@ -2531,6 +2531,23 @@ law provider_foundry_needs_a_base_url:
   {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
     == Pv.RErr{"foundry/claude-opus-5-5", "provider \"foundry\" (model \"foundry/claude-opus-5-5\") has no base_url: add it under [providers.foundry] in ~/.bise/config.toml"} : Pv.Resolved}
 
+# LAW: the models file names the variable that would give the URL
+# (base_url_env, rust/catalog: ANTHROPIC_FOUNDRY_BASE_URL): the error
+# says to set it.
+law provider_foundry_names_its_url_variable:
+  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"",
+      "[providers.foundry]
+base_url_env = \"ANTHROPIC_FOUNDRY_BASE_URL\"", "")
+    == Pv.RErr{"foundry/claude-opus-5-5", "provider \"foundry\" (model \"foundry/claude-opus-5-5\") has no base_url: set ANTHROPIC_FOUNDRY_BASE_URL, or add it under [providers.foundry] in ~/.bise/config.toml"} : Pv.Resolved}
+
+# LAW: base_url = "" (an older models file, Ben's first run 2026-10-01)
+# is no base_url: the same error, never a call to "/messages".
+law provider_empty_base_url_is_none:
+  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"",
+      "[providers.foundry]
+base_url = \"\"", "")
+    == Pv.RErr{"foundry/claude-opus-5-5", "provider \"foundry\" (model \"foundry/claude-opus-5-5\") has no base_url: add it under [providers.foundry] in ~/.bise/config.toml"} : Pv.Resolved}
+
 law provider_legacy_glm_is_mistral:
   {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"mistral", "zai-glm-5-3", Api.OpenAI{},

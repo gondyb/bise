@@ -286,6 +286,8 @@ impl Failure {
                     Why::NoCredit => FailKind::NoCredit,
                     Why::Model | Why::NoAccess => FailKind::Model,
                     Why::Unreachable(_) => FailKind::Down,
+                    // verdict never says it (no call is made without a URL)
+                    Why::NoUrl(_) => FailKind::Other,
                 };
                 let said = match (f.said.is_empty(), f.why) {
                     (true, Why::Unreachable(s)) => s,

@@ -525,7 +525,20 @@ Caps { context, max_output, vision, reasoning, tools }, known }`;
   `<cache>/models.toml` (`~/.bend-harness/cache/models.toml` today; the
   temp dir if that fails; atomic) and exports its path as
   **`BISE_MODELS_FILE`**. No file (an old binary): the runtime keeps its
-  built-in foundry + mistral table.
+  built-in foundry + mistral table. The hub writes it again at each REPL
+  spawn and at each input and idle (`env_for_spawn` in
+  `rust/harness/src/main.rs`): a config.toml or .env edit reaches the
+  next call, no hub restart. The hub's own environment is the one it
+  started with: a variable exported in a shell after that needs the
+  hub's restart (`bise switchboard --stop`), or a .env file.
+- Base URLs: config.toml's `base_url` > the provider's `base_url_env`
+  variables (the environment, then the .env files: bise's, then
+  ~/.vibe/.env) > the built-in one. foundry has `base_url_env =
+  "ANTHROPIC_FOUNDRY_BASE_URL"` (Claude Code's name and form: an
+  Anthropic-family URL without `/v1` gets it). An empty `base_url` is no
+  `base_url`: the file never says `base_url = ""` (it names
+  `base_url_env` instead), and the runtime reads `""` as none: the error
+  says what to set, never a call to `/messages`.
 - The hub sets **`BISE_ROLE=main|agent`** on each REPL
   (`rust/switchboard/src/daemon.rs`, the spawn's env).
 - Format: the config's own tables, flat for `core/config.bend` (one

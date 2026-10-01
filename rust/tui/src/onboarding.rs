@@ -163,9 +163,12 @@ impl Provider {
 
 /// The catalog and the model choice (`Setup`: `BISE_MODEL` >
 /// `BEND_MODEL` > `model` in config.toml > the default).
+/// The base URLs' variables (foundry's ANTHROPIC_FOUNDRY_BASE_URL) are
+/// also read from the .env files, like its key (~/.vibe/.env).
 pub(crate) fn setup_of(env: Env, home: &bise_home::Home) -> bise_catalog::Setup {
     let text = std::fs::read_to_string(home.config_file()).ok();
-    bise_catalog::Setup::from_text(text.as_deref(), env)
+    let files = bise_catalog::auth::EnvFile::read_all(&home.env_files());
+    bise_catalog::Setup::from_parts(text.as_deref(), env, &|k| bise_catalog::with_files(env, &files, k))
 }
 
 /// Where `login` keeps the keys (auth.json) and where the old ones are.
@@ -706,6 +709,11 @@ impl Onb {
                 },
                 Why::WrongKey => Sub::Paste(p, m, String::new()),
                 Why::NoCredit | Why::Unreachable(_) => self.start_check(p, m, t.again(), env),
+                // the URL may be set now (config.toml, a .env file)
+                Why::NoUrl(_) => {
+                    self.setup = setup_of(env, &self.home);
+                    self.start_check(p, m, t.again(), env)
+                }
             },
             (Sub::Failed(p, ..), KeyCode::Tab) => Sub::Which(self.providers.iter().position(|x| x.id == p.id).unwrap_or(0)),
             (s, _) => s,
@@ -771,9 +779,15 @@ impl Onb {
         let call = crate::keycheck::Call { provider: p.id.clone(), api, base_url, model: id, key: the_key, voice };
         let (tx, rx) = std::sync::mpsc::channel();
         let (check, url) = (self.checker, env("BEND_PROVIDER_URL"));
-        std::thread::spawn(move || {
-            let _ = tx.send(check(&call, url));
-        });
+        // no base URL (foundry without ANTHROPIC_FOUNDRY_BASE_URL): no
+        // call, the answer says what to set
+        if let Some(f) = crate::keycheck::no_url(&call, &self.setup.catalog, url.as_deref()) {
+            let _ = tx.send(Err(f));
+        } else {
+            std::thread::spawn(move || {
+                let _ = tx.send(check(&call, url));
+            });
+        }
         self.pending = Some(rx);
         Sub::Checking(p, model, tried)
     }
@@ -1306,6 +1320,7 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 Why::Model => v.push(err(format!("{} doesn't know {}. pick another model.", p.name, short_model(m)))),
                 Why::NoAccess => v.push(err(format!("this key can't use {}.", short_model(m)))),
                 Why::Unreachable(e) => v.push(err(format!("i couldn't reach {}: {}.", p.name, e.trim_end_matches('.')))),
+                Why::NoUrl(_) => v.push(err(format!("{} has no URL yet: i didn't call it.", p.name))),
             }
             // BISE-282: the provider's own words, cut to the width; a url
             // in them stays plain: the one link is the line under them
@@ -1333,6 +1348,12 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 }
                 (Why::NoAccess, _) => v.push(dim("your account may not have access to this model yet. pick another one.".into())),
                 (Why::Unreachable(_), _) => v.push(dim("check your network, then enter.".into())),
+                (Why::NoUrl(fix), _) => {
+                    let fix = fix.split_once(": ").map(|(_, f)| f).unwrap_or(fix);
+                    for l in words_in(&format!("{}, then enter.", fix), w as usize) {
+                        v.push(dim(l));
+                    }
+                }
                 _ => {}
             }
             blanks(&mut v, gap);

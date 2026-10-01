@@ -62,6 +62,18 @@ pub(crate) enum Why {
     /// no answer, or the provider's own trouble (5xx, a rate limit): the
     /// short reason
     Unreachable(String),
+    /// nothing was called: the provider has no base URL; what to set
+    /// (bise_catalog::Catalog::no_base_url)
+    NoUrl(String),
+}
+
+/// The check's answer before any call: the model's provider has no base
+/// URL (a private proxy like foundry, its variable unset) and no test
+/// URL replaces it. Never a call to "/messages", never "check your
+/// network".
+pub(crate) fn no_url(c: &Call, catalog: &bise_catalog::Catalog, test_url: Option<&str>) -> Option<Fail> {
+    let no_test_url = test_url.is_none_or(|u| u.trim().is_empty());
+    (!c.voice && c.base_url.trim().is_empty() && no_test_url).then(|| Fail::of(Why::NoUrl(catalog.no_base_url(&c.provider))))
 }
 
 impl Fail {
@@ -325,13 +337,18 @@ pub fn check_model(
         return Err(CheckFail { kind: CheckKind::Other(format!("unknown provider '{}' in {}", r.provider, model)), said: String::new() });
     }
     let call = Call { provider: r.provider.clone(), api: r.api.clone(), base_url: r.base_url.clone(), model: r.id.clone(), key: key.to_string(), voice: false };
-    check(&call, env).map_err(|f| CheckFail {
+    let answer = match no_url(&call, &setup.catalog, env("BEND_PROVIDER_URL").as_deref()) {
+        Some(f) => Err(f),
+        None => check(&call, env),
+    };
+    answer.map_err(|f| CheckFail {
         kind: match f.why {
             Why::WrongKey => CheckKind::WrongKey,
             Why::NoCredit => CheckKind::NoCredit,
             Why::Model => CheckKind::Model,
             Why::NoAccess => CheckKind::NoAccess,
             Why::Unreachable(e) => CheckKind::Unreachable(e),
+            Why::NoUrl(e) => CheckKind::Other(e),
         },
         said: f.said,
     })
@@ -343,6 +360,29 @@ mod tests {
 
     fn call(api: &str, provider: &str) -> Call {
         Call { provider: provider.into(), api: api.into(), base_url: "https://x.test/v1/".into(), model: "m1".into(), key: "k-secret".into(), voice: false }
+    }
+
+    /// Ben's first run (2026-10-01): the foundry key found, no URL. No
+    /// call to "/messages", no "check your network": what to set.
+    #[test]
+    fn no_base_url_is_said_before_any_call() {
+        let setup = bise_catalog::Setup::from_text(Some("model = \"foundry/claude-opus-5-5\"\n"), &|_| None);
+        let none = |_: &str| None;
+        let f = check_model(&setup, "foundry/claude-opus-5-5", "k-secret", &none).unwrap_err();
+        match &f.kind {
+            bise_catalog::auth_cli::CheckKind::Other(m) => {
+                assert!(m.contains("ANTHROPIC_FOUNDRY_BASE_URL") && m.contains("[providers.foundry]"), "{m}");
+                assert!(!m.contains("k-secret") && !m.contains("network"), "{m}");
+            }
+            k => panic!("{k:?}"),
+        }
+        let c = Call { base_url: String::new(), ..call("anthropic", "foundry") };
+        assert!(matches!(no_url(&c, &setup.catalog, None), Some(Fail { why: Why::NoUrl(_), .. })));
+        // a test URL replaces it; a URL is a URL; a voice check has its own
+        assert!(no_url(&c, &setup.catalog, Some("http://127.0.0.1:9/x")).is_none());
+        assert!(no_url(&c, &setup.catalog, Some(" ")).is_some());
+        assert!(no_url(&call("anthropic", "foundry"), &setup.catalog, None).is_none());
+        assert!(no_url(&Call { voice: true, ..c }, &setup.catalog, None).is_none());
     }
 
     #[test]

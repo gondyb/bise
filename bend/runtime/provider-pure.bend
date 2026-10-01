@@ -240,18 +240,32 @@ def unknown_provider(+prov: String, +id: String) -> Resolved:
     "] table (base_url, key_env, api) to config.toml"])}
 
 # a provider bise knows but ships without a URL (foundry: a private
-# proxy, its users set base_url in their config.toml)
-def no_base_url.pick(unknown: Bool, +prov: String, +id: String) -> Resolved:
+# proxy, its users set base_url in their config.toml, or the variable
+# the models file names, base_url_env: ANTHROPIC_FOUNDRY_BASE_URL)
+def no_base_url.how(none: Bool, +env: String, +prov: String) -> String:
+  match none:
+    case True{}:
+      String.concat(["add it under [providers.", prov,
+        "] in ~/.bise/config.toml"])
+    case False{}:
+      String.concat(["set ", env, ", or add it under [providers.", prov,
+        "] in ~/.bise/config.toml"])
+
+def no_base_url.pick(unknown: Bool, +prov: String, +id: String,
+    +how: String) -> Resolved:
   match unknown:
     case True{}:
       unknown_provider(prov, id)
     case False{}:
       RErr{id, String.concat(["provider ", quoted(prov), " (model ",
-        quoted(id), ") has no base_url: add it under [providers.", prov,
-        "] in ~/.bise/config.toml"])}
+        quoted(id), ") has no base_url: ", how])}
 
-def no_base_url(+api: String, +prov: String, +id: String) -> Resolved:
-  no_base_url.pick(String.is_empty(api), prov, id)
+def no_base_url(+reg: List<&2, Cf.KV>, +prov: String, +id: String)
+    -> Resolved:
+  +env = Cf.cfg_or(model_key(reg, prov, id, "base_url_env"), "")
+  no_base_url.pick(
+    String.is_empty(Cf.cfg_or(model_key(reg, prov, id, "api"), "")), prov,
+    id, no_base_url.how(String.is_empty(env), env, prov))
 
 # ---- the model's facts (core/api.bend MFacts) ----
 
@@ -403,18 +417,30 @@ def resolve.needs(ok: Bool, +needs: String, +api: String, +prov: String,
       RErr{id, String.concat(["model ", quoted(id), ": provider ", quoted(prov),
         " is not supported yet (needs ", needs, ")"])}
 
-def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
-    +model: String, +id: String, +url_env: String, +asked: String)
-    -> Resolved:
-  match m:
-    case Some{+base}:
+# a base_url = "" is no base_url (an older models file wrote it): the
+# error that says where to set it, never a call to "/messages"
+def resolve.base.set(empty: Bool, +base: String, +reg: List<&2, Cf.KV>,
+    +prov: String, +model: String, +id: String, +url_env: String,
+    +asked: String) -> Resolved:
+  match empty:
+    case True{}:
+      no_base_url(reg, prov, id)
+    case False{}:
       +needs = Cf.cfg_or(model_key(reg, prov, id, "needs"), "")
       resolve.needs(String.is_empty(needs), needs,
         Cf.cfg_or(model_key(reg, prov, id, "api"), "openai-chat"), prov,
         model, id, base, Cf.cfg_or(model_key(reg, prov, id, "key_env"), ""),
         url_env, facts(reg, prov, id, asked))
+
+def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
+    +model: String, +id: String, +url_env: String, +asked: String)
+    -> Resolved:
+  match m:
+    case Some{+base}:
+      resolve.base.set(String.is_empty(base), base, reg, prov, model, id,
+        url_env, asked)
     case None{}:
-      no_base_url(Cf.cfg_or(model_key(reg, prov, id, "api"), ""), prov, id)
+      no_base_url(reg, prov, id)
 
 def resolve.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String,
     +url_env: String, +asked: String) -> Resolved:
