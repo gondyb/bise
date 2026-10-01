@@ -104,9 +104,9 @@ pub(crate) fn ingest_line(app: &mut App, line: String, ts: Option<u64>) {
 /// alone, releases, the typed text: ctrlhint.rs).
 /// Fallible, unlike `ratatui::init` (which panics), and without its
 /// panic hook: `crash::install` restores every one of these modes.
-fn init_terminal() -> io::Result<crate::links::Tui> {
+fn init_terminal() -> io::Result<(crate::links::Tui, bool)> {
     use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
-    let setup = || -> io::Result<crate::links::Tui> {
+    let setup = || -> io::Result<(crate::links::Tui, bool)> {
         enable_raw_mode()?;
         // BISE-02: light or dark from the terminal background, before the alternate screen
         crate::theme_detect::init();
@@ -115,27 +115,35 @@ fn init_terminal() -> io::Result<crate::links::Tui> {
         let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
         // BISE-107: the gust stops while the terminal is not focused
         let _ = crossterm::execute!(io::stdout(), crossterm::event::EnableFocusChange);
-        push_keyboard_flags();
-        ratatui::Terminal::new(crate::links::LinkBackend::new(io::stdout()))
+        let protocol = push_keyboard_flags();
+        Ok((ratatui::Terminal::new(crate::links::LinkBackend::new(io::stdout()))?, protocol))
     };
     setup().inspect_err(|_| crash::restore_terminal())
 }
 
 /// One push of the kitty keyboard flags (`crash::restore_terminal` pops
 /// one): the ctrl hints' [`crate::ctrlhint::FLAGS`] when the terminal's
-/// `CSI ? u` reply keeps them all, else flag 1 alone as before.
-fn push_keyboard_flags() {
+/// `CSI ? u` reply keeps them all, else flag 1 alone as before. True
+/// when the terminal speaks the protocol (its reply has flag 1): ctrl+1-9
+/// reach bise (BISE-302, reach.rs).
+fn push_keyboard_flags() -> bool {
     use crossterm::event::PopKeyboardEnhancementFlags;
     let basic = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
-    if crate::ctrlhint::wanted() {
+    let speaks = |reply: &[u8]| crate::ctrlhint::reply_flags(reply).is_some_and(|f| f & basic.bits() != 0);
+    let reply = if crate::ctrlhint::wanted() {
         let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(crate::ctrlhint::FLAGS));
         let reply = crate::theme_detect::query(b"\x1b[?u").unwrap_or_default();
         if crate::ctrlhint::confirmed(&reply) {
-            return;
+            return true;
         }
         let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
-    }
-    let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(basic));
+        let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(basic));
+        reply
+    } else {
+        let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(basic));
+        crate::theme_detect::query(b"\x1b[?u").unwrap_or_default()
+    };
+    speaks(&reply)
 }
 
 /// Takes the waiting wire lines for at most 12 ms. The hub replays whole
@@ -176,7 +184,11 @@ const MAX_DRAW_CRASHES: u32 = 3;
 
 pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     crash::install();
-    let mut terminal = init_terminal()?;
+    let (mut terminal, protocol) = init_terminal()?;
+    // BISE-302: ctrl+1-9 and clicks, what the inbox's words offer
+    let reach = crate::reach::detect(protocol);
+    app.ctrl_digits = reach.ctrl_digits;
+    app.clicks = reach.clicks;
     crash::set_ui_thread(true);
     // BISE-60: the first launch of the switchboard UI plays the onboarding
     // (BISE-284: at its end, main's composer holds `show me what you can do`)
@@ -265,7 +277,7 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     sb::draw_sb(app, f);
     // the demo's guided tips (tour.rs), else the one-time hints (BISE-61)
     if !crate::tour::draw(app, f) {
-        crate::hints::draw(f);
+        crate::hints::draw(f, app.ctrl_digits);
     }
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
     crate::sanitize::cells(f.buffer_mut()); // no TAB/CR/ESC in a cell: no ghosts
@@ -687,12 +699,12 @@ mod zen_tests {
         assert_eq!(event(&mut app, with(KeyCode::Char('1'), KeyModifiers::ALT), t), Input::Other);
         assert_eq!(app.sb.focus_name(), "docs");
         assert!(!app.zen.active(t));
-        // on an empty composer, ctrl+k moves the panel's selection: out
+        // on an empty composer, ⌥↓ moves the panel's selection: out
         let mut app = app_with_agents();
         event(&mut app, key(KeyCode::Char('h')), t);
         event(&mut app, key(KeyCode::Backspace), t);
         assert!(app.zen.active(t));
-        assert_eq!(event(&mut app, with(KeyCode::Char('k'), KeyModifiers::CONTROL), t), Input::Other);
+        assert_eq!(event(&mut app, with(KeyCode::Down, KeyModifiers::ALT), t), Input::Other);
         assert!(!app.zen.active(t));
     }
 
@@ -715,9 +727,9 @@ mod zen_tests {
         // (what, the key, set up the app once in zen, composer empty or not)
         type Setup = fn(&mut App);
         let none: Setup = |_| {};
-        // ctrl+k on an empty composer selects an agent in the panel
+        // ⌥↓ on an empty composer selects an agent in the panel
         let select: Setup = |app| {
-            on_key(app, &KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+            on_key(app, &KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
         };
         let scrolled: Setup = |app| {
             app.follow = false;
@@ -734,9 +746,7 @@ mod zen_tests {
             ("⏎ on an empty composer", KeyCode::Enter, n, false, false, none),
             ("⌥1 to an agent", KeyCode::Char('1'), a, false, true, none),
             ("⌥0 back to main", KeyCode::Char('0'), a, false, true, in_docs),
-            ("ctrl+k next agent", KeyCode::Char('k'), c, false, false, none),
             ("alt+↓ next agent", KeyCode::Down, a, false, false, none),
-            ("ctrl+j previous agent", KeyCode::Char('j'), c, false, false, none),
             ("alt+↑ previous agent", KeyCode::Up, a, false, false, none),
             ("⏎ enter the selected agent", KeyCode::Enter, n, false, false, select),
             ("space preview", KeyCode::Char(' '), n, false, false, select),
@@ -745,7 +755,7 @@ mod zen_tests {
             ("esc close the selection", KeyCode::Esc, n, false, false, select),
             ("esc back to main", KeyCode::Esc, n, false, false, in_docs),
             ("esc draft away", KeyCode::Esc, n, false, true, none),
-            ("ctrl+g card view", KeyCode::Char('g'), c, true, true, none),
+            ("ctrl+2 another inbox item", KeyCode::Char('2'), c, true, true, none),
             ("ctrl+n next card", KeyCode::Char('n'), c, true, true, none),
             ("ctrl+p previous card", KeyCode::Char('p'), c, true, true, none),
             ("ctrl+x close the card", KeyCode::Char('x'), c, true, true, none),
@@ -769,10 +779,7 @@ mod zen_tests {
                 sb::dispatch(&mut app, &card.to_string());
                 let calls = app.sb.calls();
                 app.zen.calls(calls, t);
-                if !crate::sb::card_view_open(&app) {
-                    on_key(&mut app, &KeyEvent::new(KeyCode::Char('g'), c));
-                    on_key(&mut app, &KeyEvent::new(KeyCode::Enter, n));
-                }
+                on_key(&mut app, &KeyEvent::new(KeyCode::Char('1'), c));
                 assert!(crate::sb::card_view_open(&app), "{what}: the card view is up");
             }
             setup(&mut app);
@@ -937,11 +944,8 @@ mod paint_tests {
             let mut app = crate::sb::bench::test_app();
             with_agents_and_a_card(&mut app);
             assert_eq!(resets(&mut app), vec![], "main, {mode:?}");
-            // the inbox selected, then the card view
-            let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-            sb::key(&mut app, &g, false);
-            assert_eq!(resets(&mut app), vec![], "inbox, {mode:?}");
-            sb::key(&mut app, &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), false);
+            // the card view (ctrl+1)
+            sb::key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL), false);
             assert_eq!(resets(&mut app), vec![], "card, {mode:?}");
             // the / popup
             app.ed.text = "/".into();

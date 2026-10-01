@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
 from tui_tmux import tui_session, run, wait_until  # noqa: E402
 
-NORMAL = "   @ file   "  # the key bar (BISE-98/99; `ctrl+g inbox` may come before it, BISE-248)
+NORMAL = "   @ file   "  # the key bar (BISE-98/99; `ctrl+1 inbox` may come before it, BISE-248)
 
 
 def flat(sc):
@@ -47,7 +47,7 @@ def key_envs():
 def env(state_root, home):
     # the fake env's MISTRAL_API_KEY stays: the one key the step finds
     blank = " ".join("%s=" % k for k in key_envs() if k != "MISTRAL_API_KEY")
-    return "BISE_HOME=%s HOME=%s %s" % (state_root, home, blank)
+    return "BISE_HOME=%s HOME=%s BISE_CTRL_DIGITS=1 %s" % (state_root, home, blank)
 
 
 DEMO = "show me what you can do"
@@ -129,7 +129,7 @@ def main():
         sc = t.wait("any key ↵")
         for s in ["how it works", "1  you talk to me: main, your team lead. any time, keep typing",
                   "2  i start an agent when a job needs one. they sync on their own",
-                  "3  only the real decisions reach you, in your inbox · ctrl+g",
+                  "3  only the real decisions reach you, in your inbox · ctrl+1",
                   "ctrl+o opens everything folded", "○ ○ ●"]:
             assert s in flat(sc), sc
         assert "which model should do the work?" not in sc and "i'll work in" not in sc, sc
@@ -166,7 +166,7 @@ def main():
         sc = t.wait("this is your inbox.")
         assert "2 not now" not in sc and "what's on your mind?" in sc, sc
         shot("7-setup-card", sc)
-        t.keys("C-g")                       # the only item: ctrl+g opens it at once (BISE-254)
+        t.typed("\x1b[49;5u")             # ctrl+1 (the kitty form) opens it (BISE-302)
         sc = t.wait("1-2 pick")
         assert "checking changes nothing." in sc, sc
         t.keys("2")                         # not now: one dim row, never asked again

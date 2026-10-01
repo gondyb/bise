@@ -348,8 +348,8 @@ fn counts(sb: &Sb) -> Option<[usize; 5]> {
 /// too wide, the least important counts go first ("needs you" stays, then
 /// cards, working, waiting, done), shown in the §8 order. `gust` leads the
 /// working count (BISE-107). The open cards (`# 3 in the inbox`, dim) come last,
-/// so the number main says (`card #153`) is found in the panel or with
-/// ctrl+g even when the panel is hidden (BISE-125).
+/// so what waits is counted even when the panel is hidden (BISE-125).
+/// The panel numbers the items as the strip does (BISE-302).
 fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
     // (glyph, word, glyph color, text color): done's check is accent on
     // dim words (BISE-100)
@@ -526,7 +526,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             }
         }
     }
-    cards_lines(sb, w, &mut lines, &mut owners, &mut sel_row);
+    cards_lines(app, w, &mut lines, &mut owners, &mut sel_row);
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
     // the body under the title: scrolled to keep the selection in view;
     // what does not fit below ends in `+ {n} more`
@@ -601,45 +601,43 @@ fn window(
 }
 
 /// The cards section, under the live agents (BISE-125): a title row
-/// `cards · ctrl+g`, then one row per open card, newest first: `#153 ✓
-/// debt-solo  its first line…` (the number main says, the kind's glyph
-/// in its color, the agent, the text cut to the row). The card in the
-/// box is on the selection color; with no agent selected, the panel
-/// scrolls to it. Nothing while no card is open.
+/// `inbox`, then one row per open card in the strip's order with the
+/// strip's number (BISE-302, designer: ctrl+1 opens the row that says 1
+/// everywhere): ` 1 ? perf  its first line…` (the kind's glyph in its
+/// color, the agent, the text cut to the row). The card in the box is on
+/// the selection color; with no agent selected, the panel scrolls to it.
+/// Nothing while no card is open.
 fn cards_lines(
-    sb: &Sb,
+    app: &App,
     w: usize,
     lines: &mut Vec<Line<'static>>,
     owners: &mut Vec<(usize, Hit)>,
     sel_row: &mut Option<usize>,
 ) {
+    let sb = &app.sb;
     if sb.cards.is_empty() {
         return;
     }
-    let mut cards: Vec<&Card> = sb.cards.iter().collect();
-    cards.sort_by_key(|c| std::cmp::Reverse(c.id));
     let shown = sb.card.open.then(|| sb.current_card().map(|c| c.id)).flatten();
     lines.push(Line::from(""));
     owners.push((lines.len(), Hit::Cards));
-    lines.push(Line::from(vec![
-        Span::styled(" inbox", Style::default().fg(text())),
-        Span::styled(" · ctrl+g", Style::default().fg(faint())),
-    ]));
-    for c in cards {
+    lines.push(Line::from(Span::styled(" inbox", Style::default().fg(text()))));
+    let num = super::card_draw::number_style(app, dim());
+    for (id, n) in super::card_draw::row_numbers(sb) {
+        let Some(c) = sb.cards.iter().find(|c| c.id == id) else { continue };
         if shown == Some(c.id) && sel_row.is_none() {
             *sel_row = Some(lines.len());
         }
         owners.push((lines.len(), Hit::Card(c.id)));
-        lines.push(card_row(c, w, (shown == Some(c.id)).then(selection_bg)));
+        lines.push(card_row(c, n, num, w, (shown == Some(c.id)).then(selection_bg)));
     }
 }
 
-/// One card's row, `w` columns: ` #153 ✓ debt-solo  first line…`, 1
-/// column of margin on the right. The agent keeps its whole name while
-/// 6 columns are left for the text, then it is cut too.
-fn card_row(c: &Card, w: usize, bg: Option<Color>) -> Line<'static> {
-    // the TUI's own cards (setup) have no hub number
-    let num = if super::setup::is_local(c.id) { " ".to_string() } else { format!(" #{} ", c.id) };
+/// One card's row, `w` columns: ` 1 ? perf  first line…`, 1 column of
+/// margin on the right. The agent keeps its whole name while 6 columns
+/// are left for the text, then it is cut too.
+fn card_row(c: &Card, n: usize, num_style: Style, w: usize, bg: Option<Color>) -> Line<'static> {
+    let num = format!(" {n} ");
     let g = super::cards::kind_look(&c.kind).1;
     let lead = num.width() + g.width() + 1;
     let room = w.saturating_sub(lead + 1);
@@ -652,7 +650,7 @@ fn card_row(c: &Card, w: usize, bg: Option<Color>) -> Line<'static> {
     let rest = room.saturating_sub(agent.width() + 2);
     let title = if rest >= 3 { fit(first, rest) } else { String::new() };
     let mut spans = vec![
-        Span::styled(num, Style::default().fg(dim())),
+        Span::styled(num, num_style),
         Span::styled(g.to_string(), Style::default().fg(super::cards::glyph_color(&c.kind))),
         Span::raw(" "),
         Span::styled(agent, Style::default().fg(text())),
@@ -730,7 +728,7 @@ pub(crate) enum Hit {
     Archived,
     /// An open card: shown in the card box (BISE-125).
     Card(u64),
-    /// The title of the cards section: ctrl+g.
+    /// The title of the cards section: the card view on the top card.
     Cards,
 }
 
@@ -969,8 +967,6 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
         Mode::Confirm
     } else if sb.card.open {
         Mode::Card
-    } else if sb.card.inbox.is_some() {
-        Mode::Inbox
     } else if sb.selected.is_some() {
         Mode::Selected
     } else if sb.focus_archived() {
@@ -987,10 +983,7 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
 /// inside an agent, a read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = &app.sb;
-    Some(if sb.card.inbox.is_some() && !sb.card.open {
-        // the inbox selected (ctrl+g): the composer waits
-        "your message waits here".to_string()
-    } else if sb.focus_archived() {
+    Some(if sb.focus_archived() {
         format!("{} is archived: read-only", sb.focus)
     } else if sb.is_main_focus() {
         PLACEHOLDER_MAIN.to_string()
@@ -1601,19 +1594,19 @@ mod archived_tests {
         assert!(row_of(&p, &format!("{} new", G_STOPPED)).is_none());
     }
 
-    /// Keys: A expands from a selection, Ctrl+K/J walk into the archived
+    /// Keys: A expands from a selection, ⌥↑↓ walk into the archived
     /// rows (the selected one shows its report), ⏎ opens it; Alt+N never
     /// lands on an archived task; D does not drop one.
     #[test]
     fn archived_keys() {
         let mut app = app();
         let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
-        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Down, KeyModifiers::ALT);
         assert_eq!(app.sb.nav().len(), 2);
         press(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
         assert!(app.sb.archived_open);
         assert_eq!(app.sb.selected, Some(0), "selection kept");
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT);
         let sb = &app.sb;
         assert_eq!(sb.selected_agent().map(|a| a.name.as_str()), Some("old"));
         let x = sb.panel_hits.borrow().area.x;
@@ -2214,48 +2207,50 @@ mod cards_tests {
             .collect()
     }
 
-    /// Under the agents: a blank row, `inbox · ctrl+g`, then one row per
-    /// card, newest first, `#N glyph agent  first line`; the text cut to
-    /// the panel with `…`, never past its width.
+    /// Under the agents: a blank row, `inbox`, then one row per card in
+    /// the strip's order with its number (BISE-302: ctrl+N opens the row
+    /// that says N), `N glyph agent  first line`; the text cut to the
+    /// panel with `…`, never past its width.
     #[test]
     fn the_open_cards_list_under_the_agents() {
         let app = app();
         let t = rows(&app, 40, 14);
         let at = |s: &str| t.iter().position(|r| r.contains(s)).unwrap_or_else(|| panic!("{s} missing:\n{}", t.join("\n")));
-        assert!(at("docs") < at(" inbox · ctrl+g"), "{}", t.join("\n"));
-        assert_eq!(t[at(" inbox · ctrl+g") - 1], "");
-        let first = at(" inbox · ctrl+g") + 1;
-        assert_eq!(t[first], format!(" #153 {} debt-solo  the debt list is cl…", crate::theme::done_glyph()));
-        assert_eq!(t[first + 1], format!(" #40 {} docs  no access to the wiki", G_NEEDS_YOU));
+        let title = t.iter().position(|r| r == " inbox").unwrap_or_else(|| panic!("{}", t.join("\n")));
+        assert!(at("docs") < title, "{}", t.join("\n"));
+        assert_eq!(t[title - 1], "");
+        let first = title + 1;
         // the first line of the text, not the blank one before it
-        assert_eq!(t[first + 2], format!(" #12 {} docs  v1 or v2?", G_NEEDS_YOU));
+        assert_eq!(t[first], format!(" 1 {} docs  v1 or v2?", G_NEEDS_YOU));
+        assert_eq!(t[first + 1], format!(" 2 {} docs  no access to the wiki", G_NEEDS_YOU));
+        assert_eq!(t[first + 2], format!(" 3 {} debt-solo  the debt list is clear…", crate::theme::done_glyph()));
         // 28 columns: still one row each, cut at the width
         for w in [28u16, 24] {
             let t = rows(&app, w, 14);
-            let r = t.iter().find(|r| r.contains("#153")).unwrap();
+            let r = t.iter().find(|r| r.starts_with(" 3 ")).unwrap_or_else(|| panic!("{}", t.join("\n")));
             assert!(r.chars().count() < w as usize, "{r:?} at {w}");
-            assert!(r.contains(if w == 28 { "debt-solo" } else { "debt-so…" }) && r.ends_with('…'), "{r:?} at {w}");
+            assert!(r.contains("debt-solo") && r.ends_with('…'), "{r:?} at {w}");
         }
         // a long agent name is cut too, a few columns of text kept
         let mut app = app;
         app.sb.cards.push(card(200, "question", "a-very-long-agent-name-indeed", "which one?"));
         let t = rows(&app, 28, 14);
-        let r = t.iter().find(|r| r.contains("#200")).unwrap();
+        let r = t.iter().find(|r| r.contains(" 2 ? a-very")).unwrap_or_else(|| panic!("{}", t.join("\n")));
         assert!(r.contains("…  wh"), "{r:?}");
         assert!(r.chars().count() < 28);
         // colors: the number dim, the glyph in its kind's color, the text dim
         let mut term = Terminal::new(TestBackend::new(40, 14)).unwrap();
         term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
         let t = rows(&app, 40, 14);
-        let y = t.iter().position(|r| r.contains("#40")).unwrap() as u16;
+        let y = t.iter().position(|r| r.contains("no access")).unwrap() as u16;
         let buf = term.backend().buffer();
         assert_eq!(buf.cell((1, y)).unwrap().fg, dim());
-        assert_eq!(buf.cell((5, y)).unwrap().fg, accent(), "blocked: needs you, accent");
-        assert_eq!(buf.cell((7, y)).unwrap().fg, text());
-        assert_eq!(buf.cell((13, y)).unwrap().fg, dim());
+        assert_eq!(buf.cell((3, y)).unwrap().fg, accent(), "blocked: needs you, accent");
+        assert_eq!(buf.cell((5, y)).unwrap().fg, text());
+        assert_eq!(buf.cell((11, y)).unwrap().fg, dim());
         // no card: no section
         app.sb.cards.clear();
-        assert!(!rows(&app, 40, 14).iter().any(|r| r.contains("cards")));
+        assert!(!rows(&app, 40, 14).iter().any(|r| r == " inbox"));
     }
 
     /// Many cards: the panel ends with `+ n more`; the card in the box
@@ -2270,14 +2265,14 @@ mod cards_tests {
         assert!(t[13].starts_with(" + ") && t[13].ends_with(" more"), "{}", t.join("\n"));
         // 33 cards; title, blank, 3 agents, blank, cards title, 6 cards: 27 below
         assert_eq!(t[13], " + 27 more", "{}", t.join("\n"));
-        assert!(t.iter().any(|r| r.contains("#1029")), "newest first");
-        // the oldest card shown in the box: the panel scrolls to it
-        super::super::cards::open_view(&mut app, Some(12));
+        assert!(t.iter().any(|r| r.starts_with(" 1 ? docs  v1")), "the strip's order: {}", t.join("\n"));
+        // a card far down shown in the box: the panel scrolls to it
+        super::super::cards::open_view(&mut app, Some(1029));
         let t = rows(&app, 28, 14);
-        assert!(t.iter().any(|r| r.contains("#12 ")), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.contains("report 29")), "{}", t.join("\n"));
         let mut term = Terminal::new(TestBackend::new(28, 14)).unwrap();
         term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
-        let y = t.iter().position(|r| r.contains("#12 ")).unwrap() as u16;
+        let y = t.iter().position(|r| r.contains("report 29")).unwrap() as u16;
         assert_eq!(term.backend().buffer().cell((20, y)).unwrap().bg, selection_bg());
     }
 
@@ -2287,8 +2282,7 @@ mod cards_tests {
     }
 
     /// A click on a card row opens the card view on it (cards v2); on
-    /// another card the view follows; the section title toggles the view
-    /// like ctrl+g.
+    /// another card the view follows; the section title toggles the view.
     #[test]
     fn a_click_on_a_card_opens_it() {
         let mut app = app();
@@ -2300,22 +2294,22 @@ mod cards_tests {
         };
         let screen = draw(&mut app);
         let x = app.sb.panel_hits.borrow().area.x;
-        let y_of = |s: &[String], l: &str| s.iter().position(|r| r.chars().skip(x as usize).collect::<String>().contains(l)).unwrap() as u16;
+        let y_of = |s: &[String], l: &str| s.iter().position(|r| r.chars().skip(x as usize).collect::<String>().contains(l)).unwrap_or_else(|| panic!("{l}:\n{}", s.join("\n"))) as u16;
         assert!(!app.sb.card.open);
-        assert!(click(&mut app, x + 3, y_of(&screen, "#40")));
+        assert!(click(&mut app, x + 3, y_of(&screen, "no access")));
         assert!(app.sb.card.open);
         assert_eq!(app.sb.current_card().map(|c| c.id), Some(40));
         let screen = draw(&mut app);
         assert!(screen.iter().any(|r| r.contains("docs is blocked")), "the view shows #40:\n{}", screen.join("\n"));
         // another card: the view follows
-        click(&mut app, x + 3, y_of(&screen, "#153"));
+        click(&mut app, x + 3, y_of(&screen, "3 ✓ debt-solo"));
         assert_eq!((app.sb.card.open, app.sb.current_card().map(|c| c.id)), (true, Some(153)));
         // the section title: back to the thread, then the view again
         let screen = draw(&mut app);
-        click(&mut app, x + 3, y_of(&screen, " inbox · ctrl+g"));
+        click(&mut app, x + 3, y_of(&screen, " inbox  "));
         assert!(!app.sb.card.open);
         let screen = draw(&mut app);
-        click(&mut app, x + 3, y_of(&screen, " inbox · ctrl+g"));
+        click(&mut app, x + 3, y_of(&screen, " inbox  "));
         assert!(app.sb.card.open);
         assert_eq!(app.sb.focus, "main", "a card click does not change the view");
     }

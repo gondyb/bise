@@ -138,7 +138,6 @@ pub(crate) fn has_agents(app: &App) -> bool {
 /// Open the palette on `query` (`/switch dark`); the find field closes.
 pub(crate) fn open(app: &mut App, query: &str) {
     crate::find::close(app);
-    leave_inbox(app);
     app.palette = Some(Palette { query: query.trim().to_string(), ..Palette::default() });
 }
 

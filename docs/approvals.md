@@ -381,7 +381,7 @@ and the TUI's card box already works in every view. So an approval shows in
 main's view, in the asker's view, and in any other agent's view, the same.
 
 - New: the box **opens by itself** when an approval card arrives (the other
-  kinds wait for ctrl+g). It does not take the keyboard: the composer keeps
+  kinds wait for ctrl+1-9 or a click, BISE-302). It does not take the keyboard: the composer keeps
   its text, and the card's keys are digits on an empty composer or alt+digit
   (§7).
 - Approval cards sort first in the box (before questions): each one holds

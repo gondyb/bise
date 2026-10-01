@@ -19,10 +19,10 @@ mod mention;
 pub(crate) mod palette;
 pub(super) use mention::mentions;
 mod cards;
-pub(super) use cards::{card_choices, card_mouse, inbox_key, leave_inbox};
+pub(super) use cards::{card_choices, card_mouse, proves_ctrl_digits};
 use cards::{Card, CardView};
 mod card_draw;
-pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, inbox_pairs, inbox_selected, key_pairs as card_key_pairs, strip_height};
+pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs, strip_height};
 mod panel;
 #[cfg(test)]
 mod tour_tests;
@@ -56,6 +56,11 @@ pub(crate) struct CtrlView {
     pub(crate) agents: usize,
     pub(crate) cards: usize,
     pub(crate) card_open: bool,
+}
+
+/// The inbox's rows (BISE-302: ctrl+1 to ctrl+N open them).
+pub(crate) fn strip_rows(app: &App) -> usize {
+    card_draw::strip_ids(&app.sb).len()
 }
 
 pub(crate) fn ctrl_view(app: &App) -> CtrlView {
@@ -168,7 +173,7 @@ pub(super) struct Sb {
     /// first hello): a hub with another one was started by a reload
     /// (BISE-131), which this TUI follows by re-executing itself.
     reload_seen: Option<String>,
-    /// The strip and the card view (ctrl+g), never opened by the hub.
+    /// The strip and the card view (ctrl+1-9, a click), never opened by the hub.
     card: CardView,
     /// Set by the last draw: the panel rows and their agents (clicks).
     panel_hits: std::cell::RefCell<panel::PanelHits>,
@@ -346,7 +351,7 @@ impl Sb {
         self.agents.iter().find(|a| a.name == name)
     }
 
-    /// The entry of the panel highlighted by Ctrl+K/J.
+    /// The entry of the panel highlighted by ⌥↑↓.
     fn selected_agent(&self) -> Option<&Agent> {
         self.nav().get(self.selected?).copied()
     }
@@ -753,13 +758,12 @@ pub(crate) fn tour_snap(app: &App) -> crate::tour::Snap {
         })
         .collect();
     let card = sb.cards.iter().find(|c| !setup::is_local(c.id)).map(|c| c.agent.clone());
-    crate::tour::Snap { members, focus: sb.focus.clone(), card, palette: app.palette.is_some() }
+    crate::tour::Snap { members, focus: sb.focus.clone(), card, palette: app.palette.is_some(), no_ctrl_digits: !app.ctrl_digits }
 }
 
 /// Change the feed in focus (checkout / return).
 pub(super) fn focus(app: &mut App, name: &str) {
     // the card view goes: the thread you go to takes its place
-    cards::leave_inbox(app);
     cards::close_view(app);
     let sb = &mut app.sb;
     // BISE-61: looking inside an agent is what the first-agent hint asks
@@ -1230,10 +1234,11 @@ mod nav_key_tests {
         nav_key(&KeyEvent::new(code, m))
     }
 
+    /// BISE-302: ctrl+k / ctrl+j no longer move between agents.
     #[test]
-    fn ctrl_k_next_ctrl_j_previous() {
-        assert_eq!(nav(KeyCode::Char('k'), KeyModifiers::CONTROL), Some(Nav::Next));
-        assert_eq!(nav(KeyCode::Char('j'), KeyModifiers::CONTROL), Some(Nav::Prev));
+    fn alt_down_next_alt_up_previous() {
+        assert_eq!(nav(KeyCode::Char('k'), KeyModifiers::CONTROL), None);
+        assert_eq!(nav(KeyCode::Char('j'), KeyModifiers::CONTROL), None);
         assert_eq!(nav(KeyCode::Down, KeyModifiers::ALT), Some(Nav::Next));
         assert_eq!(nav(KeyCode::Up, KeyModifiers::ALT), Some(Nav::Prev));
     }
@@ -1292,15 +1297,17 @@ mod nav_key_tests {
         assert!(app.attachments.is_empty());
     }
 
-    /// The panel path of tui_tmux.py: from no selection, Ctrl+K selects
+    /// The panel path of tui_tmux.py: from no selection, ⌥↓ selects
     /// main then the first task; Enter (empty composer) enters its view.
     #[test]
-    fn ctrl_k_then_enter_enters_the_selected_task() {
+    fn alt_down_then_enter_enters_the_selected_task() {
         let mut app = bench::test_app();
         app.sb.agents = vec![agent("main"), agent("t1")];
-        assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert!(!press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL), "ctrl+k is the editor's");
+        assert_eq!(app.sb.selected, None);
+        assert!(press(&mut app, KeyCode::Down, KeyModifiers::ALT));
         assert_eq!(app.sb.selected, Some(0));
-        assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert!(press(&mut app, KeyCode::Down, KeyModifiers::ALT));
         assert_eq!(app.sb.selected, Some(1));
         assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
         let sb = &app.sb;
@@ -1308,14 +1315,14 @@ mod nav_key_tests {
         assert_eq!(sb.selected, None);
     }
 
-    /// Ctrl+J goes backwards: from no selection, the last agent first.
+    /// ⌥↑ goes backwards: from no selection, the last agent first.
     #[test]
-    fn ctrl_j_from_nothing_selects_the_last_agent() {
+    fn alt_up_from_nothing_selects_the_last_agent() {
         let mut app = bench::test_app();
         app.sb.agents = vec![agent("main"), agent("t1"), agent("t2")];
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT);
         assert_eq!(app.sb.selected, Some(2));
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT);
         assert_eq!(app.sb.selected, Some(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.sb.focus, "t1");

@@ -17,7 +17,7 @@ COLS, ROWS = 150, 42
 
 
 def main():
-    with tui_session(COLS, ROWS) as t:
+    with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=1") as t:
         t.wait("bise :*")
         t.wait(" idle")
         # two agents message main: questions, a blocked report
@@ -32,7 +32,7 @@ def main():
         # "needs you" in the header
         time.sleep(1.5)
         sc = t.screen()
-        for gone in ("waiting for you", "ctrl+g select", "needs you", "ia needs you"):
+        for gone in ("waiting for you", "ctrl+1 open", "needs you", "ia needs you"):
             assert gone not in sc, (gone, sc)
         # main escalates: one row in the user's inbox
         t.typed('[[bash: sb card "ship the export on friday?"]]')
@@ -41,9 +41,7 @@ def main():
         sc = t.wait("? main · ship the export on friday?")
         assert "ia asks main ·" not in sc and "? ia ·" not in sc, sc
         # only the user answers it: open it, type, ⏎; it leaves the strip
-        t.keys("C-g")
-        t.wait("esc back")
-        t.keys("Enter")
+        t.typed("\x1b[49;5u")             # ctrl+1, the kitty form (BISE-302)
         t.wait("your answer")
         t.typed("yes friday")
         t.wait("⏎ send as your answer")

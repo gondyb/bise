@@ -356,7 +356,7 @@ pub(crate) fn pump(app: &mut App) {
                 app.sb.setup.vars = Some(v);
                 app.sb.setup.add(What::Ask(scope));
                 put_back(&mut app.sb);
-                // the first card: its hint teaches ctrl+g (BISE-61)
+                // the first card: its hint teaches ctrl+1 (BISE-61, BISE-302)
                 crate::hints::once(app, crate::hints::Hint::FirstCard);
             }
         }

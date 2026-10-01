@@ -638,6 +638,33 @@ pub(crate) fn parse_csi_special_key_code(buffer: &[u8]) -> io::Result<Option<Int
 
     let s = std::str::from_utf8(&buffer[2..buffer.len() - 1])
         .map_err(|_| could_not_parse_event_error())?;
+
+    // bise's patch (BISE-302): xterm's modifyOtherKeys form, what tmux
+    // sends with `extended-keys always` (its default format, xterm):
+    // `CSI 27 ; modifiers ; key-code ~`, e.g. ctrl+1 = `CSI 27;5;49~`.
+    if let Some(rest) = s.strip_prefix("27;") {
+        let mut f = rest.split(';');
+        let mask = f.next().and_then(|m| m.parse::<u8>().ok());
+        let code = f.next().and_then(|c| c.parse::<u32>().ok());
+        if let (Some(mask), Some(code), None) = (mask, code, f.next()) {
+            let keycode = match code {
+                9 => KeyCode::Tab,
+                13 => KeyCode::Enter,
+                27 => KeyCode::Esc,
+                127 => KeyCode::Backspace,
+                c => KeyCode::Char(char::from_u32(c).ok_or_else(could_not_parse_event_error)?),
+            };
+            let input_event = Event::Key(KeyEvent::new_with_kind_and_state(
+                keycode,
+                parse_modifiers(mask),
+                KeyEventKind::Press,
+                parse_modifiers_to_state(mask),
+            ));
+            return Ok(Some(InternalEvent::Event(input_event)));
+        }
+        return Err(could_not_parse_event_error());
+    }
+
     let mut split = s.split(';');
 
     // This CSI sequence can be a list of semicolon-separated numbers.
@@ -1526,6 +1553,20 @@ mod tests {
             Some(InternalEvent::Event(Event::Key(k))) => (k.code, k.modifiers, k.kind),
             e => panic!("{e:?}"),
         }
+    }
+
+    #[test]
+    fn test_bise_modify_other_keys_ctrl_digit() {
+        // tmux with `extended-keys always`: ctrl+1, ctrl+shift+&
+        assert_eq!(
+            parse_event(b"\x1B[27;5;49~", false).unwrap(),
+            Some(InternalEvent::Event(Event::Key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL))))
+        );
+        assert_eq!(
+            parse_event(b"\x1B[27;6;38~", false).unwrap(),
+            Some(InternalEvent::Event(Event::Key(KeyEvent::new(KeyCode::Char('&'), KeyModifiers::CONTROL | KeyModifiers::SHIFT))))
+        );
+        assert!(parse_event(b"\x1B[27;5~", false).is_err());
     }
 
     #[test]

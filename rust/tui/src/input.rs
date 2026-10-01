@@ -495,8 +495,6 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     if app.term.paste(text) {
         return;
     }
-    // a paste goes back from the inbox selected to your message
-    sb::leave_inbox(app);
     if sb::palette::on_paste(app, text) {
         return;
     }
@@ -567,6 +565,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     if k.modifiers.contains(KeyModifiers::SUPER) && !matches!(k.code, KeyCode::Modifier(_)) {
         app.cmd_keys = true;
     }
+    // BISE-302: a ctrl+digit only a terminal with them sends: the inbox
+    // says ctrl+1 from now on
+    if crate::sb::proves_ctrl_digits(k) {
+        app.ctrl_digits = true;
+    }
     if help::on_key(app, k) {
         return false;
     }
@@ -577,11 +580,6 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         return false;
     }
     if k.kind != KeyEventKind::Press {
-        return false;
-    }
-    // the inbox selected (ctrl+g): ↑↓ ⏎ → esc are its own; any other key
-    // goes back to the composer and does its job (cards.rs)
-    if sb::inbox_key(app, k) {
         return false;
     }
     if voice_key(app, k, voice::resolve_job) {

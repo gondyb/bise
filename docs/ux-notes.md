@@ -25,7 +25,7 @@ Touches de départ :
 | Touche | Action |
 |---|---|
 | `Esc` | Retour à main (compositeur vide) |
-| `Ctrl+J` / `Ctrl+K` | Tâche suivante / précédente dans la liste |
+| `Alt+↓` / `Alt+↑` | Tâche suivante / précédente dans la liste (Ctrl+J/K retirés, BISE-302) |
 | `Enter` sur une tâche | Checkout |
 | `Space` sur une tâche | Aperçu sans changer le focus |
 | `@nom …` | Route explicite |

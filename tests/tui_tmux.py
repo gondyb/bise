@@ -213,9 +213,9 @@ def main():
         sc = t.wait_re(panel_row(1, "t1"))
         t.wait("new agent @t1")
         t.wait_re(r"t1 +(→ \S+|m_\d)", 60)           # the automatic reply in main's feed (level 3: names in columns)
-        # select the task with Ctrl+K (next: main, then t1), enter it
-        t.keys("C-k")
-        t.keys("C-k")
+        # select the task with ⌥↓ (next: main, then t1), enter it
+        t.keys("M-Down")
+        t.keys("M-Down")
         sc = t.wait("⏎ enter   space preview")
         t.keys("Enter")
         sc = t.wait_re(in_view("t1"))
@@ -237,8 +237,8 @@ def main():
         t.keys("Escape")
         t.wait_re(in_view("main"))
         # preview: select, Space; the status says it; Esc closes
-        t.keys("C-k")
-        t.keys("C-k")
+        t.keys("M-Down")
+        t.keys("M-Down")
         t.keys("Space")
         t.wait("preview of t1")
         t.keys("Escape")
@@ -247,8 +247,8 @@ def main():
         t.keys("Enter")
         t.wait("écris {{bash: echo hi-t1}}")
         # drop from the panel with D: it asks first (BISE-43), y drops
-        t.keys("C-k")
-        t.keys("C-k")
+        t.keys("M-Down")
+        t.keys("M-Down")
         t.typed("D")
         t.wait("drop t1? its history stays in archived. y / n")
         t.typed("y")

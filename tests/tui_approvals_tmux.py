@@ -31,11 +31,9 @@ COLS, ROWS = 140, 40
 
 
 def open_card(t, who):
-    """ctrl+g: the inbox selected on the card (⏎ opens it), or its view"""
-    t.keys("C-g")
-    i, _ = t.wait_any(["▸ ? %s wants to run" % who, "type why not, ⏎ says no"])
-    if i == 0:
-        t.keys("Enter")
+    """ctrl+1 (the kitty form, BISE-302): the top inbox item in its view"""
+    t.typed("\x1b[49;5u")
+    t.wait("type why not, ⏎ says no")
 
 
 def main():
@@ -71,7 +69,7 @@ def main():
             with open(os.path.join(dump, "%02d-%s.ansi" % (n[0], name)), "w") as f:
                 f.write(t.screen(colors=True))
 
-    env = "HOME=%s BISE_HOME=%s" % (home, bise)
+    env = "HOME=%s BISE_HOME=%s BISE_CTRL_DIGITS=1" % (home, bise)
     try:
         session(E, env, home, bise, shot)
     finally:

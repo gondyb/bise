@@ -1,5 +1,5 @@
 //! The inbox drawn (cards.rs has the model and the keys): the strip
-//! above the divider (the quick look, the inbox selected with ctrl+g),
+//! above the divider (the quick look, its rows numbered for ctrl+1-9),
 //! the card view in the history's place (⏎ on a row), the divider's
 //! label and the key bar of the view.
 
@@ -57,38 +57,33 @@ fn entries(sb: &Sb) -> Vec<Entry<'_>> {
 }
 
 /// The strip's rows, by the first card of each (approvals that came
-/// together share a row): what ↑↓ walk while the inbox is selected.
+/// together share a row): row N is what ctrl+N opens (BISE-302).
 pub(super) fn strip_ids(sb: &Sb) -> Vec<u64> {
     entries(sb).iter().map(|e| e.first().id).collect()
 }
 
-/// Strip row `id` is one item (not approvals that came together): its
-/// digits answer it.
-pub(super) fn strip_row_is_one(sb: &Sb, id: u64) -> bool {
-    entries(sb).iter().any(|e| matches!(e, Entry::One(c) if c.id == id))
-}
-
-/// The key bar while the inbox is selected: `↑↓ choose · 1-2 answer ·
-/// ⏎ open · esc back`; a row with no options `↑↓ choose · ⏎ open · esc
-/// back to your message`.
-pub(crate) fn inbox_pairs(app: &App) -> Vec<(&'static str, String)> {
-    let sb = &app.sb;
-    let es = entries(sb);
-    let n = sb.card.inbox.and_then(|i| es.get(i.min(es.len().saturating_sub(1)))).map_or(0, |e| match e {
-        Entry::One(c) => shape(c).options.len(),
-        Entry::Group(_) => 0,
-    });
-    let p = |k: &'static str, l: &str| (k, l.to_string());
-    if n > 0 {
-        vec![p("↑↓", "choose"), p(digits(n), "answer"), p("⏎", "open"), p("esc", "back")]
-    } else {
-        vec![p("↑↓", "choose"), p("⏎", "open"), p("esc", "back to your message")]
+/// The strip's number of each card (1 = the most blocking; approvals
+/// that came together share their row's), for the panel's inbox rows.
+pub(super) fn row_numbers(sb: &Sb) -> Vec<(u64, usize)> {
+    let mut out = Vec::new();
+    for (i, e) in entries(sb).iter().enumerate() {
+        match e {
+            Entry::One(c) => out.push((c.id, i + 1)),
+            Entry::Group(v) => out.extend(v.iter().map(|c| (c.id, i + 1))),
+        }
     }
+    out
 }
 
-/// The inbox is selected (ctrl+g): the key bar and the composer know.
-pub(crate) fn inbox_selected(app: &App) -> bool {
-    app.sb.card.inbox.is_some() && !app.sb.card.open
+/// A row's number (BISE-302, designer): faint; ctrl held (ctrlhint.rs),
+/// in accent (bold under NO_COLOR) where ctrl+N opens it. Nothing moves.
+pub(super) fn number_style(app: &App, base: Color) -> Style {
+    let lit = app.ctrl_digits && crate::ctrlhint::held(app) == Some(crate::ctrlhint::Held::Ctrl);
+    match (lit, no_color()) {
+        (true, true) => Style::default().add_modifier(Modifier::BOLD),
+        (true, false) => fg(theme::accent()),
+        (false, _) => fg(base),
+    }
 }
 
 /// NO_COLOR: no tint to raise a row, reverse video instead.
@@ -105,7 +100,7 @@ fn pointer() -> &'static str {
     }
 }
 
-/// A selected row: raised, reversed under NO_COLOR.
+/// A highlighted option: raised, reversed under NO_COLOR.
 fn raise(line: Line<'static>) -> Line<'static> {
     let st = if no_color() { Style::default().add_modifier(Modifier::REVERSED) } else { Style::default().bg(theme::raised()) };
     line.patch_style(st)
@@ -164,84 +159,27 @@ fn fg(c: Color) -> Style {
     Style::default().fg(c)
 }
 
-/// The right side of a strip row: `+ n`, then only on the row selected
-/// (ctrl+g, `sel`) its keys: the options with their digits (`1 allow  2
-/// always`, more than 3: `1-9 answer`), `⏎ open` (or the item's own
-/// action, `⏎ paste it`), `×`; each piece with its hit. The other rows
-/// and the strip out of the inbox show no keys: nothing but ctrl+g (and
-/// the mouse) acts on the inbox.
-fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize, sel: bool) -> (Row, Vec<(usize, usize, CardHit)>) {
-    let id = e.first().id;
-    let one = matches!(e, Entry::One(_));
-    let n = if one { s.options.len() } else { 0 };
-    let close = if theme::ascii_mode() { "x" } else { "×" };
-    // level 3: the options whole; 2: `1-n answer`; 1: `⏎ open` and `×`;
-    // 0: `+ n` only
-    let build = |level: u8| {
-        let mut r = Row::default();
-        let mut hits = Vec::new();
-        if extra > 0 {
-            r.push(format!("+ {}  ", extra), fg(theme::faint()));
-        }
-        if sel && level >= 3 && n > 0 && n <= STRIP_ROWS && s.short.len() == n {
-            for (i, l) in s.short.iter().enumerate() {
-                if i > 0 {
-                    r.push("  ", Style::default());
-                }
-                let (a, _) = r.push(format!("{}", s.num(i)), fg(theme::accent()));
-                let (_, b) = r.push(format!(" {}", l), fg(theme::dim()));
-                hits.push((a, b, CardHit::Pick(id, i)));
-            }
-            r.push("   ", Style::default());
-        } else if sel && level >= 2 && n > 0 {
-            r.push(digits(n), fg(theme::accent()));
-            r.push(" answer   ", fg(theme::dim()));
-        }
-        if sel && level >= 1 {
-            let (k, l) = match s.right {
-                Some(kl) if one && n == 0 => kl,
-                _ => ("⏎", "open"),
-            };
-            let (a, _) = r.push(k, fg(theme::text()));
-            let (_, b) = r.push(format!(" {l}"), fg(theme::dim()));
-            hits.push((a, b, CardHit::Row(id)));
-            if one {
-                r.push("  ", Style::default());
-                let (a, b) = r.push(close, fg(theme::faint()));
-                hits.push((a, b, CardHit::Close(id)));
-            }
-        }
-        r.push(" ", Style::default());
-        (r, hits)
-    };
-    for level in (1..=3).rev() {
-        let (r, h) = build(level);
-        if r.w <= max {
-            return (r, h);
-        }
-    }
-    build(0)
-}
-
 /// The digits that answer `n` options: `1`, `1-2` … `1-9`.
 pub(super) fn digits(n: usize) -> &'static str {
     const PICK: [&str; 9] = ["1", "1-2", "1-3", "1-4", "1-5", "1-6", "1-7", "1-8", "1-9"];
     PICK[n.clamp(1, 9) - 1]
 }
 
-/// One strip row, `w` columns: ` ? perf · the hero image…   1 compress
-/// 2 both  × `; `on`: raised (the top row, or the one selected). While
-/// the inbox is selected (`mark`), `▸ ` before the selected row's glyph
-/// and 2 spaces before the others'.
-fn strip_row(
-    e: &Entry,
-    w: usize,
+/// Where a strip row goes: its number `n` (ctrl+N opens it), on the
+/// raised tint (`on`, the top row), `extra` (the `+ n` of a one-row
+/// strip), its cells `at`.
+struct Slot {
+    n: usize,
     on: bool,
-    mark: bool,
     extra: usize,
     at: Rect,
-    hits: &mut Vec<(Rect, CardHit)>,
-) -> Line<'static> {
+}
+
+/// One strip row, `w` columns: ` 1 ? perf · the hero image…`, its
+/// number faint, `+ n` on the right when the strip has one row. A click
+/// opens it.
+fn strip_row(app: &App, e: &Entry, w: usize, slot: Slot, hits: &mut Vec<(Rect, CardHit)>) -> Line<'static> {
+    let Slot { n, on, extra, at } = slot;
     let c = e.first();
     let s = shape(c);
     let (_, glyph, _) = kind_look(&c.kind);
@@ -249,18 +187,15 @@ fn strip_row(
         Entry::One(_) => s.who.clone(),
         Entry::Group(v) => format!("{} agents want to run", v.len()),
     };
-    // the left side keeps the name and a few words
-    let left_min = 3 + who.width().min(16) + 3 + 8;
-    let (right, rhits) = strip_right(e, &s, extra, w.saturating_sub(left_min), mark && on);
-    // 2 blank columns at least between the text and the options
+    let mut right = Row::default();
+    if extra > 0 {
+        right.push(format!("+ {}  ", extra), fg(theme::faint()));
+    }
+    // 2 blank columns at least between the text and the right side
     let room = w.saturating_sub(right.w + 2);
     let mut left = Row::default();
     left.push(" ", Style::default());
-    if mark && on {
-        left.push(format!("{} ", pointer()), fg(theme::accent()));
-    } else if mark {
-        left.push("  ", Style::default());
-    }
+    left.push(format!("{n} "), number_style(app, theme::faint()));
     left.push(glyph, fg(glyph_color(&c.kind)));
     left.push(" ", Style::default());
     let who_room = room.saturating_sub(left.w);
@@ -279,27 +214,33 @@ fn strip_row(
     let fill = w.saturating_sub(left.w + right.w);
     let mut spans = left.spans;
     spans.push(Span::raw(" ".repeat(fill)));
-    let x0 = left.w + fill;
     spans.extend(right.spans);
-    hits.push((at, CardHit::Select(c.id)));
-    for (a, b, h) in rhits {
-        let x = at.x + (x0 + a) as u16;
-        if x < at.right() {
-            hits.push((Rect { x, width: ((b - a) as u16).min(at.right() - x), ..at }, h));
-        }
-    }
+    hits.push((at, CardHit::Row(c.id)));
     let line = Line::from(spans);
-    match (on, mark) {
-        (true, true) => raise(line),
-        // the top row out of the inbox selected: the tint only
-        (true, false) => line.patch_style(Style::default().bg(theme::raised())),
-        _ => line,
+    if on {
+        line.patch_style(Style::default().bg(theme::raised()))
+    } else {
+        line
     }
 }
 
-/// The strip: `inbox · 3 waiting for you … ctrl+g select`, a row per
-/// card, `+ n more`; one row (the top card, `+ n`) when it has one row.
-/// The inbox selected: the rows scroll to keep the selected one shown.
+/// The label row's right side (BISE-302, designer): what opens a row,
+/// never a key that doesn't work: `ctrl+1-3 open` (the rows shown),
+/// else `click to open`, else `/inbox opens it`. The key in text color,
+/// the words dim.
+fn opener_label(app: &App, rows: usize) -> (String, &'static str) {
+    match crate::reach::opener(app) {
+        crate::reach::Opener::CtrlDigit if rows <= 1 => ("ctrl+1".into(), "open"),
+        crate::reach::Opener::CtrlDigit => (format!("ctrl+1-{}", rows.min(STRIP_ROWS)), "open"),
+        crate::reach::Opener::Click => ("click".into(), "to open"),
+        crate::reach::Opener::Command => ("/inbox".into(), "opens it"),
+    }
+}
+
+/// The strip: `inbox · 3 waiting for you … ctrl+1-3 open`, a row per
+/// card (numbered), `+ n more`; one row (the top card, `+ n`) when it
+/// has one row. A click on a row opens it, on the label or `+ n more`
+/// the top one.
 pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     let area = area.intersection(frame.area());
     if area.height == 0 || area.width < 10 {
@@ -314,30 +255,28 @@ pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     let mut hits = Vec::new();
     let mut lines: Vec<Line<'static>> = Vec::new();
     let row_at = |i: u16| Rect { y: area.y + i, height: 1, ..area };
-    let sel = sb.card.inbox.filter(|_| !sb.card.open).map(|i| i.min(es.len() - 1));
-    let mark = sel.is_some();
     if area.height == 1 {
-        let i = sel.unwrap_or(0);
-        lines.push(strip_row(&es[i], w, true, mark, es.len() - 1, row_at(0), &mut hits));
+        let slot = Slot { n: 1, on: true, extra: es.len() - 1, at: row_at(0) };
+        lines.push(strip_row(app, &es[0], w, slot, &mut hits));
     } else {
         let n = sb.sorted_cards().len();
         let mut lab = Row::default();
         lab.push(format!(" inbox · {} waiting for you", n), fg(theme::faint()));
-        let keys = "ctrl+g select ";
+        let (key, words) = opener_label(app, es.len());
+        let keys = format!("{key} {words} ");
         let fill = w.saturating_sub(lab.w + keys.width());
         lab.push(" ".repeat(fill), Style::default());
-        lab.push("ctrl+g", fg(theme::text()));
-        lab.push(" select ", fg(theme::dim()));
+        lab.push(key, fg(theme::text()));
+        lab.push(format!(" {words} "), fg(theme::dim()));
         lines.push(Line::from(lab.spans));
         hits.push((row_at(0), CardHit::Open));
         let rows = (area.height as usize - 1).min(STRIP_ROWS);
-        let start = sel.map_or(0, |i| (i + 1).saturating_sub(rows));
-        for (i, e) in es.iter().enumerate().skip(start).take(rows) {
-            let y = 1 + (i - start) as u16;
-            let on = sel.map_or(i == 0, |s| s == i);
-            lines.push(strip_row(e, w, on, mark, 0, row_at(y), &mut hits));
+        for (i, e) in es.iter().enumerate().take(rows) {
+            let y = 1 + i as u16;
+            let slot = Slot { n: i + 1, on: i == 0, extra: 0, at: row_at(y) };
+            lines.push(strip_row(app, e, w, slot, &mut hits));
         }
-        let more = es.len().saturating_sub(start + STRIP_ROWS);
+        let more = es.len().saturating_sub(STRIP_ROWS);
         let y = lines.len() as u16;
         if more > 0 && y < area.height {
             lines.push(Line::from(Span::styled(format!(" + {} more", more), fg(theme::faint()))));
@@ -349,7 +288,7 @@ pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     crate::textlayer::text(area);
     let cv = &mut app.sb.card;
     cv.strip = area;
-    // BISE-272: the hand over what a click opens, picks or closes
+    // BISE-272: the hand over what a click opens
     for (r, _) in &hits {
         crate::pointer::region(*r, crate::pointer::Shape::Pointer);
     }

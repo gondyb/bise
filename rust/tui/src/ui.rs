@@ -144,7 +144,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let x = cols.panel.and_then(|p| p.rule).unwrap_or(area.width.saturating_sub(1));
         Rect { x: area.x + x, width: 1, ..feed }
     });
-    // the card view (ctrl+g) takes the history's place, in the column
+    // the card view (ctrl+1-9, a click) takes the history's place, in the column
     let view = sb::card_view_open(app);
     if view {
         let r = Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..body };
@@ -239,8 +239,17 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     } else {
         state
     };
-    let (state_rect, label_rect) = match sb::card_divider_label(app).or_else(|| sb::palette::divider_label(app)) {
-        // the card view: `you → ? perf · your answer`
+    // the card view: `you → ? perf · your answer`, then a fresh note
+    // (`✓ copied 9 chars`: the card's text copies too, BISE-290/302)
+    let card_label = sb::card_divider_label(app).map(|mut l| {
+        if let Some(t) = fresh_note(&app.flash) {
+            l.push(Span::styled(" ✓ ", Style::default().fg(accent())));
+            l.push(Span::styled(t, Style::default().fg(text())));
+            l.push(Span::raw(" "));
+        }
+        l
+    });
+    let (state_rect, label_rect) = match card_label.or_else(|| sb::palette::divider_label(app)) {
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
         None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state),
     };
@@ -717,13 +726,11 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
     let typed = Rect { x: app.composer.x.saturating_sub(1), y: text_y, width: text_w as u16 + 1, height: text_rows as u16 };
     crate::pointer::region(typed.intersection(frame.area()), crate::pointer::Shape::Text);
     let empty = app.ed.is_empty();
-    // the inbox selected (ctrl+g): the draft faint, no caret
-    let waits = sb::inbox_selected(app);
     // the find box has the keys (BISE-297): the draft as it is, no caret
     let finding = app.find.is_some();
     let rows = if empty {
         let note = sb::placeholder(app).unwrap_or_default();
-        let caret = if waits || finding { Style::default() } else { Style::default().fg(text()).add_modifier(Modifier::REVERSED) };
+        let caret = if finding { Style::default() } else { Style::default().fg(text()).add_modifier(Modifier::REVERSED) };
         let mut spans = vec![Span::styled(" ", caret)];
         if !note.is_empty() {
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
@@ -740,14 +747,6 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
                         .map(|s| Span::styled(s.content.chars().map(|c| if c == ' ' { ' ' } else { '•' }).collect::<String>(), s.style))
                         .collect::<Vec<_>>(),
                 )
-            })
-            .collect()
-    } else if waits {
-        typed_lines(app, text_w, text_rows)
-            .into_iter()
-            .map(|l| {
-                let spans = l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(crate::theme::faint())));
-                Line::from(spans.collect::<Vec<_>>())
             })
             .collect()
     } else if finding {

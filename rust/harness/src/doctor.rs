@@ -347,6 +347,23 @@ fn rg() -> Check {
     }
 }
 
+/// BISE-302: inside tmux, ctrl+1-9 (open inbox item N) pass only with
+/// `extended-keys always`; elsewhere (or tmux already set): nothing.
+/// `tmux`: inside tmux, its `extended-keys` value when it answered.
+pub(crate) fn tmux_check(tmux: Option<Option<&str>>) -> Option<Check> {
+    match tmux? {
+        Some("always") => None,
+        _ => Some(warn("tmux", "tmux eats ctrl+1-9", "add \"set -s extended-keys always\" to ~/.tmux.conf")),
+    }
+}
+
+fn tmux() -> Option<Check> {
+    std::env::var_os("TMUX").filter(|v| !v.is_empty())?;
+    let out = std::process::Command::new("tmux").args(["show-options", "-sv", "extended-keys"]).stderr(std::process::Stdio::null()).output().ok();
+    let v = out.filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    tmux_check(Some(v.as_deref()))
+}
+
 fn on_path() -> Check {
     let me = std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok());
     let path = std::env::var("PATH").unwrap_or_default();
@@ -677,6 +694,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
     let mut checks = checks;
     checks.extend(models);
     checks.extend([compaction, voice, hubs(&home), disk(&home)]);
+    checks.extend(tmux());
     let st = Style::stdout();
     println!("{}", st.title("checking your setup"));
     println!();
@@ -703,6 +721,17 @@ mod tests {
         assert!(old.fix.unwrap().contains("14.0"));
         assert_eq!(macos_check(Some("15.1"), "14.0", "x86_64", true).mark, Mark::Warn);
         assert_eq!(macos_check(None, "14.0", "arm64", false).mark, Mark::Warn);
+    }
+
+    #[test]
+    fn tmux_needs_extended_keys_for_ctrl_digits() {
+        assert_eq!(tmux_check(None), None, "not in tmux");
+        assert_eq!(tmux_check(Some(Some("always"))), None);
+        for v in [Some("off"), Some("on"), None] {
+            let c = tmux_check(Some(v)).unwrap();
+            assert_eq!((c.mark, c.detail.as_str()), (Mark::Warn, "tmux eats ctrl+1-9"));
+            assert_eq!(c.fix.as_deref(), Some("add \"set -s extended-keys always\" to ~/.tmux.conf"));
+        }
     }
 
     #[test]

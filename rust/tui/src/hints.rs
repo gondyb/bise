@@ -96,7 +96,7 @@ impl Hint {
                 "new: your agents. they work in the background. {⌥ 1} to look inside, {esc} to come back. →"
             }
             Hint::FirstLevel3 => "agents talk to each other. it stays dim: you can ignore it, or {▸} to read.",
-            Hint::FirstCard => "[?] <this is your inbox.> when an agent needs you, it waits here instead of interrupting you. {ctrl+g} selects it, then {↑↓ ⏎}. ↓",
+            Hint::FirstCard => "[?] <this is your inbox.> when an agent needs you, it waits here instead of interrupting you. {ctrl+1} opens it, or click it. ↓",
             Hint::FirstSteer => "{✓} the agent got it · {✓✓} it read it.",
             Hint::FirstYolo => "you're in yolo: agents run commands without asking. {⇧⇥} changes it.",
             Hint::FirstAuto => AUTO_TEXT.with(|c| c.get()),
@@ -303,10 +303,18 @@ fn wrap_in(text: &str, w: usize, plain: Style, key: Style) -> Vec<Line<'static>>
     lines.into_iter().map(Line::from).collect()
 }
 
-/// Hint `h`'s lines at `w` columns, in its styles.
-fn hint_lines(h: Hint, w: usize) -> Vec<Line<'static>> {
+/// The first item's hint where the terminal sends no ctrl+1-9 (BISE-302,
+/// reach.rs).
+const FIRST_CARD_CLICK: &str = "[?] <this is your inbox.> when an agent needs you, it waits here instead of interrupting you. click it, or type {/inbox}. ↓";
+
+/// Hint `h`'s lines at `w` columns, in its styles; `digits`: the
+/// terminal sends ctrl+1-9.
+fn hint_lines(h: Hint, w: usize, digits: bool) -> Vec<Line<'static>> {
     match h {
-        Hint::FirstCard => wrap_in(h.text(), w, Style::default().fg(theme::dim()), Style::default().fg(theme::text())),
+        Hint::FirstCard => {
+            let t = if digits { h.text() } else { FIRST_CARD_CLICK };
+            wrap_in(t, w, Style::default().fg(theme::dim()), Style::default().fg(theme::text()))
+        }
         _ => wrap(h.text(), w),
     }
 }
@@ -377,8 +385,8 @@ pub(crate) fn card_row(buf: &Buffer, feed: Rect) -> Option<u16> {
         .next_back()
         // an item with no row in the history (the setup item,
         // BISE-245): the inbox's label `inbox · 1 waiting for you
-        // … ctrl+g select`
-        .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g select")).map(|(y, _)| y).next_back())
+        // … ctrl+1 open`
+        .or_else(|| rows(feed).filter(|(_, t)| t.contains(" waiting for you ")).map(|(y, _)| y).next_back())
 }
 
 /// The row of the panel's entry numbered `n` (`1 name`), if drawn.
@@ -418,7 +426,7 @@ pub(crate) fn place(h: Hint, y: u16, lines: u16, area: Rect, feed: Rect, panel: 
 /// Draw the hint up, else the first waiting one whose thing is on screen
 /// (after the frame is drawn: the anchor is read from it). Coming up marks
 /// it seen; a hint up whose thing left the screen goes away.
-pub(crate) fn draw(f: &mut Frame) {
+pub(crate) fn draw(f: &mut Frame, digits: bool) {
     let (active, pending) = STATE.with(|s| {
         let st = s.borrow();
         (st.active, st.pending.clone())
@@ -439,7 +447,7 @@ pub(crate) fn draw(f: &mut Frame) {
         None => pending.into_iter().find_map(|h| anchor(f.buffer_mut(), h, feed, panel).map(|y| (h, y))),
     };
     let Some((h, y)) = found else { return };
-    let lines = hint_lines(h, TEXT_W);
+    let lines = hint_lines(h, TEXT_W, digits);
     let Some(mut r) = place(h, y, lines.len() as u16, area, feed, panel) else { return };
     // the mode's tip: its left edge 2 columns before the word, as far
     // right as the screen lets it
@@ -569,13 +577,13 @@ mod tests {
             (0..30).map(|y| row_text(b, y, 0, 120)).collect::<Vec<_>>().join("\n")
         };
         // nothing to point at: nothing shows
-        t.draw(draw).unwrap();
+        t.draw(|f| draw(f, true)).unwrap();
         assert_eq!(active(), None);
         // a card title in the feed: its hint comes up above it
         let card = format!("  ┃ {} t1 needs you", theme::glyph(theme::G_CARD));
         t.draw(|f| {
             f.render_widget(Paragraph::new(card.as_str()), Rect::new(3, 18, 80, 1));
-            draw(f)
+            draw(f, true)
         })
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstCard));
@@ -583,12 +591,12 @@ mod tests {
         assert!(sc.contains("this is your inbox."), "{sc}");
         assert!(seen_in(&std::fs::read_to_string(&p).unwrap())["first_card"]);
         // the card is gone: so is the hint; the level-3 one waits its turn
-        t.draw(draw).unwrap();
+        t.draw(|f| draw(f, true)).unwrap();
         assert_eq!(active(), None);
         let l3 = format!("   {} t1 → t2  v1 or v2?", crate::render::envelope());
         t.draw(|f| {
             f.render_widget(Paragraph::new(l3.as_str()), Rect::new(3, 5, 80, 1));
-            draw(f)
+            draw(f, true)
         })
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstLevel3));
@@ -613,21 +621,23 @@ mod tests {
         assert_eq!(accent, vec!["⌥ 1", "esc"]);
         let l3: Vec<String> = wrap(Hint::FirstLevel3.text(), TEXT_W).iter().map(text_of).collect();
         assert_eq!(l3.join(" "), "agents talk to each other. it stays dim: you can ignore it, or ▸ to read.");
-        let card = hint_lines(Hint::FirstCard, TEXT_W);
+        let card = hint_lines(Hint::FirstCard, TEXT_W, true);
         let words: Vec<String> = card.iter().map(text_of).collect();
         assert_eq!(
             words.join(" "),
-            "? this is your inbox. when an agent needs you, it waits here instead of interrupting you. ctrl+g selects it, then ↑↓ ⏎. ↓"
+            "? this is your inbox. when an agent needs you, it waits here instead of interrupting you. ctrl+1 opens it, or click it. ↓"
         );
         assert!(words.iter().all(|l| l.width() <= TEXT_W), "{words:?}");
         // the title bold, the keys in the text color, the rest dim
         let spans: Vec<&Span> = card.iter().flat_map(|l| l.spans.iter()).collect();
         let style_of = |w: &str| spans.iter().find(|s| s.content == w).map(|s| s.style).unwrap();
         assert!(style_of("inbox.").add_modifier.contains(Modifier::BOLD));
-        assert_eq!(style_of("ctrl+g").fg, Some(theme::text()));
-        assert_eq!(style_of("↑↓ ⏎").fg, Some(theme::text()));
+        assert_eq!(style_of("ctrl+1").fg, Some(theme::text()));
         assert_eq!(style_of("?").fg, Some(theme::accent()));
         assert_eq!(style_of("waits").fg, Some(theme::dim()));
+        // BISE-302: no ctrl+1-9 from the terminal
+        let words: Vec<String> = hint_lines(Hint::FirstCard, TEXT_W, false).iter().map(text_of).collect();
+        assert!(words.join(" ").ends_with("instead of interrupting you. click it, or type /inbox. ↓"), "{words:?}");
     }
 
     #[test]

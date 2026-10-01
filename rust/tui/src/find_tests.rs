@@ -325,7 +325,7 @@ fn the_hints_say_cmd_f_once_a_cmd_key_arrived() {
         k
     };
     let help_keys = |app: &App| {
-        let r = crate::help::rows(crate::help::Page::Help, "find in the history", app.cmd_keys);
+        let r = crate::help::rows(crate::help::Page::Help, "find in the history", app.cmd_keys, true);
         r.iter().map(|r| r.keys).collect::<Vec<_>>()
     };
     assert_eq!(find_key(&mut app, Held::Ctrl), Some("ctrl+f"));
@@ -340,7 +340,7 @@ fn the_hints_say_cmd_f_once_a_cmd_key_arrived() {
     assert_eq!(find_key(&mut app, Held::Ctrl), Some("ctrl+f"));
     assert_eq!(find_key(&mut app, Held::Cmd), Some("cmd+f"));
     assert_eq!(help_keys(&app), ["cmd+f|ctrl+f"]);
-    let lines = crate::help::page_lines(crate::help::Page::Shortcuts, "find in", &[], 80, true);
+    let lines = crate::help::page_lines(crate::help::Page::Shortcuts, "find in", &[], 80, true, true);
     let all: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.to_string())).collect();
     assert!(all.contains(" cmd+f ") && all.contains(" ctrl+f "), "{all}");
 }

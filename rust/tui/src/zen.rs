@@ -13,7 +13,7 @@
 //!   once on: ⏎ send (BISE-128), a mouse move, click or scroll, the
 //!   terminal losing the focus, esc, tab, page up/down, every key an app
 //!   shortcut takes before the composer (⌥0-9 and the panel keys, the
-//!   card keys, ctrl+g, ctrl+o and the other app shortcuts, end back to
+//!   card keys, ctrl+1-9, ctrl+o and the other app shortcuts, end back to
 //!   the bottom, a key while the help or the terminal pane is up), a
 //!   `/` `@` `$` popup, and anything that needs you (a card, a message
 //!   to you, a confirm, an error).
@@ -330,7 +330,7 @@ mod tests {
             key(Char('o'), c),
             key(Char('c'), c),
             key(Char('l'), c),
-            key(Char('g'), c),
+            key(Char('1'), c),
             key(Char('v'), c),
             key(Char('c'), cmd),
             key(Esc, n),

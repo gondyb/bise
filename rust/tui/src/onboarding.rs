@@ -371,6 +371,9 @@ pub(crate) enum Out {
 /// The whole onboarding state; drawn by [`draw`] at a time `now` (ms).
 pub(crate) struct Onb {
     pub step: Step,
+    /// the terminal sends ctrl+1-9 (BISE-302): how-it-works names it,
+    /// else `click it`
+    pub ctrl_digits: bool,
     /// when the step started (ms): its animations count from there
     pub since: u64,
     /// a key other than enter on the welcome: it shows all of it at once
@@ -443,6 +446,7 @@ impl Onb {
         let mine = setup.catalog.resolve(&model).provider;
         let mut o = Onb {
             step: Step::Welcome,
+            ctrl_digits: true,
             since: 0,
             rushed: false,
             detected: crate::theme_detect::detected(),
@@ -1438,8 +1442,10 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
 const HOW: [[&str; 3]; 3] = [
     ["you talk to ", "me", ": main, your team lead. any time, keep typing"],
     ["", "i", " start an agent when a job needs one. they sync on their own"],
-    ["only the real decisions reach you, in your inbox · ctrl+g", "", ""],
+    ["only the real decisions reach you, in your inbox · ctrl+1", "", ""],
 ];
+/// Line 3 where the terminal sends no ctrl+1-9 (BISE-302, reach.rs).
+const HOW_3_CLICK: [&str; 3] = ["only the real decisions reach you, in your inbox · click it", "", ""];
 /// The faint footer under the three lines.
 const HOW_FOOT: &str = "ctrl+o opens everything folded · ⌥0-9 talk to an agent";
 
@@ -1468,7 +1474,7 @@ fn how_rows(i: usize, [a, me, b]: [&str; 3], w: u16) -> Vec<Line<'static>> {
     out
 }
 
-fn how_lines(t: u64, gap: usize, w: u16) -> Vec<Line<'static>> {
+fn how_lines(t: u64, gap: usize, w: u16, digits: bool) -> Vec<Line<'static>> {
     let shown = |i: u64| t >= 400 + i * 900;
     let mut v = vec![title("how it works")];
     blanks(&mut v, gap);
@@ -1476,7 +1482,8 @@ fn how_lines(t: u64, gap: usize, w: u16) -> Vec<Line<'static>> {
         if i > 0 {
             v.push(Line::raw(""));
         }
-        for row in how_rows(i, *line, w) {
+        let line = if i == 2 && !digits { HOW_3_CLICK } else { *line };
+        for row in how_rows(i, line, w) {
             v.push(if shown(i as u64) { row } else { Line::raw("") });
         }
     }
@@ -1586,7 +1593,7 @@ fn draw_page(f: &mut Frame, o: &Onb, now: u64) {
         // the previews (1 blank row above), then the key line after a gap
         Step::Theme => (theme_text(o), 1 + PREVIEW_H + gap as u16 + 1),
         Step::Model => (model_lines(o, col.width, gap), 0),
-        Step::Lines => (how_lines(t, gap, col.width), 0),
+        Step::Lines => (how_lines(t, gap, col.width, o.ctrl_digits), 0),
     };
     let text_h = height_of(&lines, col.width).min(body.height);
     let h = text_h + extra;
@@ -1703,6 +1710,7 @@ pub(crate) fn show(
         Some(a) => Onb::provider_panel(&real_env, a),
         None => Onb::new(&real_env),
     };
+    o.ctrl_digits = app.ctrl_digits;
     if !panel && KEYS_ONLY.swap(false, Ordering::SeqCst) && o.ask_key {
         o.keys_only = true;
         o.go(Step::Model, 0);
@@ -2357,7 +2365,7 @@ mod tests {
             "how it works",
             "1  you talk to me: main, your team lead. any time, keep typing",
             "2  i start an agent when a job needs one. they sync on their own",
-            "3  only the real decisions reach you, in your inbox · ctrl+g",
+            "3  only the real decisions reach you, in your inbox · ctrl+1",
             "ctrl+o opens everything folded · ⌥0-9 talk to an agent",
             "any key ↵",
             "○ ○ ○ ●",
@@ -2366,7 +2374,9 @@ mod tests {
         }
         assert!(!sc.contains("how it works,") && !sc.contains("typing."), "no final periods: {}", sc);
         // bise (me, i) in accent, the numbers dim
-        let l = how_lines(LINES_END, 2, 64);
+        let l = how_lines(LINES_END, 2, 64, true);
+        let click: String = how_lines(LINES_END, 2, 64, false).iter().flat_map(|l| l.spans.iter().map(|s| s.content.to_string())).collect();
+        assert!(click.contains("in your inbox · click it") && !click.contains("ctrl+1"), "{click}");
         assert_eq!(l[3].spans[0].style.fg, Some(theme::dim()));
         assert_eq!(l[3].spans[2].content, "me");
         assert_eq!(l[3].spans[2].style.fg, Some(theme::accent()));

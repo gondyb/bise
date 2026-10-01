@@ -1,5 +1,5 @@
-//! The inbox (cards v2): the strip, the inbox selected, the card view,
-//! the keys (book screens `inbox · 1-7`).
+//! The inbox (cards v2): the strip, the card view, the keys (book
+//! screens `inbox · 1-7`; BISE-302: ctrl+1-9 and a click open an item).
 
 use super::*;
 use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
@@ -62,13 +62,9 @@ fn ctrl(app: &mut App, c: char) -> bool {
     key(app, KeyCode::Char(c), KeyModifiers::CONTROL)
 }
 
-/// ctrl+g then ⏎: the card view on the inbox's first row (one item:
-/// ctrl+g opens it at once).
+/// ctrl+1: the card view on the inbox's first row.
 fn open(app: &mut App) {
-    assert!(ctrl(app, 'g'), "ctrl+g selects the inbox");
-    if !app.sb.card.open {
-        assert!(key(app, KeyCode::Enter, KeyModifiers::NONE));
-    }
+    assert!(ctrl(app, '1'), "ctrl+1 opens row 1");
     assert!(app.sb.card.open);
 }
 
@@ -105,48 +101,64 @@ fn col_of(row: &str, needle: &str) -> u16 {
     row[..i].chars().count() as u16
 }
 
-/// Screen 1: the strip above the divider, most blocking first, the label
-/// row; no keys on the rows until ctrl+g: then the selected row alone
-/// shows its options with their digits (`1-9 answer` past 3), `⏎ open`,
-/// the `×` (BISE-253).
+/// Screen 1: the strip above the divider, most blocking first, each
+/// row numbered (BISE-302: ctrl+N opens row N), the label row
+/// `ctrl+1-3 open`; no other keys on the rows.
 #[test]
 fn the_strip_shows_every_card_most_blocking_first() {
     let (mut app, _hub) = app_with_hub();
     app.sb.cards = cast();
     let rows = draw(&mut app, 140, 40);
-    let lab = row_of(&rows, "ctrl+g select");
+    let lab = row_of(&rows, "ctrl+1-3 open ");
     assert!(rows[lab].contains(" inbox · 3 waiting for you "), "{}", rows[lab]);
-    let rel = row_of(&rows, "release wants to run");
-    let perf = row_of(&rows, "? perf · the hero image");
-    let dark = row_of(&rows, "? dark-mode · ");
+    let rel = row_of(&rows, " 1 ? release wants to run");
+    let perf = row_of(&rows, " 2 ? perf · the hero image");
+    let dark = row_of(&rows, " 3 ? dark-mode · ");
     assert_eq!((rel, perf, dark), (lab + 1, lab + 2, lab + 3), "{}", rows.join("\n"));
     assert!(rows[rel].contains("npm publish --tag next"), "{}", rows[rel]);
     for r in [rel, perf, dark] {
-        assert!(!rows[r].contains("1 ") && !rows[r].contains('×') && !rows[r].contains("⏎"), "no keys: {}", rows[r]);
+        assert!(!rows[r].contains('×') && !rows[r].contains("⏎") && !rows[r].contains('▸'), "no keys: {}", rows[r]);
     }
-    // ctrl+g: the selected row alone shows its keys
-    ctrl(&mut app, 'g');
-    let rows = draw(&mut app, 140, 40);
-    assert!(rows[rel].contains("1 allow  2 always  3 deny   ⏎ open  ×"), "{}", rows[rel]);
-    assert!(!rows[perf].contains("1 compress") && !rows[perf].contains('×'), "{}", rows[perf]);
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    let rows = draw(&mut app, 140, 40);
-    assert!(rows[perf].contains("1 compress  2 both   ⏎ open  ×"), "{}", rows[perf]);
-    assert!(!rows[rel].contains("1 allow"), "{}", rows[rel]);
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    let rows = draw(&mut app, 140, 40);
-    assert!(rows[dark].contains("1-9 answer   ⏎ open  ×"), "{}", rows[dark]);
     assert!(rows[dark].contains("…"), "cut: {}", rows[dark]);
-    assert_eq!(bar(&app), "↑↓ choose   1-9 answer   ⏎ open   esc back");
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     // right above the blank row and the divider
     assert!(rows[dark + 2].contains("you → main"), "{}", rows[dark + 2]);
-    // the history is still there, the composer still talks to main
-    assert!(!app.sb.card.open);
+    assert!(bar(&app).starts_with("⏎ send   ctrl+1 inbox   "), "{}", bar(&app));
+    // the label follows the rows shown: 1 row, 2 rows
+    app.sb.cards.truncate(2);
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows.iter().any(|r| r.contains("ctrl+1-2 open ")), "{}", rows.join("\n"));
+    app.sb.cards.truncate(1);
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows.iter().any(|r| r.contains("ctrl+1 open ")), "{}", rows.join("\n"));
+    // nothing waits: no inbox pair
+    app.sb.cards.clear();
+    assert!(!bar(&app).contains("inbox"), "{}", bar(&app));
+}
+
+/// BISE-302: a terminal without ctrl+1-9 (reach.rs): the strip says
+/// `click to open`, without clicks `/inbox opens it`; the key bar
+/// `/inbox`; the rows keep their numbers.
+#[test]
+fn without_ctrl_digits_the_inbox_never_shows_them() {
+    let (mut app, _hub) = app_with_hub();
+    app.sb.cards = cast();
+    app.ctrl_digits = false;
+    let rows = draw(&mut app, 140, 40);
+    let lab = row_of(&rows, " inbox · 3 waiting for you ");
+    assert!(rows[lab].contains("click to open "), "{}", rows[lab]);
+    assert!(rows[lab + 1].contains(" 1 ? release wants to run · "), "{}", rows[lab + 1]);
+    assert!(!rows.iter().any(|r| r.contains("ctrl+1")), "{}", rows.join("\n"));
+    assert!(bar(&app).starts_with("⏎ send   /inbox   @ file"), "{}", bar(&app));
+    app.clicks = false;
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows[lab].contains("/inbox opens it "), "{}", rows[lab]);
+    // the keys still work when they come
+    assert!(ctrl(&mut app, '2'));
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(12));
 }
 
 /// More than 3 cards: `+ n more`; under 24 rows, one row: the top card
-/// and `+ n` (its keys once selected).
+/// numbered 1 and `+ n`.
 #[test]
 fn many_cards_and_small_screens() {
     let (mut app, _hub) = app_with_hub();
@@ -156,68 +168,56 @@ fn many_cards_and_small_screens() {
     app.sb.cards = cs;
     let rows = draw(&mut app, 140, 40);
     assert!(rows.iter().any(|r| r.contains("  + 2 more  ")), "{}", rows.join("\n"));
+    assert!(rows.iter().any(|r| r.contains("ctrl+1-3 open ")), "the rows shown: {}", rows.join("\n"));
     let rows = draw(&mut app, 140, 20);
-    assert!(!rows.iter().any(|r| r.contains("ctrl+g select")), "{}", rows.join("\n"));
-    let top = row_of(&rows, "release wants to run");
-    assert!(rows[top].contains("+ 4  ") && !rows[top].contains("1 allow"), "{}", rows[top]);
-    ctrl(&mut app, 'g');
-    let rows = draw(&mut app, 140, 20);
-    let top = row_of(&rows, "release wants to run");
-    assert!(rows[top].contains("+ 4  1 allow  2 always  3 deny   ⏎ open  ×"), "{}", rows[top]);
+    assert!(!rows.iter().any(|r| r.contains("open ")), "{}", rows.join("\n"));
+    let top = row_of(&rows, " 1 ? release wants to run");
+    assert!(rows[top].contains("+ 4  "), "{}", rows[top]);
 }
 
-/// The inbox selected with `+ n more`: the loop covers every row, the
-/// strip scrolls to the one selected; one row: ↑↓ stay on it.
+/// ctrl+N opens row N in the view, the rows under `+ n more` too; in the
+/// view it shows that item; past the last row: nothing. A French layout's
+/// top row counts as its digits (`&` is 1, `é` 2).
 #[test]
-fn the_inbox_loop_covers_the_rows_past_the_strip() {
-    let (mut app, _hub) = app_with_hub();
+fn ctrl_digit_opens_row_n() {
+    let (mut app, mut hub) = app_with_hub();
     let mut cs = cast();
     cs.push(card(20, "done", "sad-404", "the dog has a hat"));
     cs.push(card(21, "failed", "t9", "the build broke"));
     app.sb.cards = cs;
     let ids = super::super::card_draw::strip_ids(&app.sb);
-    let n = ids.len();
-    assert_eq!(n, 5);
-    let agent = |app: &App, id: u64| app.sb.cards.iter().find(|c| c.id == id).unwrap().agent.clone();
-    let marked = |rows: &[String]| rows.iter().filter(|r| r.contains('▸')).cloned().collect::<Vec<_>>();
-    ctrl(&mut app, 'g');
-    // ↑ on the first: the last, shown (the strip scrolled)
-    key(&mut app, KeyCode::Up, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(n - 1));
-    let rows = draw(&mut app, 140, 40);
-    let m = marked(&rows);
-    assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[n - 1])), "{}", rows.join("\n"));
-    // ↓ on the last: the first, the strip back on top with `+ 2 more`
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(0));
-    let rows = draw(&mut app, 140, 40);
-    let m = marked(&rows);
-    assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[0])), "{}", rows.join("\n"));
-    assert!(rows.iter().any(|r| r.contains("  + 2 more  ")), "{}", rows.join("\n"));
-    // ↓ ×n: every row once, back on the first
-    for k in 1..=n {
-        key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-        assert_eq!(app.sb.card.inbox, Some(k % n));
-        let rows = draw(&mut app, 140, 40);
-        let m = marked(&rows);
-        assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[k % n])), "{}", rows.join("\n"));
-    }
-    // one row: ↑↓ stay on it
-    app.sb.cards = vec![card(12, "question", "perf", PERF)];
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(0));
-    key(&mut app, KeyCode::Up, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(0));
+    assert_eq!(ids.len(), 5);
+    app.ed.insert("my draft");
+    assert!(!ctrl(&mut app, '6'), "past the last row");
+    assert!(!app.sb.card.open);
+    assert!(ctrl(&mut app, '2'));
+    assert!(app.sb.card.open);
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(ids[1]));
+    assert_eq!(app.ed.text, "", "the thread's draft waits");
+    // in the view: that item, a hidden row too
+    assert!(ctrl(&mut app, '5'));
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(ids[4]));
+    assert!(key(&mut app, KeyCode::Char('&'), KeyModifiers::CONTROL));
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(ids[0]));
+    assert!(key(&mut app, KeyCode::Char('é'), KeyModifiers::CONTROL | KeyModifiers::SHIFT));
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(ids[1]));
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.sb.card.open);
+    assert_eq!(app.ed.text, "my draft");
+    assert!(sent(&mut hub).is_empty(), "opening answers nothing");
+    // nothing waits: ctrl+1 is not the inbox's
+    app.sb.cards.clear();
+    assert!(!ctrl(&mut app, '1'));
 }
 
-/// From the thread only ctrl+g acts on the inbox: the old card keys
-/// (ctrl+x/n/p, alt+r, ctrl+a, ctrl+f, digits) and the arrows do
-/// nothing to it; ctrl+g selects it (no card view), again goes back.
+/// From the thread only ctrl+1-9 act on the inbox: the old keys (ctrl+g,
+/// ctrl+x/n/p, alt+r, ctrl+a, ctrl+f, digits) and the arrows do nothing
+/// to it; a digit is text.
 #[test]
-fn from_the_thread_only_ctrl_g() {
+fn from_the_thread_only_ctrl_digits() {
     let (mut app, mut hub) = app_with_hub();
     app.sb.cards = cast();
-    for c in ['x', 'n', 'p', 'a', 'f'] {
+    for c in ['g', 'x', 'n', 'p', 'a', 'f'] {
         ctrl(&mut app, c);
     }
     key(&mut app, KeyCode::Char('r'), KeyModifiers::ALT);
@@ -227,146 +227,24 @@ fn from_the_thread_only_ctrl_g() {
     }
     assert!(sent(&mut hub).is_empty());
     assert!(!app.sb.card.open);
-    assert_eq!(app.sb.card.inbox, None);
-    assert!(ctrl(&mut app, 'g'));
-    assert!(!app.sb.card.open, "ctrl+g no longer opens a card");
-    assert_eq!(app.sb.card.inbox, Some(0), "the most blocking row");
-    assert!(ctrl(&mut app, 'g'));
-    assert_eq!(app.sb.card.inbox, None);
-    // nothing waits: ctrl+g is not the inbox's
-    app.sb.cards.clear();
-    assert!(!ctrl(&mut app, 'g'));
-}
-
-/// Screen 2: the inbox selected: `▸` on the row, the others 2 spaces in,
-/// the draft faint, the key bar; ↑↓ choose and loop (↓ never leaves),
-/// esc goes back to the composer; ⏎ or → opens the row.
-#[test]
-fn the_inbox_selected_chooses_with_the_arrows() {
-    let (mut app, _hub) = app_with_hub();
-    app.sb.cards = cast();
-    app.ed.insert("my draft");
-    ctrl(&mut app, 'g');
-    key(&mut app, KeyCode::Up, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(2), "↑ on the first: the last");
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(0), "↓ on the last: the first");
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(1));
-    let rows = draw(&mut app, 140, 40);
-    assert!(rows[row_of(&rows, "? perf · ")].contains(" ▸ ? perf · "), "{}", rows.join("\n"));
-    let rel = &rows[row_of(&rows, "release wants to run")];
-    assert!(rel.contains("   ? release") && !rel.contains('▸'), "{}", rows.join("\n"));
-    assert!(rows.iter().any(|r| r.contains("my draft")), "the draft stays");
-    assert_eq!(bar(&app), "↑↓ choose   1-2 answer   ⏎ open   esc back");
-    // esc: back to the composer, the draft as it was
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, None);
-    assert_eq!(app.ed.text, "my draft");
-    assert!(bar(&app).starts_with("⏎ send   ctrl+g inbox   "), "{}", bar(&app));
-    // ↓ ×n loops over the 3 rows and never leaves; esc does
-    ctrl(&mut app, 'g');
-    for n in 1..=7 {
-        key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-        assert_eq!(app.sb.card.inbox, Some(n % 3), "↓ ×{n}");
-        assert!(bar(&app).starts_with("↑↓ choose"), "{}", bar(&app));
-    }
-    assert_eq!(app.ed.text, "my draft");
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, None);
-    // → opens the row selected: the thread's draft waits
-    ctrl(&mut app, 'g');
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    assert!(key(&mut app, KeyCode::Right, KeyModifiers::NONE));
-    assert!(app.sb.card.open);
-    assert_eq!(app.sb.card.inbox, None);
-    assert_eq!(app.sb.current_card().map(|c| c.id), Some(12));
-    assert_eq!(app.ed.text, "");
-    // esc: back to the thread (not the strip)
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert!(!app.sb.card.open);
-    assert_eq!(app.sb.card.inbox, None);
-    assert_eq!(app.ed.text, "my draft");
-}
-
-/// One item: ctrl+g opens it in the view at once (nothing to choose,
-/// BISE-254); esc goes back to the thread, the draft as it was; two
-/// items: ctrl+g selects the strip.
-#[test]
-fn ctrl_g_opens_the_only_item() {
-    let (mut app, _hub) = app_with_hub();
-    app.sb.cards = vec![card(12, "question", "perf", PERF)];
-    app.ed.insert("my draft");
-    assert!(ctrl(&mut app, 'g'));
-    assert!(app.sb.card.open, "straight to the view");
-    assert_eq!((app.sb.card.inbox, app.sb.current_card().map(|c| c.id)), (None, Some(12)));
-    assert_eq!(app.ed.text, "");
-    assert!(bar(&app).contains("1-2 pick"), "{}", bar(&app));
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert!(!app.sb.card.open);
-    assert_eq!(app.sb.card.inbox, None, "the thread, not the strip");
-    assert_eq!(app.ed.text, "my draft");
-    // ctrl+g in the view closes it too
-    ctrl(&mut app, 'g');
-    assert!(ctrl(&mut app, 'g'));
-    assert!(!app.sb.card.open);
-    // two items: the strip selected, nothing opened
-    app.sb.cards.push(card(13, "question", "api", "v1 or v2?"));
-    ctrl(&mut app, 'g');
-    assert!(!app.sb.card.open);
-    assert_eq!(app.sb.card.inbox, Some(0));
-}
-
-/// The inbox selected: 1-9 answer the selected row at once (BISE-253),
-/// the next row takes its place; a digit past its options does nothing;
-/// out of the inbox a digit is text (nothing but ctrl+g acts on it).
-#[test]
-fn a_digit_answers_the_row_selected() {
-    let (mut app, mut hub) = app_with_hub();
-    app.sb.cards = cast();
     press(&mut app, KeyCode::Char('2'));
-    assert_eq!(app.ed.text, "2", "out of the inbox: text");
-    assert!(sent(&mut hub).is_empty());
-    app.ed = crate::editor::Editor::default();
-    ctrl(&mut app, 'g');
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    press(&mut app, KeyCode::Char('3'));
-    assert!(sent(&mut hub).is_empty(), "perf has 2 options");
-    assert_eq!((app.sb.card.inbox, app.ed.text.as_str()), (Some(1), ""));
-    press(&mut app, KeyCode::Char('2'));
-    assert_eq!(sent(&mut hub), vec!["/answer 12 both: compress, and lazy-load below the fold"]);
-    assert_eq!(app.ed.text, "");
-    // perf is gone: dark-mode takes its row, still selected
-    let rows = draw(&mut app, 140, 40);
-    assert!(rows[row_of(&rows, "? dark-mode · ")].contains("▸ ? dark-mode"), "{}", rows.join("\n"));
-    assert_eq!(bar(&app), "↑↓ choose   1-9 answer   ⏎ open   esc back");
-    press(&mut app, KeyCode::Char('9'));
-    assert_eq!(sent(&mut hub), vec!["/answer 13 option 9"]);
-    // the last row answered: the one above
-    assert_eq!(app.sb.card.inbox, Some(0));
-    press(&mut app, KeyCode::Char('1'));
-    assert_eq!(sent(&mut hub), vec!["/answer 14 allow once"]);
-    assert_eq!(app.sb.card.inbox, None, "nothing left");
+    assert_eq!(app.ed.text, "2", "a digit is text");
 }
 
-/// The inbox selected, a letter or a paste goes back to the composer
-/// and lands in it: no keystroke lost.
+/// What only a terminal with ctrl+1-9 sends turns them on (reach.rs);
+/// ctrl+4-7 come from any terminal (0x1c-0x1f) and prove nothing.
 #[test]
-fn typing_in_the_inbox_goes_back_to_your_message() {
+fn a_ctrl_digit_proves_the_terminal_sends_them() {
+    let k = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    assert!(super::proves_ctrl_digits(&k('1')) && super::proves_ctrl_digits(&k('9')));
+    assert!(!super::proves_ctrl_digits(&k('4')) && !super::proves_ctrl_digits(&k('7')));
+    assert!(!super::proves_ctrl_digits(&KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE)));
     let (mut app, _hub) = app_with_hub();
-    app.sb.cards = cast();
-    app.ed.insert("hi");
-    ctrl(&mut app, 'g');
-    press(&mut app, KeyCode::Char('x'));
-    assert_eq!(app.sb.card.inbox, None);
-    assert_eq!(app.ed.text, "hix");
-    ctrl(&mut app, 'g');
-    crate::input::on_paste(&mut app, " there");
-    assert_eq!(app.sb.card.inbox, None);
-    assert_eq!(app.ed.text, "hix there");
-    // the arrows are the thread's again: ↑ is the composer's
-    press(&mut app, KeyCode::Up);
-    assert_eq!(app.sb.card.inbox, None);
+    app.ctrl_digits = false;
+    crate::input::on_key(&mut app, &k('5'));
+    assert!(!app.ctrl_digits);
+    crate::input::on_key(&mut app, &k('2'));
+    assert!(app.ctrl_digits);
 }
 
 /// Screen 2: the card view takes the history's place: the tabs, the bar,
@@ -392,7 +270,7 @@ fn the_card_view_takes_the_history_place() {
     assert!(rows.iter().any(|r| r.contains("you → ? perf · your answer")), "{}", rows.join("\n"));
     assert_eq!(bar(&app), "↑↓ choose   1-2 pick   ←→ other items   type to answer in your words   esc back");
     // the history is gone meanwhile: no strip either
-    assert!(!rows.iter().any(|r| r.contains("ctrl+g select")));
+    assert!(!rows.iter().any(|r| r.contains("waiting for you")));
 }
 
 /// Screen 4: an approval: the command on the raised tint, the reason,
@@ -451,7 +329,7 @@ fn answering_picking_drafts_and_back() {
     key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert!(!app.sb.card.open);
     assert_eq!(app.ed.text, "to main");
-    // ctrl+g ⏎: the top card; ctrl+x closes it
+    // ctrl+1: the top card; ctrl+x closes it
     open(&mut app);
     ctrl(&mut app, 'x');
     assert_eq!(sent(&mut hub), vec!["/close 14"]);
@@ -500,9 +378,7 @@ fn a_long_card_scrolls() {
 fn the_arrows_choose_an_option() {
     let (mut app, mut hub) = app_with_hub();
     app.sb.cards = cast();
-    ctrl(&mut app, 'g');
-    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    ctrl(&mut app, '2');
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(12));
     assert_eq!(app.sb.card.opt, None);
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -556,39 +432,20 @@ fn the_card_key_bar_keeps_choose_and_enter() {
     assert_eq!(keys(10), ["↑↓"]);
 }
 
-/// The mouse on the strip: a row click selects it (its keys show), a
-/// click on the row selected opens it; an option answers at once, `×`
-/// closes; a tab switches cards.
+/// The mouse on the strip (BISE-302): a click on a row opens it in the
+/// view, the thread's draft waits; a tab switches cards.
 #[test]
 fn the_mouse_on_the_strip_and_the_tabs() {
     let (mut app, mut hub) = app_with_hub();
     app.sb.cards = cast();
     app.ed.insert("draft to main");
     let rows = draw(&mut app, 140, 40);
-    let perf = row_of(&rows, "? perf · ");
-    assert!(click(&mut app, col_of(&rows[perf], "perf"), perf as u16));
-    assert_eq!(app.sb.card.inbox, Some(1), "a row click selects it");
-    assert!(!app.sb.card.open);
-    let rows = draw(&mut app, 140, 40);
-    assert!(click(&mut app, col_of(&rows[perf], "2 both"), perf as u16));
-    assert_eq!(sent(&mut hub), vec!["/answer 12 both: compress, and lazy-load below the fold"]);
-    assert_eq!(app.ed.text, "draft to main", "you never left your message");
-    assert_eq!(app.sb.card.inbox, None);
-    let rows = draw(&mut app, 140, 40);
-    let rel = row_of(&rows, "release wants to run");
-    assert!(!rows[rel].contains('×'), "{}", rows[rel]);
-    assert!(click(&mut app, col_of(&rows[rel], "release"), rel as u16));
-    let rows = draw(&mut app, 140, 40);
-    assert!(click(&mut app, col_of(&rows[rel], "×"), rel as u16));
-    assert_eq!(sent(&mut hub), vec!["/close 14"]);
-    let rows = draw(&mut app, 140, 40);
     let dark = row_of(&rows, "? dark-mode · ");
     assert!(click(&mut app, col_of(&rows[dark], "dark-mode"), dark as u16));
-    assert!(!app.sb.card.open);
-    let rows = draw(&mut app, 140, 40);
-    assert!(click(&mut app, col_of(&rows[dark], "dark-mode"), dark as u16));
-    assert!(app.sb.card.open, "a click on the row selected opens it");
+    assert!(app.sb.card.open, "a click on a row opens it");
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(13));
+    assert_eq!(app.ed.text, "");
+    assert!(sent(&mut hub).is_empty());
     // a new card only adds a tab
     app.sb.cards.push(card(30, "question", "api", "v1 or v2?"));
     let rows = draw(&mut app, 140, 40);
@@ -596,6 +453,26 @@ fn the_mouse_on_the_strip_and_the_tabs() {
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(13));
     assert!(click(&mut app, col_of(&rows[tabs], "api"), tabs as u16));
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(30));
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(app.ed.text, "draft to main");
+    // the number or the summary: the whole row opens
+    let rows = draw(&mut app, 140, 40);
+    let perf = row_of(&rows, "? perf · ");
+    assert!(click(&mut app, col_of(&rows[perf], "2 ?"), perf as u16));
+    assert_eq!(app.sb.current_card().map(|c| c.id), Some(12));
+}
+
+/// The card view's divider keeps a fresh note on its right (a copy from
+/// the card's text: `✓ copied 9 chars`), as the thread's divider does.
+#[test]
+fn the_card_view_divider_shows_a_fresh_note() {
+    let (mut app, _hub) = app_with_hub();
+    app.sb.cards = cast();
+    open(&mut app);
+    app.flash = Some(("copied 9 chars".into(), std::time::Instant::now()));
+    let rows = draw(&mut app, 140, 40);
+    let d = row_of(&rows, "you → ? release · your answer");
+    assert!(rows[d].contains("your answer  ✓ copied 9 chars "), "{}", rows[d]);
 }
 
 /// The card in view answered elsewhere: the view moves on, its draft
@@ -631,11 +508,6 @@ fn going_to_an_agent_closes_the_view() {
     assert_eq!(app.ed.text, "to main");
     open(&mut app);
     assert_eq!(app.ed.text, "note");
-    // the inbox selected: going to an agent leaves it
-    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    ctrl(&mut app, 'g');
-    crate::sb::focus(&mut app, "perf");
-    assert_eq!(app.sb.card.inbox, None);
 }
 
 /// A done card needs no words: ⏎ on an empty composer acknowledges it.

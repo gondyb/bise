@@ -418,7 +418,7 @@ pub(crate) const LEGEND: &[Symbol] = &[
     sym(AGENTS, G_OVERLAP, Tone::Text, "two agents changed the same file"),
     sym(AGENTS, G_RESTART_FAILED, Tone::Error, "a restart failed"),
     sym(AGENTS, G_BUILDING, Tone::Text, "a version is building or on trial"),
-    sym(AGENTS, "# 3", Tone::Dim, "open cards: ctrl+g shows them"),
+    sym(AGENTS, "# 3", Tone::Dim, "items in your inbox: ctrl+1-9 or a click opens them"),
     sym(AGENTS, "+ 2 more", Tone::Dim, "rows that do not fit"),
     sym(MESSAGES, G_YOU, Tone::Text, "the composer, and your queued messages"),
     sym(MESSAGES, "│", Tone::Accent, "your message"),

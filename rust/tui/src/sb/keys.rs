@@ -12,15 +12,12 @@ pub(super) enum Nav {
     Goto(usize),
 }
 
-/// Ctrl+K / Alt+↓ next, Ctrl+J / Alt+↑ previous, Alt+N agent N (0 = main).
+/// Alt+↓ next, Alt+↑ previous, Alt+N agent N (0 = main). BISE-302:
+/// ctrl+k / ctrl+j are the editor's again (line end, newline).
 pub(super) fn nav_key(k: &crossterm::event::KeyEvent) -> Option<Nav> {
     match (k.code, k.modifiers) {
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::ALT) => {
-            Some(Nav::Next)
-        }
-        (KeyCode::Char('j'), KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::ALT) => {
-            Some(Nav::Prev)
-        }
+        (KeyCode::Down, KeyModifiers::ALT) => Some(Nav::Next),
+        (KeyCode::Up, KeyModifiers::ALT) => Some(Nav::Prev),
         (KeyCode::Char(c), KeyModifiers::ALT) if c.is_ascii_digit() => {
             c.to_digit(10).map(|d| Nav::Goto(d as usize))
         }
@@ -76,7 +73,7 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             _ => {}
         }
     }
-    // the cards (cards v2): ctrl+g from the thread, the rest in the
+    // the cards (cards v2): ctrl+1-9 from the thread, the rest in the
     // card view
     if super::cards::key(app, k, popup_open) {
         return true;

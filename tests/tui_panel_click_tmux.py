@@ -43,8 +43,8 @@ def main():
         t.wait_re(in_view("t2"))
         # the selected agent shows its objective under its row: that
         # row belongs to the agent too
-        t.keys("C-k")
-        t.keys("C-k")
+        t.keys("M-Down")
+        t.keys("M-Down")
         t.wait("first")
         click_on(t, "first")
         t.wait_re(in_view("t1"))

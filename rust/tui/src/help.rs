@@ -56,7 +56,7 @@ pub(crate) const TIPS: &[&str] = &[
     "ctrl+o opens everything folded",
     "$ calls a skill, tab completes",
     "ctrl+` opens a terminal in the workspace",
-    "ctrl+g selects the inbox, ↑↓ ⏎ open what waits for you",
+    "ctrl+1-9 open the items waiting in your inbox",
     "ctrl+s finds an agent by name, ⏎ opens it",
     "esc puts your draft away, ↑ brings it back",
     "shift+⏎ adds a new line",
@@ -73,6 +73,10 @@ const FIND_WHAT: &str = "find in the history: ⏎ or ↑ older, shift+⏎ or ↓
 /// us, like [`FIND_CMD`] (BISE-265).
 const SWITCH: Row = r(AGENTS, "ctrl+s|/switch", SWITCH_WHAT).top();
 const SWITCH_CMD: Row = r(AGENTS, "cmd+k|ctrl+s|/switch", SWITCH_WHAT).top();
+/// ctrl+1-9 open inbox item N (BISE-302); a terminal without them
+/// (`App::ctrl_digits`, reach.rs): /inbox in their place.
+const INBOX: Row = r(CARDS, "ctrl+1-9", "open the inbox item with that number (or click it)").top();
+const INBOX_COMMAND: Row = r(CARDS, "/inbox", "open the inbox (or click a row)").top();
 const SWITCH_WHAT: &str = "find an agent by name (archived ones too) and open it: type part of its name, ↑↓ choose, ⏎ open, esc close";
 
 /// Every shortcut, in display order (sections appear in first-row order).
@@ -88,8 +92,8 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "hold ctrl|hold ⌥|hold cmd", "show that key's shortcuts where they act (Ghostty, kitty; cmd once a cmd key reached bise; typing a ⌥ character hides them)").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
     SWITCH,
-    r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),
-    r(AGENTS, "ctrl+j|alt+↑", "select the previous agent"),
+    r(AGENTS, "alt+↓", "select the next agent").top(),
+    r(AGENTS, "alt+↑", "select the previous agent"),
     r(AGENTS, "⏎", "enter the selected agent").top(),
     r(AGENTS, "space", "preview the selected agent without entering it"),
     r(AGENTS, "D", "drop the selected agent (stop it, archive its history)"),
@@ -97,9 +101,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(AGENTS, "esc", "close the selection; in an agent, back to main").top(),
     r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").top(),
     r(AGENTS, "click ▸ archived", "in the right panel: show or hide the archived agents"),
-    r(CARDS, "ctrl+g", "select the inbox (the strip above the divider); again, or esc: back to your message").top(),
-    r(CARDS, "↑|↓|⏎|→", "the inbox selected: choose a row, ⏎ or → opens it; typing goes back to your message").top(),
-    r(CARDS, "click", "on the inbox: an option answers at once, a row opens it, × closes it"),
+    INBOX,
     r(CARDS, "↑|↓|⏎", "an item open, empty composer: choose an option, ⏎ picks it (nothing chosen: ⏎ does nothing)").top(),
     r(CARDS, "1-9", "an item open, empty composer: pick an option at once (once you type, digits are text)"),
     r(CARDS, "←|→|ctrl+n|ctrl+p", "an item open: the previous / next one (←→ on an empty composer)"),
@@ -114,7 +116,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(FEED, "pgup|pgdn|wheel", "scroll the feed"),
     r(FEED, "end", "back to the bottom"),
     r(FEED, "ctrl+l", "clear the display (/clear); scroll up to see the lines again"),
-    r(EDIT, "shift+⏎|alt+⏎|ctrl+j", "new line (on an empty composer, ctrl+j selects an agent)").top(),
+    r(EDIT, "shift+⏎|alt+⏎|ctrl+j", "new line").top(),
     r(EDIT, "option+←|option+→", "word left / right"),
     r(EDIT, "ctrl+option+←|ctrl+option+→", "subword left / right (camelCase, snake_case, kebab-case, digits)"),
     r(EDIT, "cmd+←|cmd+→|ctrl+a|ctrl+e|home|end", "line start / end"),
@@ -124,7 +126,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(EDIT, "option+delete", "delete the word after"),
     r(EDIT, "ctrl+option+backspace|ctrl+option+delete", "delete a subword before / after"),
     r(EDIT, "cmd+backspace|ctrl+u", "delete to the line start"),
-    r(EDIT, "ctrl+k", "delete to the line end (on an empty composer: select the next agent)"),
+    r(EDIT, "ctrl+k", "delete to the line end"),
     r(EDIT, "ctrl+/|cmd+z", "undo your typing (only the composer: sent messages have no undo)"),
     r(EDIT, "alt+/|ctrl+shift+/|cmd+shift+z", "redo"),
     r(EDIT, "esc", "put the draft away in the history (↑ brings it back)"),
@@ -219,7 +221,7 @@ pub(crate) fn on_key(app: &mut App, k: &KeyEvent) -> bool {
             o.scroll = 0;
         }
         KeyCode::Esc => app.help = None,
-        KeyCode::Char('c') | KeyCode::Char('g') if ctrl => app.help = None,
+        KeyCode::Char('c') if ctrl => app.help = None,
         KeyCode::Tab | KeyCode::BackTab => {
             o.page = match o.page {
                 Page::Help => Page::Shortcuts,
@@ -273,11 +275,21 @@ fn code() -> Style {
 
 /// The rows of a page, filtered (case-insensitive, over the
 /// section, the keys and the action). `cmd`: the terminal passes cmd
-/// keys, find reads cmd+f.
-pub(crate) fn rows(page: Page, filter: &str, cmd: bool) -> Vec<&'static Row> {
+/// keys, find reads cmd+f. `digits`: it passes ctrl+1-9 (else /inbox).
+pub(crate) fn rows(page: Page, filter: &str, cmd: bool, digits: bool) -> Vec<&'static Row> {
     let f = filter.to_lowercase();
     ROWS.iter()
-        .map(|r| if cmd && r.keys == FIND.keys { &FIND_CMD } else if cmd && r.keys == SWITCH.keys { &SWITCH_CMD } else { r })
+        .map(|r| {
+            if cmd && r.keys == FIND.keys {
+                &FIND_CMD
+            } else if cmd && r.keys == SWITCH.keys {
+                &SWITCH_CMD
+            } else if !digits && r.keys == INBOX.keys {
+                &INBOX_COMMAND
+            } else {
+                r
+            }
+        })
         .filter(|r| page == Page::Shortcuts || r.top)
         .filter(|r| {
             f.is_empty()
@@ -469,8 +481,9 @@ pub(crate) fn page_lines(
     commands: &[(&'static str, &'static str)],
     width: usize,
     cmd: bool,
+    digits: bool,
 ) -> Vec<Line<'static>> {
-    let rows = rows(page, filter, cmd);
+    let rows = rows(page, filter, cmd, digits);
     let mut out = Vec::new();
     if page == Page::Help {
         let f = filter.to_lowercase();
@@ -520,7 +533,7 @@ pub(crate) fn page_lines(
 /// The overlay, over the whole frame, when open.
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let dev_cmds = crate::sb::release::dev_commands(app);
-    let cmd = app.cmd_keys;
+    let (cmd, digits) = (app.cmd_keys, app.ctrl_digits);
     let Some(o) = app.help.as_mut() else { return };
     let full = frame.area();
     // BISE-272: open, it takes the mouse (`mouse`): no click does anything
@@ -536,7 +549,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         .chain(dev_cmds)
         .map(|c| (c.name, c.desc))
         .collect();
-    let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4), cmd);
+    let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4), cmd, digits);
     let visible = (h as usize).saturating_sub(2).max(1);
     o.visible = visible;
     o.max_scroll = lines.len().saturating_sub(visible);
@@ -615,7 +628,7 @@ mod tests {
     fn every_row_renders() {
         for width in [40usize, 76, 106] {
             {
-                let lines = page_lines(Page::Shortcuts, "", &[], width, false);
+                let lines = page_lines(Page::Shortcuts, "", &[], width, false, true);
                 let all = text(&lines);
                 for l in &lines {
                     let w = spans_width(&l.spans);
@@ -639,10 +652,17 @@ mod tests {
 
     #[test]
     fn help_is_commands_and_essentials() {
-        let lines = page_lines(Page::Help, "", &[("/help", "commands and keys")], 80, false);
+        let lines = page_lines(Page::Help, "", &[("/help", "commands and keys")], 80, false, true);
         let all = text(&lines);
         assert!(all.contains("commands") && all.contains("/help"));
-        assert!(all.contains(" ctrl+g "), "a top row");
+        assert!(all.contains(" ctrl+1-9 "), "a top row");
+        // ctrl+j stays a new line, ctrl+k the line end (/shortcuts)
+        for gone in ["ctrl+g", "ctrl+k", "select an agent"] {
+            assert!(!all.contains(gone), "BISE-302: {gone} in\n{all}");
+        }
+        // a terminal without ctrl+1-9: /inbox in their place
+        let all = text(&page_lines(Page::Help, "", &[], 80, false, false));
+        assert!(all.contains(" /inbox ") && !all.contains("open the inbox item with that number"), "{all}");
         assert!(all.contains(" ⌥ + 0…9 "), "the panel numbers");
         assert!(!all.contains(" ctrl+x "), "a /shortcuts-only row");
     }
@@ -677,7 +697,7 @@ mod tests {
             theme::set_ascii_for_tests(ascii);
             for page in [Page::Help, Page::Shortcuts] {
                 for width in [40usize, 106] {
-                    let lines = page_lines(page, "", &[], width, false);
+                    let lines = page_lines(page, "", &[], width, false, true);
                     for l in &lines {
                         assert!(spans_width(&l.spans) <= width, "overflow at {width}: {l:?}");
                     }
@@ -698,16 +718,16 @@ mod tests {
         }
         theme::set_ascii_for_tests(false);
         // the filter finds a symbol by its meaning, its glyph or its ASCII form
-        let only = text(&page_lines(Page::Help, "worktree", &[], 80, false));
+        let only = text(&page_lines(Page::Help, "worktree", &[], 80, false, true));
         assert!(only.contains("symbols") && only.contains("ψ"), "{only}");
-        assert!(text(&page_lines(Page::Shortcuts, "symbols", &[], 80, false)).contains("✓✓"));
+        assert!(text(&page_lines(Page::Shortcuts, "symbols", &[], 80, false, true)).contains("✓✓"));
     }
 
     #[test]
     fn filter_keeps_matching_rows() {
-        let r = rows(Page::Shortcuts, "subword", false);
+        let r = rows(Page::Shortcuts, "subword", false, true);
         assert!(r.len() >= 2 && r.iter().all(|r| r.action.contains("subword")));
-        assert!(rows(Page::Shortcuts, "zzzz", false).is_empty());
+        assert!(rows(Page::Shortcuts, "zzzz", false, true).is_empty());
     }
 
     #[test]

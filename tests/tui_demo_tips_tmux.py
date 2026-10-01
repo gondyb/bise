@@ -2,7 +2,7 @@
 throwaway hub with the fake provider: main spawns three agents whose
 objectives start with `bise demo` (as the bise-demo skill does), and
 each tip comes at its moment and goes on its action: the team started
-(⌥1 looks inside pm), inside pm (esc back to main), a card (ctrl+g, 1),
+(⌥1 looks inside pm), inside pm (esc back to main), a card (ctrl+1, 1),
 a word for dev-api (⌥3, type, ⏎; it stays while the marks move, goes
 when you leave), pm dropped (ctrl+s finds it), and ctrl+s ends the tour.
 An agent with another objective gets no tip.
@@ -49,7 +49,7 @@ def settled(t):
 
 
 def main():
-    with tui_session(COLS, ROWS) as t:
+    with tui_session(COLS, ROWS, env="BISE_CTRL_DIGITS=1") as t:
         t.wait("bise :*")
         t.wait(" idle")
         # an ordinary agent: no tip
@@ -76,17 +76,17 @@ def main():
         t.keys("Escape")
         t.wait_re(in_view("main"))
         t.wait_gone("this is pm's own thread")
-        # 3. a card: ctrl+g, 1
+        # 3. a card: ctrl+1, 1
         settled(t)
         t.typed("[[bash: sb card \"$(printf 'designer asks: where does the button go?\\n1. next to the filters\\n2. in the menu')\"]]")
         t.keys("Enter")
-        sc = t.wait("needs you. ctrl+g opens", 30)
+        sc = t.wait("needs you. ctrl+1 opens", 30)
         print("---- card ----\n" + sc)
-        # one item: ctrl+g opens it, a digit picks
-        t.keys("C-g")
+        # ctrl+1 (the kitty form) opens it, a digit picks
+        t.typed("\x1b[49;5u")
         t.wait("1-2 pick")
         t.typed("1")
-        t.wait_gone("needs you. ctrl+g opens", 20)
+        t.wait_gone("needs you. ctrl+1 opens", 20)
         # 4. a word for dev-api
         sc = t.wait("dev-api waits for a word from", 20)
         print("---- steer ----\n" + sc)

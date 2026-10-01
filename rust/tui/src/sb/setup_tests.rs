@@ -28,21 +28,11 @@ fn draw(app: &mut App, w: u16, h: u16) -> Vec<String> {
     buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>()).collect()
 }
 
-/// The strip row holding `needle`, selected (the first row, as a click
-/// or ctrl+g with 2+ rows selects it; then ↓ until its `▸`): only the
-/// selected row shows its keys.
-fn selected_row(app: &mut App, w: u16, h: u16, needle: &str) -> String {
-    if app.sb.card.inbox.is_none() {
-        app.sb.card.inbox = Some(0);
-    }
-    for _ in 0..8 {
-        let rows = draw(app, w, h);
-        if let Some(r) = rows.iter().find(|r| r.contains('▸') && r.contains(needle)) {
-            return r.clone();
-        }
-        press(app, KeyCode::Down, KeyModifiers::NONE);
-    }
-    panic!("no row {needle:?} selected:\n{}", draw(app, w, h).join("\n"))
+/// The strip row holding `needle` (BISE-302: numbered, no keys; a
+/// click or ctrl+N opens it).
+fn strip_row(app: &mut App, w: u16, h: u16, needle: &str) -> String {
+    let rows = draw(app, w, h);
+    rows.iter().find(|r| r.contains(needle)).cloned().unwrap_or_else(|| panic!("no row {needle:?}:\n{}", rows.join("\n")))
 }
 
 fn press(app: &mut App, code: KeyCode, m: KeyModifiers) {
@@ -98,12 +88,10 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     let mut app = launched(&h, v.clone());
     assert_eq!(setup_cards(&app), vec!["can i set bise up for your terminal and this repo?"]);
     assert!(!app.sb.card.open, "never opened for you");
-    // its keys show once selected (ctrl+g, BISE-253)
+    // its row numbered, no keys on it (BISE-302)
     let rows = draw(&mut app, 120, 30);
     assert!(!rows.iter().any(|r| r.contains("2 not now")), "{}", rows.join("\n"));
-    let strip = selected_row(&mut app, 120, 30, "? main");
-    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-    assert!(strip.contains("? main") && strip.contains("1 yes, check") && strip.contains("2 not now"), "{strip}");
+    strip_row(&mut app, 120, 30, " 1 ? main · ");
     assert!(!rows.iter().any(|r| r.contains(&format!("#{LOCAL}"))), "no hub number");
     // the empty thread stays with the card waiting in the strip
     assert!(rows.iter().any(|r| r.contains(super::super::panel::FIRST_RUN[1])), "{}", rows.join("\n"));
@@ -112,8 +100,7 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     put_back(&mut app.sb);
     assert_eq!(setup_cards(&app).len(), 1);
     // opened: what set up does, the checks counted, nothing picked
-    press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
-    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut app, KeyCode::Char('1'), KeyModifiers::CONTROL);
     let rows = draw(&mut app, 140, 40).join("\n");
     let n = tune::subjects(Scope::All, cfg!(target_os = "macos")).len();
     for s in [
@@ -192,8 +179,7 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     std::fs::write(h.join("ghostty/config"), "font-size = 14\n").unwrap();
     let mut app = launched(&h, v.clone());
     set_runner(&mut app, fake, v.clone());
-    press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
-    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut app, KeyCode::Char('1'), KeyModifiers::CONTROL);
     press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
     pump(&mut app);
     assert_eq!(
@@ -214,18 +200,11 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     );
     // the strip: each row, its faint end when it fits in the reading
     // column (not the Ghostty one's), the key's action
-    let keys = selected_row(&mut app, 160, 40, "let cmd+v");
-    // four keys: the title is cut before the options, never them
-    assert!(keys.contains("? main · let cmd+v, cmd+f, cmd+k and cmd+a reach bi…") && keys.contains("1 yes, add them  2 no"), "{keys}");
+    let keys = strip_row(&mut app, 160, 40, "? main · let cmd+v");
+    assert!(keys.contains(" 1 ? main · let cmd+v, cmd+f, cmd+k and cmd+a reach bise"), "{keys}");
     let rows = draw(&mut app, 160, 40);
     let agents = rows.iter().find(|r| r.contains("? main · write a starter")).unwrap();
     assert!(agents.contains("? main · write a starter AGENTS.md new file · 3 lines"), "{agents}");
-    // selected, its keys take the room of the faint end
-    let agents = selected_row(&mut app, 160, 40, "write a starter");
-    assert!(agents.contains("1 yes, write it  2 no   ⏎ open  ×"), "{agents}");
-    let key = selected_row(&mut app, 160, 40, "turn on web search");
-    assert!(key.contains("⏎ paste it  ×"), "{key}");
-    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     // the fold opens on every check
     let fold = app.events.iter().position(|e| matches!(e, Ev::Fold { .. })).unwrap();
     assert!(crate::feed::toggle_event(&mut app.events, &mut app.cache, fold));

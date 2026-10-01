@@ -113,7 +113,7 @@ le fichier et appelle ce module. Détail dans la RFC 0001 §7.5 bis.
 
 ## Touches (TUI)
 
-Compositeur vide : Ctrl+J/K choisir dans le panneau, ⏎ entrer (checkout),
+Compositeur vide : Alt+↑↓ choisir dans le panneau (Ctrl+J/K retirés, BISE-302), Ctrl+1…9 ouvrir l'élément N de l'inbox, ⏎ entrer (checkout),
 Espace aperçu, D drop, Esc revenir à main, Alt+1…9 tâche N, Alt+0 main,
 Ctrl+A répondre à la carte suivante, Ctrl+Z annuler le dernier routage,
 Ctrl+O shell dans le dossier de l'agent affiché. `/help` liste les

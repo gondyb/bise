@@ -45,6 +45,12 @@ pub(crate) struct App {
     /// a cmd key (SUPER, not cmd alone) reached us this session: the
     /// terminal passes cmd keys, the key bar and the help say cmd+f
     pub(crate) cmd_keys: bool,
+    /// BISE-302: what the terminal lets through for the inbox
+    /// (reach.rs): ctrl+1-9 arrive, a click arrives. Set at start from
+    /// the terminal's answers (run.rs); a ctrl+1-9 that only a terminal
+    /// with them sends turns `ctrl_digits` on.
+    pub(crate) ctrl_digits: bool,
+    pub(crate) clicks: bool,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     pub(crate) unseen: usize,
     pub(crate) tail_visible: bool,
@@ -229,6 +235,8 @@ impl App {
             find: None,
             palette: None,
             cmd_keys: false,
+            ctrl_digits: true,
+            clicks: true,
             unseen: 0,
             tail_visible: true,
             bottom_bar_rect: None,

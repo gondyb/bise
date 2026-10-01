@@ -93,6 +93,7 @@ mod onboarding;
 mod hints;
 mod tour;
 mod ctrlhint;
+mod reach;
 mod queue;
 mod layout;
 mod chrome;

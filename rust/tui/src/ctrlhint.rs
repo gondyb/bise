@@ -2,9 +2,10 @@
 //!
 //! While you hold ctrl alone for [`DELAY`], the places where a ctrl
 //! shortcut changes something show it: the folds (`▸ 12 more lines` →
-//! `▸ ctrl+o expand`), the panel title (`ctrl+k/j`), the divider's state
-//! while the agent works (`ctrl+c interrupt`), and
-//! the key bar (every ctrl key of the moment). Released, or any other key:
+//! `▸ ctrl+o expand`), the inbox rows' numbers (in accent: ctrl+N opens
+//! row N, BISE-302, card_draw.rs), the divider's state while the agent
+//! works (`ctrl+c interrupt`), and the key bar (every ctrl key of the
+//! moment). Released, or any other key:
 //! back at once. A hint only writes over cells the frame already drew
 //! (text it replaces, padded with spaces, or the blank cells after a
 //! fold's mark): no row or column moves.
@@ -230,18 +231,17 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
     }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
-        // from the thread only ctrl+g (select the inbox); the rest in
-        // the card view
-        p.push(("ctrl+g", if v.card_open || crate::sb::inbox_selected(app) { "back" } else { "inbox" }));
+        // BISE-302: ctrl+N opens inbox row N (from the thread and the
+        // card view); the rest in the card view
+        if app.ctrl_digits {
+            p.push((open_keys(crate::sb::strip_rows(app)), "open an inbox item"));
+        }
         if v.card_open {
             if v.cards > 1 {
                 p.push(("ctrl+n/p", "next item"));
             }
             p.push(("ctrl+x", "close without answering"));
         }
-    }
-    if app.ed.text.is_empty() && v.agents > 1 {
-        p.push(("ctrl+k/j", "agents"));
     }
     // BISE-265: the agent palette
     if crate::sb::palette::has_agents(app) {
@@ -255,6 +255,12 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
     p.push(("ctrl+`", "terminal"));
     p.push(("ctrl+l", "clear"));
     p
+}
+
+/// `ctrl+1`, `ctrl+1-2` … `ctrl+1-9`: the keys of `rows` inbox rows.
+pub(crate) fn open_keys(rows: usize) -> &'static str {
+    const KEYS: [&str; 9] = ["ctrl+1", "ctrl+1-2", "ctrl+1-3", "ctrl+1-4", "ctrl+1-5", "ctrl+1-6", "ctrl+1-7", "ctrl+1-8", "ctrl+1-9"];
+    KEYS[rows.clamp(1, 9) - 1]
 }
 
 /// The ⌥ keys (sb/keys.rs `nav_key`, the editor's word keys).
@@ -376,16 +382,11 @@ fn row(buf: &Buffer, y: u16, x0: u16, x1: u16) -> Vec<String> {
 /// frame passes): the folds, the panel title, the divider. The key bar
 /// draws its own ([`pairs`]), the panel its numbers (`⌥1`, sb/panel.rs).
 pub(crate) fn draw(app: &App, buf: &mut Buffer) {
-    // the find box has the keys: ctrl+o, ctrl+k/j, ⌥↑↓ wait (BISE-297)
+    // the find box has the keys: ctrl+o, ⌥↑↓ wait (BISE-297)
     let empty = app.ed.text.is_empty() && app.find.is_none();
     match held(app) {
         Some(Held::Ctrl) if app.find.is_some() => {}
-        Some(Held::Ctrl) => {
-            folds(app, buf);
-            if empty {
-                panel(app, buf, ("ctrl+k/j", "select"));
-            }
-        }
+        Some(Held::Ctrl) => folds(app, buf),
         Some(Held::Alt) if empty => panel(app, buf, ("⌥↑↓", "select")),
         Some(Held::Cmd) => panel(app, buf, ("cmd+k", "find")),
         _ => {}
@@ -454,9 +455,9 @@ fn more_lines(s: &str) -> bool {
     matches!((w.next(), w.next(), w.next(), w.next()), (Some(n), Some("more"), Some("line" | "lines"), None) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// The panel title's keys (` · ⌥ + number`) become ` · ctrl+k/j select`
-/// (ctrl+k/j, ⌥↑↓ move the selection while the composer is empty) or
-/// ` · cmd+k find`.
+/// The panel title's keys (` · ⌥ + number`) become ` · ⌥↑↓ select`
+/// (they move the selection while the composer is empty) or ` · cmd+k
+/// find`.
 fn panel(app: &App, buf: &mut Buffer, pair: Pair) {
     if crate::sb::ctrl_view(app).agents < 2 {
         return;
@@ -736,20 +737,19 @@ mod frame_tests {
             // same cells, same frame and box lines at the same columns
             assert_eq!(off.area, on.area);
             assert_eq!(skeleton(&off), skeleton(&on), "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
-            // the rows that change: the fold, the panel title, the divider,
-            // the key bar, nothing else
+            // the rows that change: the fold, the divider, the key bar,
+            // nothing else (BISE-302: the panel title keeps `⌥ + number`)
             let fold = row_of(&a, "▸ 46 more lines");
             assert!(b[fold].contains("│ ▸ ctrl+o expand          "), "{}", b[fold]);
-            let title = row_of(&a, "agents · ");
-            assert!(b[title].contains("agents · ctrl+k/j select") || b[title].contains("agents · ctrl+k/j"), "{}", b[title]);
             let div = row_of(&a, "you → main");
             // the state's cells only: a short one keeps the key alone
             // (designer: cut the label, keep the key), no state no hint
             let hinted = a[div] != b[div];
             assert!(!hinted || b[div].contains(" ctrl+c "), "{}", b[div]);
             let bar = a.len() - 2;
-            assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+f find   ctrl+g "), "{}", b[bar]);
-            let mut changed = vec![fold, title, bar];
+            assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+f find   ctrl+1 open an inbox item"), "{}", b[bar]);
+            assert!(!b[bar].contains("ctrl+k/j") && !b[bar].contains("ctrl+g"), "{}", b[bar]);
+            let mut changed = vec![fold, bar];
             if hinted {
                 changed.push(div);
             }
@@ -760,6 +760,15 @@ mod frame_tests {
             let x = b[fold].find("ctrl+o").map(|i| b[fold][..i].chars().count()).unwrap() as u16;
             assert_eq!(on[(x, fold as u16)].fg, theme::accent());
             assert_eq!(on[(x + 8, fold as u16)].fg, theme::dim());
+            // BISE-302: the inbox rows' numbers light up, nothing moves
+            // (the strip's row, the panel's)
+            let item = |r: &str| r.contains("1 ? docs  v1") || r.contains("1 ? docs · v1");
+            for r in (0..a.len()).filter(|&y| item(&a[y])) {
+                let x = a[r].find("1 ? docs").map(|i| a[r][..i].chars().count()).unwrap() as u16;
+                assert_ne!(off[(x, r as u16)].fg, theme::accent(), "{}", a[r]);
+                assert_eq!(on[(x, r as u16)].fg, theme::accent(), "{}", b[r]);
+            }
+            assert_eq!(a.iter().filter(|r| item(r)).count(), 2, "{}", a.join("\n"));
             // released: the frame as before
             app.hold = Hold::default();
             assert_eq!(text(&screen(&mut app, 120, 40)), a);
@@ -863,7 +872,7 @@ mod frame_tests {
         (a, b, bar)
     }
 
-    /// Two cards, ctrl+g: the inbox selected (one card opens its view).
+    /// Two cards, ctrl+1: the first in the card view.
     fn inbox(app: &mut App) {
         let state = serde_json::json!({"ev": "state", "agents": [
             {"name": "main", "main": true, "status": "working"},
@@ -873,8 +882,8 @@ mod frame_tests {
             {"id": 8, "kind": "question", "agent": "docs", "text": "ship?", "age_ms": 0},
         ]});
         crate::sb::dispatch(app, &state.to_string());
-        crate::input::on_key(app, &KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL));
-        assert!(crate::sb::inbox_selected(app));
+        crate::input::on_key(app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL));
+        assert!(crate::sb::ctrl_view(app).card_open);
     }
 
     fn screen_held(app: &mut App, h: Held) -> Buffer {
@@ -917,8 +926,8 @@ mod frame_tests {
         assert!(!bar.contains("⌥↑↓"), "{bar}");
     }
 
-    /// Option held in an agent's view and in the inbox (ctrl+g): the key
-    /// bar the ⌥ keys, which still do their job there.
+    /// Option held in an agent's view and in the card view (ctrl+1): the
+    /// key bar the ⌥ keys, which still do their job there.
     #[test]
     fn option_held_in_an_agent_and_the_inbox() {
         let mut app = busy_app();
@@ -931,7 +940,7 @@ mod frame_tests {
         let (_, _, bar) = held_screen(&mut app, Held::Alt);
         assert!(bar.contains("⌥0-9 go to an agent   ⌥↑↓ select an agent"), "{bar}");
         let (_, _, bar) = held_screen(&mut app, Held::Ctrl);
-        assert!(bar.contains("ctrl+g back"), "{bar}");
+        assert!(bar.contains("ctrl+1-2 open an inbox item   ctrl+n/p next item"), "{bar}");
         // ⌥1 from the inbox: to docs
         crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT));
         assert_eq!(app.sb.focus_name(), "docs");

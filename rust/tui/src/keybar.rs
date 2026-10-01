@@ -34,9 +34,8 @@ pub(crate) enum Mode {
     DropAsk,
     /// a yes / no question in the status row
     Confirm,
-    /// the inbox selected (ctrl+g): ↑↓ choose a row, ⏎ opens it
-    Inbox,
-    /// the card view (⏎ on an inbox row): the composer answers the card
+    /// the card view (ctrl+1-9, a click on an inbox row): the composer
+    /// answers the card
     Card,
     /// ctrl+f: the find field (BISE-237)
     Find,
@@ -60,8 +59,10 @@ type Pair = (&'static str, &'static str);
 const BACK: Pair = ("esc", "back to main");
 
 /// The inbox from the thread, right after `⏎ send` while it holds
-/// something (book §12).
-const INBOX: Pair = ("ctrl+g", "inbox");
+/// something (book §12): `ctrl+1 inbox`; a terminal without ctrl+1-9
+/// (BISE-302, reach.rs): `/inbox`.
+const INBOX: Pair = ("ctrl+1", "inbox");
+const INBOX_COMMAND: Pair = ("/inbox", "");
 
 /// The first pair while text is selected (BISE-134): the one pair of the
 /// bar in the accent, so you notice you can just type (book §13).
@@ -114,8 +115,6 @@ impl Mode {
             Mode::Find => &[("⏎", "older"), ("shift+⏎", "newer"), ("esc", "close")],
             Mode::Palette => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
-            // the selected row's keys come from `sb::inbox_pairs` (`1-2 answer`…)
-            Mode::Inbox => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "back to your message")],
             Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
             Mode::Archived => &[BACK, ("/restore", "brings it back")],
@@ -155,8 +154,6 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Palette
     } else if app.find.is_some() {
         Mode::Find
-    } else if crate::sb::inbox_selected(app) {
-        Mode::Inbox
     } else if commands::popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         Mode::FilePopup
     } else if app.feed_sel.is_some() && app.mouse.drag.is_none() {
@@ -210,17 +207,17 @@ fn keys_line(app: &App, width: u16) -> Line<'static> {
     // ctrl, option or cmd held (ctrlhint.rs): every key of that modifier
     // of the moment, same row
     if crate::ctrlhint::on(app)
-        && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card | Mode::Inbox)
+        && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card)
     {
         return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
     }
-    if matches!(mode(app), Mode::Card | Mode::Inbox) {
-        let pairs = if mode(app) == Mode::Card { crate::sb::card_key_pairs(app) } else { crate::sb::inbox_pairs(app) };
+    if mode(app) == Mode::Card {
+        let pairs = crate::sb::card_key_pairs(app);
         let pairs = crate::sb::fit_card_pairs(pairs, usize::from(width));
         let pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, l)| (*k, l.as_str())).collect();
         return pairs_line(&pairs, usize::from(width)).0;
     }
-    let inbox = crate::sb::ctrl_view(app).cards > 0;
+    let inbox = (crate::sb::ctrl_view(app).cards > 0).then_some(if app.ctrl_digits { INBOX } else { INBOX_COMMAND });
     let palette = crate::sb::palette::has_agents(app);
     let bar = Bar { typing, agent, inbox, cmd: app.cmd_keys, palette };
     render_with(mode(app), width, Some(current_tip(typing)), bar)
@@ -353,9 +350,9 @@ struct Bar {
     typing: bool,
     /// an agent's view, not main's
     agent: bool,
-    /// the inbox holds something: `ctrl+g inbox` after `⏎ send` (or
-    /// first), in the thread's modes
-    inbox: bool,
+    /// the inbox holds something: its pair (`ctrl+1 inbox`, `/inbox`)
+    /// after `⏎ send` (or first), in the thread's modes
+    inbox: Option<Pair>,
     /// a cmd key reached bise: the palette's key is `cmd+k`
     cmd: bool,
     /// an agent besides main, live or archived: the palette's pair
@@ -381,9 +378,9 @@ fn render_with(mode: Mode, width: u16, tip: Option<&str>, bar: Bar) -> Line<'sta
     let width = usize::from(width);
     let dim = Style::default().fg(theme::dim());
     let mut pairs = if agent { mode.agent_pairs() } else { mode.pairs().to_vec() };
-    if inbox && matches!(mode, Mode::Default | Mode::Steer | Mode::Images) {
+    if let Some(pair) = inbox.filter(|_| matches!(mode, Mode::Default | Mode::Steer | Mode::Images)) {
         let at = pairs.iter().position(|p| p.0 == "⏎").map_or(0, |i| i + 1);
-        pairs.insert(at, INBOX);
+        pairs.insert(at, pair);
     }
     if !palette {
         pairs.retain(|p| *p != PALETTE);
@@ -569,9 +566,13 @@ mod tests {
         assert!(s.starts_with("⏎ send   @ file   ⌥0-9 switch   / commands"), "{s}");
         let s = text(&render_with(Mode::Images, 100, None, bar(false, true)));
         assert!(s.starts_with("⏎ send   ctrl+v paste image   @ file   ctrl+s find agent"), "{s}");
-        let agent = Bar { agent: true, inbox: true, ..bar(true, true) };
+        let agent = Bar { agent: true, inbox: Some(INBOX), ..bar(true, true) };
         let s = text(&render_with(Mode::Default, 120, None, agent));
-        assert_eq!(s, "esc back to main   ⏎ send   ctrl+g inbox   @ file   cmd+k find agent   ⌥0-9 switch   / commands   ? help");
+        assert_eq!(s, "esc back to main   ⏎ send   ctrl+1 inbox   @ file   cmd+k find agent   ⌥0-9 switch   / commands   ? help");
+        // BISE-302: a terminal without ctrl+1-9
+        let agent = Bar { agent: true, inbox: Some(INBOX_COMMAND), ..bar(true, true) };
+        let s = text(&render_with(Mode::Default, 120, None, agent));
+        assert!(s.starts_with("esc back to main   ⏎ send   /inbox   @ file   "), "{s}");
     }
 
     #[test]

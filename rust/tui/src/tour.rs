@@ -58,6 +58,9 @@ pub(crate) struct Snap {
     pub(crate) card: Option<String>,
     /// the agent palette (ctrl+s) is open
     pub(crate) palette: bool,
+    /// the terminal sends no ctrl+1-9 (BISE-302, reach.rs): the card tip
+    /// says click
+    pub(crate) no_ctrl_digits: bool,
 }
 
 impl Snap {
@@ -251,7 +254,11 @@ pub(crate) fn text(t: Tip, s: &Snap) -> String {
         }
         Tip::Card => {
             let who = s.card.as_deref().filter(|w| s.live().any(|m| m.name == *w)).unwrap_or("your team");
-            format!("{who} needs you. {{ctrl+g}} opens the question, {{1}} or {{2}} answers. ↓")
+            if s.no_ctrl_digits {
+                format!("{who} needs you. {{click}} the question, {{1}} or {{2}} answers. ↓")
+            } else {
+                format!("{who} needs you. {{ctrl+1}} opens the question, {{1}} or {{2}} answers. ↓")
+            }
         }
         Tip::Steer => {
             let Some(m) = s.target() else { return String::new() };
@@ -434,7 +441,9 @@ mod tests {
         s.focus = "main".into();
         t.observe(&s);
         assert_eq!(t.tip(&s), Some(Tip::Card));
-        assert_eq!(text(Tip::Card, &s), "designer needs you. {ctrl+g} opens the question, {1} or {2} answers. ↓");
+        assert_eq!(text(Tip::Card, &s), "designer needs you. {ctrl+1} opens the question, {1} or {2} answers. ↓");
+        let click = Snap { no_ctrl_digits: true, ..s.clone() };
+        assert_eq!(text(Tip::Card, &click), "designer needs you. {click} the question, {1} or {2} answers. ↓");
         // 4. answered: a word for dev-api
         s.card = None;
         t.observe(&s);
