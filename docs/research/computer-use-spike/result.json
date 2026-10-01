@@ -1,0 +1,220 @@
+[
+ [
+  "front_before_launch",
+  "\"pid\"=704 \"LSDisplayName\"=\"Ghostty\""
+ ],
+ [
+  "extension",
+  "dogobcnlahaedlpggbokodghkoedbple"
+ ],
+ [
+  "front_after_launch",
+  "\"pid\"=84849 \"LSDisplayName\"=\"Google Chrome\""
+ ],
+ [
+  "before",
+  [
+   {
+    "id": 1786541599,
+    "focused": true,
+    "state": "normal",
+    "tabs": [
+     {
+      "id": 1786541600,
+      "active": true,
+      "groupId": -1,
+      "url": "data:text/html,%3Ctitle%3Euser%20page%3C"
+     }
+    ]
+   }
+  ]
+ ],
+ [
+  "tabs",
+  {
+   "a": {
+    "tabId": 1786541601,
+    "groupId": 861594388,
+    "windowId": 1786541599
+   },
+   "b": {
+    "tabId": 1786541602,
+    "groupId": 861594388,
+    "windowId": 1786541599
+   },
+   "c": {
+    "tabId": 1786541603,
+    "groupId": 1938443854,
+    "windowId": 1786541599
+   }
+  }
+ ],
+ [
+  "groups",
+  {
+   "a": {
+    "title": "bise · computer-use",
+    "color": "purple",
+    "collapsed": true
+   },
+   "c": {
+    "title": "bise · pr-designer",
+    "color": "purple",
+    "collapsed": true
+   }
+  }
+ ],
+ [
+  "after_open",
+  [
+   {
+    "id": 1786541599,
+    "focused": true,
+    "state": "normal",
+    "tabs": [
+     {
+      "id": 1786541600,
+      "active": true,
+      "groupId": -1,
+      "url": "data:text/html,%3Ctitle%3Euser%20page%3C"
+     },
+     {
+      "id": 1786541601,
+      "active": false,
+      "groupId": 861594388,
+      "url": "data:text/html,%3Ctitle%3Eagent%20page%3"
+     },
+     {
+      "id": 1786541602,
+      "active": false,
+      "groupId": 861594388,
+      "url": "data:text/html,%3Ctitle%3Eagent%20page%2"
+     },
+     {
+      "id": 1786541603,
+      "active": false,
+      "groupId": 1938443854,
+      "url": "data:text/html,%3Ctitle%3Eother%20agent%"
+     }
+    ]
+   }
+  ]
+ ],
+ [
+  "front_after_open",
+  "\"pid\"=84849 \"LSDisplayName\"=\"Google Chrome\""
+ ],
+ [
+  "act",
+  {
+   "attachMs": 1,
+   "axNodes": 12,
+   "found": {
+    "button": true,
+    "field": true
+   },
+   "clickMs": 5009,
+   "page": {
+    "clicks": 1,
+    "typed": "hello from bise",
+    "hidden": "hidden",
+    "focus": true
+   },
+   "screenshot": {
+    "bytes": 18447,
+    "ms": 178
+   }
+  }
+ ],
+ [
+  "after_act",
+  [
+   {
+    "id": 1786541599,
+    "focused": true,
+    "state": "normal",
+    "tabs": [
+     {
+      "id": 1786541600,
+      "active": true,
+      "groupId": -1,
+      "url": "data:text/html,%3Ctitle%3Euser%20page%3C"
+     },
+     {
+      "id": 1786541601,
+      "active": false,
+      "groupId": 861594388,
+      "url": "data:text/html,%3Ctitle%3Eagent%20page%3"
+     },
+     {
+      "id": 1786541602,
+      "active": false,
+      "groupId": 861594388,
+      "url": "data:text/html,%3Ctitle%3Eagent%20page%2"
+     },
+     {
+      "id": 1786541603,
+      "active": false,
+      "groupId": 1938443854,
+      "url": "data:text/html,%3Ctitle%3Eother%20agent%"
+     }
+    ]
+   }
+  ]
+ ],
+ [
+  "front_after_act",
+  "\"pid\"=84849 \"LSDisplayName\"=\"Google Chrome\""
+ ],
+ [
+  "click_focus",
+  {
+   "mode": "focus",
+   "mouseMoved": 18,
+   "mousePressed": 1,
+   "mouseReleased": 1,
+   "key": 1,
+   "clicks": 1
+  }
+ ],
+ [
+  "click_plain",
+  {
+   "mode": "plain",
+   "mouseMoved": 5001,
+   "mousePressed": 1,
+   "mouseReleased": 2,
+   "key": 1,
+   "clicks": 1
+  }
+ ],
+ [
+  "click_plain",
+  {
+   "mode": "plain",
+   "mouseMoved": 5002,
+   "mousePressed": 1,
+   "mouseReleased": 0,
+   "key": 2,
+   "clicks": 1
+  }
+ ],
+ [
+  "front_after_clicks",
+  "\"pid\"=16786 \"LSDisplayName\"=\"Google Chrome\""
+ ],
+ [
+  "native",
+  {
+   "echo": {
+    "hello": "bise"
+   },
+   "hostPid": 90810,
+   "ms": 411
+  }
+ ],
+ [
+  "events",
+  []
+ ]
+]
