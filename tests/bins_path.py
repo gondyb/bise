@@ -42,7 +42,9 @@ def run(e, *args):
 
 
 def main():
-    tmp = tempfile.mkdtemp(prefix="sbbp-", dir="/tmp")
+    # $TMPDIR when short (a sandboxed gate cannot write /tmp), else /tmp
+    t = tempfile.gettempdir()
+    tmp = tempfile.mkdtemp(prefix="sbbp-", dir=t if len(t) <= 40 else "/tmp")
     try:
         build = os.path.join(tmp, "build")
         cache = os.path.join(build, "cache")

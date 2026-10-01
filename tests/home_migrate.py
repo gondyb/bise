@@ -19,7 +19,7 @@ import json, os, socket, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from e2e import EXE, ROOT, host_env, load_factor  # noqa: E402
+from e2e import EXE, ROOT, host_env, load_factor, short_tmp  # noqa: E402
 
 PRIVATE = ("BEND_SESSION_FILE", "BEND_CONTEXT_FILE", "BEND_WIRE_LOG", "BEND_REPL_PORT",
            "BEND_DEBUG_DIR", "BEND_EXTRA_PROMPT", "BEND_WORKDIR", "SB_STATE_DIR", "BISE_HOME",
@@ -34,7 +34,7 @@ def check(ok, what):
 
 def main():
     # /tmp: a socket path must stay under 104 bytes (macOS)
-    tmp = tempfile.mkdtemp(prefix="sbm-", dir="/tmp")
+    tmp = tempfile.mkdtemp(prefix="sbm-", dir=short_tmp())
     home = os.path.join(tmp, "home")
     os.makedirs(os.path.join(home, ".bend-harness"))
     with open(os.path.join(home, ".bend-harness", "config.toml"), "w") as f:

@@ -18,12 +18,13 @@ no sandbox-exec.
 """
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from e2e import Env, check  # noqa: E402
+from e2e import Env, check, short_tmp  # noqa: E402
 
 
 def confirm_cards(c):
@@ -50,7 +51,7 @@ def main():
         return
     E = Env()
     # the user's home: outside the roots and outside macOS's temp folder
-    home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir="/private/tmp"))
+    home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir=short_tmp()))
     bise = os.path.join(E.tmp, "bise")
     os.makedirs(os.path.join(home, "Desktop"))
     os.makedirs(bise, exist_ok=True)

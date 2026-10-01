@@ -31,7 +31,9 @@ def check(ok, what):
 
 
 def main():
-    tmp = tempfile.mkdtemp(prefix="sbvp-", dir="/tmp")
+    # $TMPDIR when short (a sandboxed gate cannot write /tmp), else /tmp
+    t = tempfile.gettempdir()
+    tmp = tempfile.mkdtemp(prefix="sbvp-", dir=t if len(t) <= 40 else "/tmp")
     home = os.path.join(tmp, "home")
     bise = os.path.join(home, ".bise")
     versions = os.path.join(bise, "dev", "versions")

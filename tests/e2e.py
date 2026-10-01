@@ -46,6 +46,14 @@ def load_factor():
         return 1.0
 
 
+def short_tmp():
+    """A temp folder short enough for the unix sockets under it: $TMPDIR
+    when short (the gate's ~/.bise/gate/<pid>, writable in auto's
+    sandbox), else /tmp (an agent's own $TMPDIR is too deep)."""
+    t = tempfile.gettempdir()
+    return t if len(t) <= 40 else "/tmp"
+
+
 def host_env():
     """os.environ without the calling agent's SB_ variables."""
     return {k: v for k, v in os.environ.items() if k not in AGENT_VARS}

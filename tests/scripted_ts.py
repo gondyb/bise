@@ -31,7 +31,10 @@ def jsrt_env():
     sys.exit("FAIL no bend-jsrt: build it with ./run.sh (or cd rust/jsrt && cargo build)")
 
 SESSION_VARS = ("BEND_SESSION_FILE", "BEND_CONTEXT_FILE", "BEND_WIRE_LOG", "BEND_REPL_PORT",
-                "BEND_DEBUG_DIR", "SB_SOCKET", "SB_AGENT", "SB_TASK", "SB_CORE_BIN")
+                "BEND_DEBUG_DIR", "SB_SOCKET", "SB_AGENT", "SB_TASK", "SB_CORE_BIN",
+                # the agent's run/ and tmp/bg: its REPL's files went to the
+                # live agent's run/ (and a sandboxed gate cannot write there)
+                "BEND_AGENT_RUN", "BEND_BG_DIR")
 
 PROGRAMS = [
     ("return 6 * 7", "tool run_typescript ok: 42"),

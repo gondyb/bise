@@ -40,7 +40,7 @@ def main():
     E = e2e.Env()
     # the user's home outside macOS's temp folder (the sandbox lets that
     # one be written): a write to ~/Desktop is outside the roots
-    home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir="/private/tmp"))
+    home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir=e2e.short_tmp()))
     bise = os.path.join(E.tmp, "bise")
     os.makedirs(os.path.join(home, "Desktop"))
     os.makedirs(bise)
