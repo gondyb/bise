@@ -97,7 +97,9 @@ pub(crate) fn voice_key(
         // BISE-298: voice off and no setup that works: its picker
         KeyAction::OffHint => match job() {
             Ok(_) => app.voice_note = Some((voice::OFF_HINT.into(), now)),
-            Err(_) => open_voice_setup(app, true),
+            // after the double ctrl+r window: a second ctrl+r is voice
+            // mode, not this picker (voicemode::live::pump opens it)
+            Err(_) => app.voice_setup_at = Some(now + crate::voicemode::DOUBLE_CTRL_R),
         },
     }
     true
@@ -588,6 +590,21 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         return false;
     }
     if k.kind != KeyEventKind::Press {
+        return false;
+    }
+    // voice mode (voicemode/live.rs): its keys first; ctrl+r twice enters
+    if crate::voicemode::live::key(app, k) {
+        return false;
+    }
+    if crate::voicemode::live::double_ctrl_r(&mut app.ctrl_r_at, k, std::time::Instant::now()) {
+        // the first ctrl+r started dictation (or was to open its
+        // picker): it goes, voice mode comes
+        app.voice_setup_at = None;
+        if app.voice.active() {
+            app.voice.cancel();
+            end_chip(app, None);
+        }
+        crate::voicemode::live::request(app);
         return false;
     }
     if voice_key(app, k, voice::resolve_job) {

@@ -406,6 +406,12 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                 None => glyph_line(G_FAILED, err_st, t.clone(), err_st, width),
             },
         },
+        // voice mode's transcript lines (design §5): plain faint notes,
+        // `· voice mode · 14:02`, `· voice mode ended · 7 min · …`
+        Ev::Info(t) if t.starts_with("· voice mode") => {
+            let faint_st = Style::default().fg(faint());
+            crate::wrap_line(Line::from(vec![Span::raw(" "), Span::styled(t.clone(), faint_st)]), width.max(1))
+        }
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
         Ev::Pr { tone, number, url, text, url_row } => pr_lines(tone, *number, url, text, *url_row, width),
         Ev::Approval { ok, text, note, asked, open } => answer_lines(*ok, text, note, asked, *open, width),
@@ -891,6 +897,8 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
         })
         .collect();
     let folds = you_folds(msg);
+    // voice mode (design §5): what you said, not typed, carries `said`
+    let said = crate::voicemode::live::was_said(msg);
     // BISE-240: each long paste is its chip in the line (pasted.rs)
     let (folded, pastes) = crate::pasted::fold(body);
     let msg = folded.as_str();
@@ -927,12 +935,15 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
             shown += 1;
         }
         let mut hint = vec![bar.clone(), Span::styled(crate::toolbox::more_label(units.len() - shown), d)];
+        hint.extend(said_span(said));
         hint.extend(mark_span(mark));
         rows.push(Line::from(hint));
     } else {
-        // its mark at the end (C3): `·` sent, `✓` got, `✓✓` read (accent)
-        if let (Some(last), Some(m)) = (all.last_mut(), mark_span(mark)) {
-            last.spans.push(m);
+        // its mark at the end (C3): `·` sent, `✓` got, `✓✓` read (accent);
+        // said in voice mode: `said ✓✓`
+        if let Some(last) = all.last_mut() {
+            last.spans.extend(said_span(said));
+            last.spans.extend(mark_span(mark));
         }
         rows = hung_rows(&bar, &bar, all, width);
     }
@@ -1067,6 +1078,12 @@ fn user_bar() -> &'static str {
 }
 
 /// The mark after your message (C3).
+/// ` said`, faint, before your message's mark when you said it in voice
+/// mode (design §5: `said ✓✓`).
+fn said_span(said: bool) -> Option<Span<'static>> {
+    said.then(|| Span::styled(" said", Style::default().fg(faint())))
+}
+
 fn mark_span(mark: Mark) -> Option<Span<'static>> {
     let (g, c) = match mark {
         Mark::Sent => (G_SENDING, dim()),

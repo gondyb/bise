@@ -453,7 +453,9 @@ impl Onb {
             self.pn_mut().said = Some(format!("{} {}", theme::glyph(theme::G_FAILED), e));
             return Sub::List;
         }
-        if id == r::VOICE {
+        // from /voice's speech-to-text row: the model only, dictation
+        // stays as it was
+        if id == r::VOICE && !self.pn().from_settings {
             if let Some(m) = model {
                 set_voice_out(VoiceOut::On(m.to_string()));
             }

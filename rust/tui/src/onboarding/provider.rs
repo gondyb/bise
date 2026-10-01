@@ -30,6 +30,9 @@ pub(crate) struct Ask {
     pub open: super::roles::Open,
     /// the voice picker opens to turn voice on (esc: it stays off)
     pub voice_on: bool,
+    /// the voice picker opened from `/voice`'s speech-to-text row: a
+    /// pick sets the model only (dictation stays as it was)
+    pub from_settings: bool,
     /// the agents running their own model (`/model` in that agent)
     pub overrides: Vec<(String, String)>,
 }
@@ -71,6 +74,8 @@ pub(crate) struct Panel {
     pub screen: super::roles::Screen,
     /// the voice picker turns voice on (esc says it stays off)
     pub voice_on: bool,
+    /// opened from `/voice`: a voice pick does not turn dictation on
+    pub from_settings: bool,
     /// the agents running their own model: (agent, model)
     pub overrides: Vec<(String, String)>,
     /// the `/models` row just changed, and since when
@@ -173,6 +178,7 @@ impl Onb {
             opener: crate::links::open,
             screen: super::roles::Screen::Providers,
             voice_on: ask.voice_on,
+            from_settings: ask.from_settings,
             overrides: ask.overrides.clone(),
             flash: None,
             closed: false,

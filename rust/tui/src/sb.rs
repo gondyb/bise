@@ -20,6 +20,7 @@ pub(crate) mod palette;
 pub(super) use mention::mentions;
 mod cards;
 pub(super) use cards::{card_choices, card_mouse, proves_ctrl_digits};
+pub(crate) use cards::{answer_by_voice, show_heard, voice_question};
 use cards::{Card, CardView};
 mod card_draw;
 pub(super) use card_draw::{box_height, card_frame, BoxFit, card_view_open, divider_label as card_divider_label, draw_box, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs};
@@ -691,6 +692,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
     // inbox's card while the hub still holds it)
     let asked = answer_id.and_then(|id| sb.card_by_id(id)).map(|c| c.text.trim().to_string());
     let mut queued = None;
+    // voice mode: the live messages and turns of this agent (never a replay)
+    let voice = app.voice_mode.is_some() && app.sb.ready;
+    let mut said = Vec::new();
     with_feed(app, agent, |app| {
         if folded {
             let n0 = app.events.len();
@@ -698,6 +702,14 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
         } else {
             let n0 = app.events.len();
             ingest_at(app, line, pos, ts);
+            if voice {
+                said.extend(
+                    app.events[n0.min(app.events.len())..]
+                        .iter()
+                        .filter(|e| matches!(e, Ev::Assistant(_) | Ev::Turn | Ev::TurnDone | Ev::Idle))
+                        .cloned(),
+                );
+            }
             if let Some(id) = answer_id {
                 ask_of(app, n0, id, asked);
             }
@@ -710,6 +722,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
             app.pending = true;
         }
     });
+    if !said.is_empty() {
+        crate::voicemode::live::on_events(app, agent, &said);
+    }
     if let Some(m) = queued {
         app.sb.send_input_to(agent, m);
     }
@@ -977,17 +992,15 @@ fn model_needs_key(typed: &str) -> Option<(String, String)> {
 pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     // BISE-298: /voice turns voice on (its setup first when it has
     // none that works) or off; /voice setup opens the voice picker
+    // voice mode: /voice is its settings screen (dictation's on/off is a
+    // row there)
     if v.trim() == "/voice" {
-        return match crate::input::toggle_voice(app, crate::voice::resolve_job) {
-            Some(ev) => {
-                push_event(&mut app.events, &mut app.cache, ev.clone());
-                vec![ev]
-            }
-            None => Vec::new(),
-        };
+        crate::voicemode::settings::request(crate::voicemode::settings::Open::Settings);
+        return Vec::new();
     }
+    // round 2: /voice setup is the same screen, on speech to text
     if v.trim() == "/voice setup" {
-        crate::input::open_voice_setup(app, !app.voice.enabled);
+        crate::voicemode::settings::request_stt();
         return Vec::new();
     }
     let typed = v

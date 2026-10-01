@@ -63,7 +63,7 @@
 # still set default_model.
 
 # the voice input's model (BISE-130) when config.toml's [voice] has none
-default_voice_model = "mistral/voxtral-mini-latest"
+default_voice_model = "mistral/voxtral-transcribe-3"
 
 # names without a provider (the old config lines keep working)
 [aliases]
@@ -272,7 +272,7 @@ key_env = "MISTRAL_API_KEY"
 # docs.mistral.ai/studio/conversations/advanced/prompt-caching (BISE-268)
 cache_key = "prompt_cache_key"
 stt = "mistral"
-voice_model = "voxtral-mini-latest"
+voice_model = "voxtral-transcribe-3"
 small_model = "mistral-small-latest"
 context = 262144
 # the Mistral API's reasoning_effort takes these two (the vibe CLI maps
@@ -703,11 +703,11 @@ reasoning = true
 # The realtime ones (voxtral-*-realtime-*, gpt-live-transcribe,
 # scribe_v2_realtime) stream: not this batch call.
 
-# Voxtral Mini Transcribe 2 (voxtral-mini-2602): the documented one, the
-# default voice model
-[models."mistral/voxtral-mini-latest"]
-kind = "stt"
-
+# Voxtral Transcribe 3: the default voice model (dictation and voice
+# mode). Voxtral Mini (voxtral-mini-latest, the realtime mini) is not
+# offered: it got too many words wrong (the user, voice mode round 2);
+# a config or BISE_VOICE_MODEL naming a voxtral-mini-* id reads as
+# Transcribe 3 (bise_catalog::voice::RETIRED_STT_PREFIX).
 [models."mistral/voxtral-transcribe-3"]
 kind = "stt"
 
