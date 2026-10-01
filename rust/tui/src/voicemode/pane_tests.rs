@@ -115,7 +115,7 @@ fn the_status_row_of_each_phase() {
         (Phase::AboutToAnswer { fill: 1.0 }, "about to answer ●●●●●"),
         (Phase::Holding, "● the floor is yours"),
         (Phase::Working, "∿ main is on it"),
-        (Phase::Speaking, "))) speaking"),
+        (Phase::Speaking, "speaking"),
         (Phase::CutIn, "● you cut in"),
         (Phase::Muted, "○ muted"),
         (Phase::HoldToTalk, "hold space to talk"),
@@ -140,7 +140,11 @@ fn the_status_row_of_each_phase() {
 #[test]
 fn while_it_works_the_pane_points_at_the_thread() {
     let (rows, _) = draw_text(&view(Phase::Working), 98, 19, 0, MOVING);
-    assert!(find(&rows, "main is on it").is_some());
+    // designer: who it is on the title row, on it on the status row, once
+    let (y, x) = find(&rows, ":* main").expect("the title row");
+    assert_eq!(x as u16, CAPS_X);
+    assert_eq!(rows.iter().filter(|r| r.contains("main is on it")).count(), 1);
+    assert!(rows[y - 1 + kiss::H as usize].ends_with("∿ main is on it"));
     assert!(find(&rows, "what it does shows in the").is_some());
     assert!(find(&rows, "the signup is slow").is_none(), "no captions while it works");
 }

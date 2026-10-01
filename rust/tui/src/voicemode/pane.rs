@@ -148,17 +148,21 @@ fn pose(v: &PaneView) -> (Pose, Color) {
 }
 
 /// Who talks: `you` (accent), `:* main`, another agent's name in bold;
-/// `main is on it` while it works.
+/// the agent while it works (the status row says it's on it).
 fn speaker(v: &PaneView, form: Form) -> Vec<Span<'static>> {
     let bold = |c| fg(c, form).add_modifier(Modifier::BOLD);
+    let agent = |a: &str| {
+        if a == "main" {
+            vec![Span::styled(":*", bold(theme::accent())), Span::raw(" "), Span::styled("main", bold(theme::text()))]
+        } else {
+            vec![Span::styled(a.to_string(), bold(theme::text()))]
+        }
+    };
     match (&v.phase, &v.who) {
-        (Phase::Working, _) => vec![Span::styled(format!("{} is on it", v.agent), fg(theme::dim(), form))],
+        (Phase::Working, _) => agent(&v.agent),
         (Phase::Muted, _) => vec![Span::styled("you", fg(theme::faint(), form))],
         (_, Who::You) => vec![Span::styled("you", fg(theme::accent(), form))],
-        (_, Who::Agent(a)) if a == "main" => {
-            vec![Span::styled(":*", bold(theme::accent())), Span::raw(" "), Span::styled("main", bold(theme::text()))]
-        }
-        (_, Who::Agent(a)) => vec![Span::styled(a.clone(), bold(theme::text()))],
+        (_, Who::Agent(a)) => agent(a),
     }
 }
 
@@ -236,11 +240,8 @@ fn status(v: &PaneView, t_ms: u64, form: Form, wave_n: usize) -> Vec<Span<'stati
             let (g, c) = if form.still { (theme::glyph(theme::G_WORKING), theme::text()) } else { theme::working_frame((t_ms / 100) as u32) };
             vec![Span::styled(g, fg(c, form)), sp(), d(&format!("{} is on it", v.agent))]
         }
-        Phase::Speaking => {
-            let arcs = ")".repeat(kiss::arcs_for(if form.still { 0.45 } else { v.agent_level }));
-            let what = if v.route == Route::Headphones { "speaking" } else { "hold space to cut in" };
-            vec![Span::styled(format!("{arcs:<3}"), fg(theme::dim(), form)), sp(), d(what)]
-        }
+        // the arcs are the kiss's (beside its mouth), not a status
+        Phase::Speaking => vec![d(if v.route == Route::Headphones { "speaking" } else { "hold space to cut in" })],
         Phase::CutIn => vec![blink(t_ms, form), sp(), f("you cut in"), sp(), wave_span(&you_wave(v), wave_n, theme::accent(), form)],
         Phase::Muted => vec![f("○ muted")],
         Phase::Typing => vec![f("typing: the mic waits")],
