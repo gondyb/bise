@@ -279,7 +279,14 @@ The helper (`dev.bise.computer-use`) is started by the broker with
     request_accessibility|request_screen_recording|install_helper`); with
     the helper installed it may start the broker and ask `permissions`,
     never `request` (the macOS prompt only on the user's ⏎), and a polled
-    check never relaunches the helper.
+    check never relaunches the helper;
+  - `events.jsonl` `stopped` and `paused` lines carry `driving` (`"Chrome"`,
+    `"TextEdit"`, `null`) as it was just before (m_3895);
+  - ctl op `permissions` (for setup-check): helper connected → forward;
+    else a plain connect to the socket (no launch) on every call (the
+    helper macOS reopened after a grant is seen at once); else, if
+    installed, one `open -g` at most every 20 s; else `{accessibility:
+    null, screen_recording: null}`. `status` never connects or launches.
 
 ## Wave 1 · cu-broker
 
