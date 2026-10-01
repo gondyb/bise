@@ -136,8 +136,9 @@ fn the_privacy_screen_says_who_hears_what_is_kept_and_when() {
     let f = frame(&s, 95, 40);
     for want in [
         "who hears you",
-        "Mistral writes down what you say.",
-        "Mistral says the agent's answers.",
+        "Mistral turns your voice into words, and the answers into a voice.",
+        "a small Mistral model reads your words to say a quick \"on it\".",
+        "then your words go to the agent's model, like a typed message.",
         "what is kept",
         "the words, in the thread. never the audio.",
         "when it listens",
@@ -152,7 +153,29 @@ fn the_privacy_screen_says_who_hears_what_is_kept_and_when() {
     let mut s = screen(Open::Privacy);
     s.who = Who { listen: "OpenAI".into(), speak: Err("OpenAI can't speak yet".into()), ack: "Anthropic".into() };
     let f = frame(&s, 95, 40);
-    assert!(f.contains("OpenAI writes down") && f.contains("nobody says the answers") && f.contains("Anthropic reads"), "{f}");
+    assert!(f.contains("OpenAI turns your voice into words.") && f.contains("nobody says the answers") && f.contains("a small Anthropic model reads"), "{f}");
+    // two companies, both speaking: one line each
+    s.who = Who { listen: "Groq".into(), speak: Ok("Mistral".into()), ack: "Mistral".into() };
+    let f = frame(&s, 95, 40);
+    assert!(f.contains("Groq turns your voice into words.") && f.contains("Mistral turns the answers into a voice."), "{f}");
+}
+
+#[test]
+fn the_voice_row_says_a_name_never_an_id() {
+    assert_eq!(voice_name("en_paul_neutral"), "Paul, neutral");
+    assert_eq!(voice_name(""), "Paul, neutral", "the default voice");
+    assert_eq!(voice_name("fr_marie_warm_slow"), "Marie, warm slow");
+    assert_eq!(voice_name("nova"), "Nova");
+    let mut s = screen(Open::Settings);
+    at(&mut s, Row::Voice);
+    let f = frame(&s, 95, 40);
+    assert!(f.contains("Mistral · Paul, neutral") && !f.contains("en_paul"), "{f}");
+    // the help line: one colon at most
+    at(&mut s, Row::Listen);
+    let f = frame(&s, 150, 40);
+    let one: String = f.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(one.contains("auto: hands-free with headphones. on speakers you hold space, or it would hear itself."), "{f}");
+    assert!(!f.contains("listen: auto:"), "{f}");
 }
 
 #[test]

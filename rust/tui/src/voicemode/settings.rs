@@ -103,7 +103,7 @@ impl Row {
     /// What the row is for, under the list for the row under the cursor.
     fn hint(self) -> &'static str {
         match self {
-            Row::Listen => "auto: hands-free with headphones, hold space on speakers (it would hear itself).",
+            Row::Listen => "auto: hands-free with headphones. on speakers you hold space, or it would hear itself.",
             Row::Voice => "the voice that answers. one voice for now; ⏎ says a sample.",
             Row::Speed => "how fast it talks, 0.8× to 1.6×.",
             Row::ReadAloud => "what the agent's messages say aloud; the whole message is always on screen.",
@@ -112,6 +112,27 @@ impl Row {
             Row::Who => "the companies that hear you, and what is kept.",
             Row::Dictation => "one ctrl+r: you talk, it types in the composer.",
         }
+    }
+}
+
+/// A voice's name as the screen says it, never its id (designer):
+/// `en_paul_neutral` → `Paul, neutral`; empty: the default voice's.
+pub fn voice_name(id: &str) -> String {
+    let id = if id.trim().is_empty() { super::tts::DEFAULT_VOICE } else { id.trim() };
+    // a language prefix (`en_`, `fr_`) is not part of the name
+    let mut parts: Vec<&str> = id.split(['_', '-']).filter(|p| !p.is_empty()).collect();
+    if parts.len() > 1 && parts[0].len() == 2 && parts[0].chars().all(|c| c.is_ascii_lowercase()) {
+        parts.remove(0);
+    }
+    let Some((first, rest)) = parts.split_first() else {
+        return id.to_string();
+    };
+    let mut c = first.chars();
+    let name: String = c.next().map(|h| h.to_uppercase().chain(c).collect()).unwrap_or_default();
+    if rest.is_empty() {
+        name
+    } else {
+        format!("{}, {}", name, rest.join(" "))
     }
 }
 
@@ -343,10 +364,7 @@ impl Screen {
                 text,
             ),
             Row::Voice => match &self.who.speak {
-                Ok(p) => {
-                    let v = if c.voice.is_empty() { "default voice".to_string() } else { c.voice.clone() };
-                    (format!("{} {} {}", p, d, v), text)
-                }
+                Ok(p) => (format!("{} {} {}", p, d, voice_name(&c.voice)), text),
                 Err(_) => (format!("{} can't speak yet {} ⏎ says why", self.who.listen, d), theme::dim()),
             },
             Row::Speed => (format!("{:.1}×", c.speed), text),
@@ -400,7 +418,11 @@ impl Screen {
             v.push(Line::from(spans));
         }
         v.push(Line::raw(""));
-        v.push(dim(format!("  {}: {}", self.row().name(), self.row().hint())));
+        // designer: never two colons on the line (`listen: auto: …`): a
+        // hint with its own `x: ` goes without the row's name
+        let hint = self.row().hint();
+        let help = if hint.contains(": ") { format!("  {}", hint) } else { format!("  {}: {}", self.row().name(), hint) };
+        v.push(dim(help));
         if let Some(t) = &self.said {
             v.push(Line::raw(""));
             v.push(Line::from(s(t.clone(), theme::error())));
@@ -421,13 +443,20 @@ impl Screen {
         let text = |t: String| Line::from(s(t, theme::text()));
         let mut v = vec![title("who hears you")];
         v.push(Line::raw(""));
-        v.push(text(format!("{} writes down what you say.", who.listen)));
+        // designer: one line per company, not one per job
         match &who.speak {
-            Ok(p) => v.push(text(format!("{} says the agent's answers.", p))),
-            Err(e) => v.push(dim(format!("nobody says the answers: {}", e))),
+            Ok(p) if *p == who.listen => v.push(text(format!("{} turns your voice into words, and the answers into a voice.", p))),
+            Ok(p) => {
+                v.push(text(format!("{} turns your voice into words.", who.listen)));
+                v.push(text(format!("{} turns the answers into a voice.", p)));
+            }
+            Err(e) => {
+                v.push(text(format!("{} turns your voice into words.", who.listen)));
+                v.push(dim(format!("nobody says the answers: {}", e)));
+            }
         }
-        v.push(text(format!("{} reads your words for the short \"on it\".", who.ack)));
-        v.push(dim("then your words go to the agent, like a typed message.".into()));
+        v.push(text(format!("a small {} model reads your words to say a quick \"on it\".", who.ack)));
+        v.push(dim("then your words go to the agent's model, like a typed message.".into()));
         v.push(Line::raw(""));
         v.push(title("what is kept"));
         v.push(text("the words, in the thread. never the audio.".into()));
