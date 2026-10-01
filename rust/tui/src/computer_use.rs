@@ -66,6 +66,17 @@ pub(crate) fn set_on(on: bool) {
     let _ = bend_plugins::state::set_enabled(&bend_plugins::state::state_path(), "computer", on);
 }
 
+/// Whether the plugin is on: named in `enabled` and not in `disabled`
+/// (what `set_on` writes; the `/computer-use` menu follows it).
+pub(crate) fn is_on() -> bool {
+    on_in(&bend_plugins::state::state_path())
+}
+
+pub(crate) fn on_in(state: &std::path::Path) -> bool {
+    let named = |l: Vec<String>| l.iter().any(|n| n == "computer");
+    named(bend_plugins::state::enabled(state)) && !named(bend_plugins::state::disabled(state))
+}
+
 /// /computer-use off|uninstall: the plugin off, then `bise computer-use
 /// off|uninstall` (the broker, hosts and helper quit; uninstall also
 /// removes what setup wrote). The line the feed shows.

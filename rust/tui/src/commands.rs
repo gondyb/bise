@@ -40,6 +40,9 @@ pub(crate) enum Arg {
     Effort,
     /// `/voice`'s own: on or off (runs the bare `/voice`), then setup
     Voice,
+    /// `/computer-use`'s own, by the plugin's state: off → "on" (runs the
+    /// bare `/computer-use`); on → setup (the bare one), off, uninstall
+    ComputerUse,
     /// free text, required: the rest of the line (nothing to complete)
     Text,
     /// free text, optional: the value before it can already run
@@ -110,7 +113,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/computer-use",
         desc: "turn on and set up computer use: agents drive Chrome and your apps, step by step: /computer-use [off|uninstall]",
-        args: &[Arg::Words(&[("off", "turn computer use off"), ("uninstall", "turn it off and remove what it installed")])],
+        args: &[Arg::ComputerUse],
     },
     Cmd { name: "/compact", desc: "compact the conversation of the agent in view", args: &[] },
     Cmd {
@@ -259,8 +262,28 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
         Arg::Model => model_choices(app, q),
         Arg::Effort => effort_choices(app, q),
         Arg::Voice => voice_choices(app.voice.enabled, q),
+        Arg::ComputerUse => computer_use_choices(crate::computer_use::is_on(), q),
         Arg::Text | Arg::Note => Vec::new(),
     }
+}
+
+/// `/computer-use`'s rows follow the plugin: off, one row that turns it
+/// back on (⏎ runs the bare `/computer-use`); on, the setup first (the
+/// bare one), then off and uninstall. Never "off" when it is off (the
+/// user's bug: off, then only off/uninstall were offered and ⏎ on the
+/// bare command picked "off" again).
+fn computer_use_choices(on: bool, q: &str) -> Vec<Choice> {
+    let bare = |label: &str, desc: &str| Choice { value: "/computer-use".into(), label: label.into(), desc: desc.into(), mark: None };
+    let rows = if on {
+        vec![
+            bare("setup", "the setup steps: browsers, extension, apps"),
+            Choice::word("off", "turn computer use off"),
+            Choice::word("uninstall", "turn it off and remove what it installed"),
+        ]
+    } else {
+        vec![bare("on", "turn computer use on and set it up")]
+    };
+    rows.into_iter().filter(|c| matches(q, &[&c.label])).collect()
 }
 
 /// `/voice`'s rows: the toggle first (⏎ on it runs the bare `/voice`:
@@ -680,6 +703,34 @@ mod arg_tests {
             .split_once(&format!(": {}", c.name))
             .map(|(_, u)| u.split_whitespace().collect())
             .unwrap_or_default()
+    }
+
+    /// The user's bug: after `/computer-use off` the menu still offered
+    /// off/uninstall, and ⏎ on the bare command ran "off" again. Off: one
+    /// row that runs the bare command (which turns it on); on: setup (bare),
+    /// off, uninstall. The state is plugins.json's, as /computer-use writes it.
+    #[test]
+    fn computer_use_rows_follow_the_plugin_state() {
+        let rows = |on: bool, q: &str| -> Vec<(String, String)> {
+            computer_use_choices(on, q).into_iter().map(|c| (c.label, c.value)).collect()
+        };
+        let bare = "/computer-use".to_string();
+        assert_eq!(rows(false, ""), vec![("on".to_string(), bare.clone())]);
+        assert!(rows(false, "of").is_empty(), "never 'off' when it is off");
+        let on = rows(true, "");
+        assert_eq!(on[0], ("setup".to_string(), bare));
+        assert_eq!(on.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["setup", "off", "uninstall"]);
+        // the state file: off, then the bare command turns it back on
+        let d = std::env::temp_dir().join(format!("cu-menu-{}", std::process::id()));
+        let p = d.join("plugins.json");
+        assert!(!crate::computer_use::on_in(&p), "off before /computer-use");
+        bend_plugins::state::set_enabled(&p, "computer", true).unwrap();
+        assert!(crate::computer_use::on_in(&p));
+        bend_plugins::state::set_enabled(&p, "computer", false).unwrap();
+        assert!(!crate::computer_use::on_in(&p), "off after /computer-use off");
+        bend_plugins::state::set_enabled(&p, "computer", true).unwrap();
+        assert!(crate::computer_use::on_in(&p), "on again after the bare /computer-use");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// BISE-117: a command that takes a parameter completes it. Its usage
