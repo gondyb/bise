@@ -612,6 +612,9 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         "rename" => format!("renamed: now @{} (the old name still works)", s("name")),
         "restore" => format!("@{} restored", s("name")),
         "isolate" => format!("@{} now works in its own git worktree", s("name")),
+        "move" => format!("@{} moved", s("name")),
+        // the hub's line: `✓ x landed 1 commit on main (abc1234)`
+        "land" => s("text"),
         "flow" => s("text"),
         "worktree" if s("path").is_empty() => "the hub knows you work in your own workspace again".to_string(),
         "worktree" => format!("the hub knows you work in {}", s("path")),
