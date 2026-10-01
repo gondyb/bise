@@ -180,8 +180,16 @@ final class Engine {
         return AppTarget(target: t, bundle: bundle, app: app, element: el)
     }
 
+    /// The app's windows. AXWindows of a hidden or busy app (TextEdit while
+    /// it autosaves) is sometimes empty for a moment: ask again, then fall
+    /// back to its window children.
     func windowList(_ t: AppTarget) -> [AXUIElement] {
-        t.element.elements(kAXWindowsAttribute).filter { ($0.role ?? "") == "AXWindow" }
+        for attempt in 0..<3 {
+            let w = t.element.elements(kAXWindowsAttribute).filter { ($0.role ?? "") == "AXWindow" }
+            if !w.isEmpty { return w }
+            if attempt < 2 { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        return t.element.children.filter { ($0.role ?? "") == "AXWindow" }
     }
 
     /// args.window: exact title first, else a unique substring; none = the main window.
