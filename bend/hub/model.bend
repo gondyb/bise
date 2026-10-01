@@ -212,6 +212,11 @@ def USER() -> String:
 def HUB() -> String:
   "switchboard"
 
+# pr-news (pr-design §10): the pseudo sender of GitHub's news (reviews,
+# comments, failing checks) to the agent that owns a PR; like a peer
+def GITHUB() -> String:
+  "github"
+
 # ---- small helpers ----
 
 def snoc(-A: Data, xs: List<&2, A>, +x: A) -> List<&2, A>:
@@ -328,7 +333,7 @@ def resolve(+st: St, +n: String) -> Maybe<&2, String>:
   resolve.pick(get_agent(st, n), st, n)
 
 def name_taken(+st: St, +n: String) -> Bool:
-  String.eq(n, MAIN()) || String.eq(n, USER()) || String.eq(n, HUB()) || Maybe.is_some(&2, String, resolve(st, n))
+  String.eq(n, MAIN()) || String.eq(n, USER()) || String.eq(n, HUB()) || String.eq(n, GITHUB()) || Maybe.is_some(&2, String, resolve(st, n))
 
 def agent_op.decl(l: Life, +d: Maybe<&2, Decl>) -> Maybe<&2, Decl>:
   match l:

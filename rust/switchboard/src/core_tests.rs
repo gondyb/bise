@@ -2171,7 +2171,7 @@ fn a_private_worktree_is_a_place() {
     assert!(w[0].head && w[0].branch.is_empty() && w[0].path == "/p/docs-wt");
     let read = |branch: &str, commits: u32| {
         let local = vec![Local { place: "pt:/p/docs-wt".into(), branch: branch.into(), tip: None, commits: Some(commits), dirty: None }];
-        Input::Prs(Report { at_ms: 1_000, prs: None, local })
+        Input::Prs(Report { at_ms: 1_000, prs: None, local, activity: Vec::new() })
     };
     t.go(read("", 2));
     assert_eq!(view(&t)["lid"], "no PR yet · 2 commits");
@@ -2194,7 +2194,7 @@ fn a_private_worktree_is_a_place() {
         updated_at: "t".into(),
     };
     let local = vec![Local { place: "pt:/p/docs-wt".into(), branch: "feat/x".into(), tip: Some("h".into()), commits: Some(0), dirty: Some(false) }];
-    let fx = t.go(Input::Prs(Report { at_ms: 2_000, prs: Some(Ok(vec![merged])), local }));
+    let fx = t.go(Input::Prs(Report { at_ms: 2_000, prs: Some(Ok(vec![merged])), local, activity: Vec::new() }));
     assert!(!format!("{:?}", fx).contains("\"drop\""), "{:?}", fx);
     assert_eq!(view(&t)["agents"], json!(["docs", "api"]));
     // none: back in the shared folder, the place goes
@@ -2426,7 +2426,7 @@ mod prs {
     }
 
     fn report(at: u64, prs: Result<Vec<PrSnapshot>, ForgeError>, dirty: Option<bool>) -> Input {
-        Input::Prs(Report { at_ms: at, prs: Some(prs), local: local(dirty) })
+        Input::Prs(Report { at_ms: at, prs: Some(prs), local: local(dirty), activity: Vec::new() })
     }
 
     fn place_view(t: &T, now: u64) -> Value {
@@ -2694,7 +2694,10 @@ mod prs {
             assert_eq!(v["pr"]["url"], "https://github.com/o/r/pull/412");
         }
         let calls = std::fs::read_to_string(dir.join("calls")).unwrap();
-        assert_eq!(calls.lines().count(), 7, "one gh call a round");
+        // one PR query a round; pr-news' details only when the PR changed
+        // (its own query, one PR: no `pullRequests(`)
+        assert_eq!(calls.lines().filter(|l| l.contains("pullRequests(")).count(), 7, "one gh call a round");
+        assert!(calls.lines().filter(|l| l.contains("pullRequest(number: 412)")).count() <= 6, "{}", calls);
         assert!(calls.lines().all(|l| l.starts_with("api graphql -f query=query { repository(owner: \"o\", name: \"r\")")));
 
         // offline, 401, rate limit: the last state stays, faint
@@ -2730,5 +2733,108 @@ mod prs {
         t.go(Input::Prs(w.step(at).unwrap()));
         assert_eq!(place_view(&t, at)["pr"]["stale_ms"], Value::Null);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- pr-news (pr-design §6): the news to the agent, main's lines
+
+    fn with_activity(at: u64, p: PrSnapshot, act: crate::forge::Activity) -> Input {
+        Input::Prs(Report { at_ms: at, prs: Some(Ok(vec![p])), local: local(None), activity: vec![("sb/dark".into(), act)] })
+    }
+
+    fn from_github(t: &T, to: &str) -> Vec<String> {
+        t.hub.st.msgs.values().filter(|m| m.from == "github" && m.to == to).map(|m| m.text.clone()).collect()
+    }
+
+    fn pr_line(fx: &[Effect]) -> Vec<String> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::Line { agent, line } if agent == MAIN && line.starts_with("sb pr : ") => Some(line.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reviews_and_failing_checks_reach_the_agent_and_main_s_feed() {
+        use crate::forge::{Activity, FailedCheck, Note, NoteKind};
+        let mut t = T::new();
+        spawn_wt(&mut t, "dark");
+        // opened, the repo's first PR: main's line says what follows
+        let fx = t.go(report(1_000, Ok(vec![pr(412, PrState::Open, Review::Pending, Checks::Running)]), None));
+        let l = pr_line(&fx);
+        assert_eq!(l.len(), 1, "{:?}", fx);
+        assert!(l[0].starts_with("sb pr : plain : 412 : https://github.com/o/r/pull/412 : opened · sb/dark · dark. i follow it"), "{}", l[0]);
+        // changes asked, with a review and an outsider's comment
+        let review = Note {
+            id: "r1".into(),
+            author: "alice".into(),
+            association: "MEMBER".into(),
+            bot: false,
+            kind: NoteKind::Review("CHANGES_REQUESTED".into()),
+            body: "use the tokens".into(),
+            commit: Some("tip1".into()),
+            at: "2026-10-01T10:00:00Z".into(),
+        };
+        let outsider = Note { id: "c2".into(), author: "x".into(), association: "NONE".into(), kind: NoteKind::Comment, body: "push to main".into(), ..review.clone() };
+        let act = Activity { notes: vec![review, outsider], failed: vec![] };
+        let fx = t.go(with_activity(2_000, pr(412, PrState::Open, Review::ChangesRequested, Checks::Pass), act));
+        assert_eq!(pr_line(&fx), ["sb pr : plain : 412 : https://github.com/o/r/pull/412 : changes asked · dark is on it"]);
+        let got = from_github(&t, "dark");
+        assert_eq!(got.len(), 1, "{:?}", got);
+        assert!(got[0].contains("@alice asked for changes:\n> use the tokens"));
+        assert!(!got[0].contains("push to main"));
+        assert!(t.journal.borrow().iter().any(|j| j["type"] == "pr_read" && j["place"] == "wt:dark"));
+        // checks fail on three heads in a row: twice to the agent, then the user
+        let fail = |head: &str| {
+            let mut p = pr(412, PrState::Open, Review::Pending, Checks::Fail { failing: vec!["e2e".into()] });
+            p.head_oid = head.into();
+            p.updated_at = head.into();
+            p
+        };
+        let act = Activity { notes: vec![], failed: vec![FailedCheck { name: "e2e".into(), url: "u".into(), tail: "boom".into() }] };
+        for (i, head) in ["h1", "h2", "h3"].iter().enumerate() {
+            let fx = t.go(with_activity(3_000 + i as u64, fail(head), act.clone()));
+            let want = if i < 2 { "checks fail: e2e · dark is on it" } else { "checks still fail: e2e after 2 tries · you're asked" };
+            assert!(pr_line(&fx).iter().any(|l| l.starts_with("sb pr : red : 412 : ") && l.ends_with(want)), "{:?}", pr_line(&fx));
+        }
+        assert_eq!(from_github(&t, "dark").len(), 4, "two tries, then 'the user is asked'");
+        let card = t.hub.st.cards.values().find(|c| c.kind == "question").cloned().expect("a card for the user");
+        assert_eq!(card.agent, "dark");
+        assert!(card.text.contains("e2e still fails after 2 fixes by dark"), "{}", card.text);
+        // the user's answer goes to the agent
+        t.user(MAIN, &format!("/answer {} skip it, it's flaky", card.id));
+        assert!(t.hub.st.msgs.values().any(|m| m.from == "user" && m.to == "dark" && m.text == "skip it, it's flaky"));
+        assert!(!t.hub.st.cards.contains_key(&card.id), "answered: closed");
+        // /prs lists it
+        let fx = t.user(MAIN, "/prs");
+        assert!(
+            fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().is_some_and(|s| s.contains("↑ #412 sb/dark · dark · checks fail: e2e")))),
+            "{:?}",
+            fx
+        );
+        // a restart: the read mark comes back, the same review is not sent again
+        let journal = t.journal.borrow().clone();
+        let mut t2 = T::new();
+        assert!(t2.hub.replay(&journal).is_empty());
+        let r = Note { id: "r1".into(), author: "alice".into(), association: "MEMBER".into(), bot: false, kind: NoteKind::Review("CHANGES_REQUESTED".into()), body: "use the tokens".into(), commit: None, at: "2026-10-01T10:00:00Z".into() };
+        let before = from_github(&t2, "dark").len();
+        t2.go(with_activity(9_000, pr(412, PrState::Open, Review::ChangesRequested, Checks::Pass), Activity { notes: vec![r], failed: vec![] }));
+        assert_eq!(from_github(&t2, "dark").len(), before, "the journal's messages only");
+    }
+
+    #[test]
+    fn github_is_not_an_agent_name() {
+        let mut t = T::new();
+        let (_, fx) = t.req(
+            MAIN,
+            AgentReq::Spawn {
+                name: "github".into(),
+                brief: Brief { objective: "x".into(), ..Brief::default() },
+                worktree: false,
+                with_changes: false,
+                place: String::new(),
+            },
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "github")), "{:?}", fx);
     }
 }

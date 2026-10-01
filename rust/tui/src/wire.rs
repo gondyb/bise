@@ -173,6 +173,18 @@ pub(crate) enum Ev {
     Warn(String),
     Err(String),
     Info(String),
+    // pr-news (pr-design §4, main's feed): a PR's news, `↑ #412 changes
+    // asked · dark-mode is on it`; the number links to the PR. `tone`:
+    // plain, dim (merged, closed) or red (checks fail; bold on NO_COLOR).
+    // `url_row`: `/prs`'s rows, the URL dim under it (designer: for
+    // terminals that can't click OSC 8)
+    Pr {
+        tone: String,
+        number: u64,
+        url: String,
+        text: String,
+        url_row: bool,
+    },
     // in memory only (BISE-298): a failure in the turn errors' two-line
     // pattern (BISE-293): `glyph head` (✗ error, ? accent), then dim
     // lines (the provider's words, what to do)

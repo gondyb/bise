@@ -271,6 +271,33 @@ fn glyph_line(glyph: &str, glyph_st: Style, text: String, text_st: Style, width:
     hung_rows(&first, &pad, [Line::from(Span::styled(text, text_st))], width)
 }
 
+/// pr-news (pr-design §4, designer's rule: color means attention): a PR
+/// line in main's feed, ` ↑ #412 changes asked · dark-mode is on it`.
+/// Plain: `↑` dim, the words in the text color; dim (merged, closed):
+/// all dim; red (checks fail): `↑` red (bold under `NO_COLOR`), the
+/// words in the text color. The number links to the PR (OSC 8).
+fn pr_lines(tone: &str, number: u64, url: &str, text: &str, url_row: bool, width: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+    let dim_st = Style::default().fg(dim());
+    let (mark_st, text_st) = match tone {
+        "dim" => (Style::default().fg(faint()), dim_st),
+        "red" if no_color => (Style::default().add_modifier(Modifier::BOLD), Style::default().fg(crate::theme::text())),
+        "red" => (Style::default().fg(error()), Style::default().fg(crate::theme::text())),
+        _ => (dim_st, Style::default().fg(crate::theme::text())),
+    };
+    let first = Span::styled(format!(" {} ", crate::theme::pr_glyph()), mark_st);
+    let pad = Span::raw(" ".repeat(first.content.width()));
+    let num = format!("#{}", number);
+    let head = if url.is_empty() { Span::styled(num, text_st) } else { crate::textlayer::link(num, url, text_st) };
+    let line = Line::from(vec![head, Span::styled(format!(" {}", text), text_st)]);
+    let mut rows = hung_rows(&first, &pad, [line], width);
+    if url_row && !url.is_empty() {
+        rows.extend(hung_rows(&pad, &pad, [Line::from(Span::styled(url.to_string(), dim_st))], width));
+    }
+    rows
+}
+
 pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     let dim_st = Style::default().fg(dim());
     let text_st = Style::default().fg(text());
@@ -362,6 +389,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             },
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
+        Ev::Pr { tone, number, url, text, url_row } => pr_lines(tone, *number, url, text, *url_row, width),
         Ev::Approval { ok, text, note, asked, open } => answer_lines(*ok, text, note, asked, *open, width),
         Ev::Said { glyph, head, dim } => {
             // ✗ a failure (error); ? it needs you, ✓ it worked (accent)

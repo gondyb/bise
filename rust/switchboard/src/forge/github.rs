@@ -2,7 +2,7 @@
 //! per tick, an alias per branch (`b0`, `b1`…), gh's own login. bise
 //! never reads, stores or prints a token: gh does.
 
-use super::{Forge, ForgeError, RepoRef};
+use super::{Activity, FailedCheck, Forge, ForgeError, Note, NoteKind, RepoRef};
 use crate::place::{Checks, PrSnapshot, PrState, Review};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -132,6 +132,159 @@ pub fn parse(out: &str, repo: &RepoRef, branches: &[String]) -> Result<Vec<PrSna
     Ok(prs)
 }
 
+// ---- pr-news: a PR's reviews, comments and failing checks ----
+
+const WHO: &str = "authorAssociation author { login __typename }";
+
+/// The details of PR `number` (pr-news; asked only when its `updatedAt`
+/// moved): the last reviews, the review threads with their comments, the
+/// PR's comments, the head commit's checks with their Actions run.
+pub fn activity_query(repo: &RepoRef, number: u64) -> String {
+    format!(
+        "query {{ repository(owner: {}, name: {}) {{ pullRequest(number: {}) {{ \
+         reviews(last: 30) {{ nodes {{ databaseId state body submittedAt {who} commit {{ oid }} }} }} \
+         reviewThreads(last: 50) {{ nodes {{ isResolved comments(last: 20) {{ nodes {{ databaseId body createdAt path line originalLine {who} commit {{ oid }} }} }} }} }} \
+         comments(last: 30) {{ nodes {{ databaseId body createdAt {who} }} }} \
+         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ contexts(first: 50) {{ nodes {{ __typename \
+         ... on CheckRun {{ name conclusion detailsUrl checkSuite {{ workflowRun {{ databaseId }} }} }} \
+         ... on StatusContext {{ context state targetUrl }} }} }} }} }} }} }} }} }} }}",
+        lit(&repo.owner),
+        lit(&repo.name),
+        number,
+        who = WHO
+    )
+}
+
+fn note_of(n: &Value, id: String, kind: NoteKind, at: &str) -> Option<Note> {
+    Some(Note {
+        id,
+        author: n["author"]["login"].as_str().unwrap_or("ghost").to_string(),
+        association: n["authorAssociation"].as_str().unwrap_or("NONE").to_string(),
+        bot: n["author"]["__typename"].as_str() == Some("Bot"),
+        kind,
+        body: n["body"].as_str().unwrap_or_default().trim().to_string(),
+        commit: n["commit"]["oid"].as_str().map(str::to_string),
+        at: n[at].as_str()?.to_string(),
+    })
+}
+
+/// A failing check of the activity answer, and its Actions run id (for
+/// the log), if any.
+fn failing_of(c: &Value) -> Option<(FailedCheck, Option<u64>)> {
+    match c["__typename"].as_str()? {
+        "CheckRun" => {
+            let bad = matches!(
+                c["conclusion"].as_str(),
+                Some("FAILURE" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED" | "STARTUP_FAILURE")
+            );
+            bad.then(|| {
+                (
+                    FailedCheck {
+                        name: c["name"].as_str().unwrap_or("check").to_string(),
+                        url: c["detailsUrl"].as_str().unwrap_or_default().to_string(),
+                        tail: String::new(),
+                    },
+                    c["checkSuite"]["workflowRun"]["databaseId"].as_u64(),
+                )
+            })
+        }
+        "StatusContext" => matches!(c["state"].as_str(), Some("FAILURE" | "ERROR")).then(|| {
+            (
+                FailedCheck {
+                    name: c["context"].as_str().unwrap_or("status").to_string(),
+                    url: c["targetUrl"].as_str().unwrap_or_default().to_string(),
+                    tail: String::new(),
+                },
+                None,
+            )
+        }),
+        _ => None,
+    }
+}
+
+/// gh's answer to [`activity_query`]: the notes oldest first (a COMMENTED
+/// review with no words is only the envelope of its thread comments:
+/// skipped; resolved threads skipped), and the failing checks with their
+/// Actions run ids.
+pub fn parse_activity(out: &str) -> Result<(Activity, Vec<Option<u64>>), ForgeError> {
+    let v: Value = serde_json::from_str(out).map_err(|e| ForgeError::Other(format!("gh answered no JSON: {}", e)))?;
+    if let Some(errs) = v["errors"].as_array().filter(|e| !e.is_empty()) {
+        let e = &errs[0];
+        let msg = e["message"].as_str().unwrap_or("error").to_string();
+        return Err(match e["type"].as_str() {
+            Some("RATE_LIMITED") => ForgeError::RateLimited(msg),
+            _ => ForgeError::Other(msg),
+        });
+    }
+    let pr = &v["data"]["repository"]["pullRequest"];
+    if pr.is_null() {
+        return Err(ForgeError::Other("no such pull request".into()));
+    }
+    let mut notes = Vec::new();
+    for r in pr["reviews"]["nodes"].as_array().into_iter().flatten() {
+        let state = r["state"].as_str().unwrap_or("COMMENTED").to_string();
+        if state == "PENDING" || (state == "COMMENTED" && r["body"].as_str().is_none_or(|b| b.trim().is_empty())) {
+            continue;
+        }
+        let id = format!("r{}", r["databaseId"].as_u64().unwrap_or(0));
+        notes.extend(note_of(r, id, NoteKind::Review(state), "submittedAt"));
+    }
+    for t in pr["reviewThreads"]["nodes"].as_array().into_iter().flatten() {
+        if t["isResolved"].as_bool() == Some(true) {
+            continue;
+        }
+        for c in t["comments"]["nodes"].as_array().into_iter().flatten() {
+            let kind = NoteKind::Thread {
+                path: c["path"].as_str().unwrap_or_default().to_string(),
+                line: c["line"].as_u64().or(c["originalLine"].as_u64()),
+            };
+            let id = format!("t{}", c["databaseId"].as_u64().unwrap_or(0));
+            notes.extend(note_of(c, id, kind, "createdAt"));
+        }
+    }
+    for c in pr["comments"]["nodes"].as_array().into_iter().flatten() {
+        let id = format!("c{}", c["databaseId"].as_u64().unwrap_or(0));
+        notes.extend(note_of(c, id, NoteKind::Comment, "createdAt"));
+    }
+    notes.sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.id.cmp(&b.id)));
+    let rollup = &pr["commits"]["nodes"][0]["commit"]["statusCheckRollup"];
+    let (failed, runs): (Vec<FailedCheck>, Vec<Option<u64>>) =
+        rollup["contexts"]["nodes"].as_array().into_iter().flatten().filter_map(failing_of).unzip();
+    Ok((Activity { notes, failed }, runs))
+}
+
+/// The last `n` lines of a log, each cut at 300 characters (the agent
+/// reads the end of the failure, not megabytes).
+pub fn tail(log: &str, n: usize) -> String {
+    let lines: Vec<&str> = log.lines().collect();
+    let from = lines.len().saturating_sub(n);
+    lines[from..]
+        .iter()
+        .map(|l| {
+            let l = l.trim_end();
+            if l.chars().count() > 300 {
+                format!("{}…", l.chars().take(300).collect::<String>())
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The tail of check `name`'s lines in a run's `--log-failed` output: a
+/// run's log holds all its failed jobs, each line `job\tstep\tline`; the
+/// check `ci / test` is the job `test`. None of them: the whole log's tail.
+pub fn check_tail(log: &str, name: &str) -> String {
+    let job = name.rsplit(" / ").next().unwrap_or(name);
+    let mine: Vec<&str> = log.lines().filter(|l| l.split('\t').next() == Some(job)).collect();
+    if mine.is_empty() {
+        tail(log, super::LOG_TAIL)
+    } else {
+        tail(&mine.join("\n"), super::LOG_TAIL)
+    }
+}
+
 /// What gh's failure says (its stderr, never printed whole: a short
 /// reason for hub.log).
 pub fn error_of(stderr: &str) -> ForgeError {
@@ -225,6 +378,33 @@ impl Forge for GitHub {
         }
         let out = self.gh(&args)?;
         parse(&out, repo, branches)
+    }
+
+    fn activity(&self, repo: &RepoRef, pr: &PrSnapshot, logs: bool) -> Result<Activity, ForgeError> {
+        let q = format!("query={}", activity_query(repo, pr.number));
+        let mut args = vec!["api", "graphql", "-f", q.as_str()];
+        if repo.host != "github.com" {
+            args.extend(["--hostname", repo.host.as_str()]);
+        }
+        let out = self.gh(&args)?;
+        let (mut act, runs) = parse_activity(&out)?;
+        if logs {
+            // one `gh run view` per run (a run's jobs share its log); a
+            // log that can't be read leaves the check without a tail
+            let r = format!("{}/{}/{}", repo.host, repo.owner, repo.name);
+            let mut read: Vec<(u64, String)> = Vec::new();
+            for (c, run) in act.failed.iter_mut().zip(runs) {
+                let Some(run) = run else { continue };
+                if !read.iter().any(|(id, _)| *id == run) {
+                    let id = run.to_string();
+                    let log = self.gh(&["run", "view", id.as_str(), "--log-failed", "-R", r.as_str()]).unwrap_or_default();
+                    read.push((run, log));
+                }
+                let log: &str = read.iter().find(|(id, _)| *id == run).map(|(_, l)| l.as_str()).unwrap_or_default();
+                c.tail = check_tail(log, &c.name);
+            }
+        }
+        Ok(act)
     }
 }
 

@@ -3782,7 +3782,7 @@ def hub_nt.named(m: Maybe<&2, HM.Agent>, +s: HM.St, +n: String, +em: {HM.agent_n
 # a name that is not taken is free among the agents' names
 def hub_nt(+s: HM.St, +n: String, e: {HM.name_taken(s, n) == False{} : Bool}) -> hub_free(HI.profile(HM.St.agents(s)), n):
   hub_nt.named(HM.agent_named(HM.St.agents(s), n), s, n, {==},
-    hub_or_false_r(String.eq(n, HM.MAIN()) || String.eq(n, HM.USER()) || String.eq(n, HM.HUB()), Maybe.is_some(&2, String, HM.resolve(s, n)), e))
+    hub_or_false_r(String.eq(n, HM.MAIN()) || String.eq(n, HM.USER()) || String.eq(n, HM.HUB()) || String.eq(n, HM.GITHUB()), Maybe.is_some(&2, String, HM.resolve(s, n)), e))
 
 
 # ---- L4 support: names apart — a new agent ----

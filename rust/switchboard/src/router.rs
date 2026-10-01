@@ -45,6 +45,9 @@ pub enum UserCmd {
     },
     /// `/tasks`: the board, printed locally.
     Tasks,
+    /// `/prs` (pr-design §4): the open PRs of this repo's agents, printed
+    /// locally.
+    Prs,
     /// `/interrupt`: the agent in focus stops its turn.
     Interrupt,
     /// Any other `/command`: for the REPL of the agent in focus
@@ -261,6 +264,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
         "/cancel" | "/undo" => UserCmd::Invalid(NO_UNDO.into()),
         // `/agents`, the board of every agent (`/tasks`: the old name)
         "/agents" | "/tasks" => UserCmd::Tasks,
+        "/prs" => UserCmd::Prs,
         "/interrupt" => UserCmd::Interrupt,
         "/model" => {
             let default = words.contains(&"default");
@@ -419,6 +423,7 @@ mod tests {
         // `/agents` (book §4: agents, never tasks); `/tasks` stays an alias
         assert_eq!(parse("/agents", MAIN), UserCmd::Tasks);
         assert_eq!(parse("/tasks", "docs"), UserCmd::Tasks);
+        assert_eq!(parse("/prs", "docs"), UserCmd::Prs);
     }
 
     #[test]

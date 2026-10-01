@@ -484,6 +484,9 @@ impl Shell {
     fn snapshot(&mut self) -> Value {
         // the repo's flow, as config.toml says now (flow-prompts saves it)
         self.hub.flow = crate::flow::FlowConfig::load(&self.opts.paths).mode;
+        // pr-news: whose bots' comments reach the agents (`[pr] trusted_bots`)
+        self.hub.pr_bots =
+            crate::forge::news::trusted_bots(&std::fs::read_to_string(self.opts.paths.config()).unwrap_or_default());
         // who lands, who waits in line (the boxes' lids)
         self.hub.lids = self.lands.lids();
         let mut snap = self.hub.snapshot(now_ms());

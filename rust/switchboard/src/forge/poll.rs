@@ -7,7 +7,7 @@
 //! An error backs off (×2, at most 10 min); the boxes keep their last
 //! state (faint once stale).
 
-use super::{Forge, ForgeError, RepoRef};
+use super::{Activity, Forge, ForgeError, RepoRef};
 use crate::place::{Checks, PrSnapshot, PrState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -117,6 +117,9 @@ pub struct Report {
     /// None: not asked this time (only a tip moved).
     pub prs: Option<Result<Vec<PrSnapshot>, ForgeError>>,
     pub local: Vec<Local>,
+    /// pr-news: the activity of the PRs that changed, by branch (only
+    /// with an answer; see [`Watcher`]'s `activity`).
+    pub activity: Vec<(String, Activity)>,
 }
 
 /// The local git side the worker needs (a fake in the tests).
@@ -184,6 +187,10 @@ pub struct Watcher {
     /// Branch -> (tip, when it last moved, commits past the base).
     tips: BTreeMap<String, (Option<String>, u64, Option<u32>)>,
     tips_ms: Option<u64>,
+    /// pr-news: by branch, the `updatedAt` whose activity was read, and
+    /// the head whose failing checks' logs were read.
+    looked: BTreeMap<String, String>,
+    logs: BTreeMap<String, String>,
     /// BISE-136: place -> what its private worktree has checked out (its
     /// branch, "" detached) and its commits not on the trunk.
     heads: BTreeMap<String, (String, Option<u32>)>,
@@ -200,8 +207,37 @@ impl Watcher {
             prs: BTreeMap::new(),
             tips: BTreeMap::new(),
             tips_ms: None,
+            looked: BTreeMap::new(),
+            logs: BTreeMap::new(),
             heads: BTreeMap::new(),
         }
+    }
+
+    /// pr-news (pr-design §7: details only on change): the activity of
+    /// each open PR whose `updatedAt` moved since it was last read, or
+    /// whose checks fail on a head whose logs were not read yet (a check
+    /// failing does not move `updatedAt`). A failed ask is tried again
+    /// at the next answer; the hub keeps what it already passed on.
+    fn activity(&mut self, ps: &[PrSnapshot]) -> Vec<(String, Activity)> {
+        let mut out = Vec::new();
+        for p in ps.iter().filter(|p| matches!(p.state, PrState::Open | PrState::Draft)) {
+            let moved = self.looked.get(&p.branch) != Some(&p.updated_at);
+            let logs = matches!(p.checks, Checks::Fail { .. }) && self.logs.get(&p.branch) != Some(&p.head_oid);
+            if !moved && !logs {
+                continue;
+            }
+            if let Ok(a) = self.forge.activity(&self.repo, p, logs) {
+                self.looked.insert(p.branch.clone(), p.updated_at.clone());
+                if logs {
+                    self.logs.insert(p.branch.clone(), p.head_oid.clone());
+                }
+                out.push((p.branch.clone(), a));
+            }
+        }
+        let live: BTreeSet<&String> = self.plan.watches.iter().map(|w| &w.branch).collect();
+        self.looked.retain(|b, _| live.contains(b));
+        self.logs.retain(|b, _| live.contains(b));
+        out
     }
 
     /// A new plan from the hub: a branch not followed yet is asked soon.
@@ -305,12 +341,14 @@ impl Watcher {
         let every = every(self.plan.clients, self.fast(now));
         if asked.is_empty() || !self.cadence.due(now, every) {
             // only the local side is new (a commit: the held line counts it)
-            return moved.then(|| Report { at_ms: now, prs: None, local: self.local(&BTreeSet::new()) });
+            return moved.then(|| Report { at_ms: now, prs: None, local: self.local(&BTreeSet::new()), activity: Vec::new() });
         }
         let prs = self.forge.fetch(&self.repo, &asked);
         let mut merged = BTreeSet::new();
+        let mut activity = Vec::new();
         match &prs {
             Ok(ps) => {
+                activity = self.activity(ps);
                 self.cadence.ok(now);
                 for b in &asked {
                     self.prs.remove(b);
@@ -333,7 +371,7 @@ impl Watcher {
             }
             ps
         });
-        Some(Report { at_ms: now, prs: Some(prs), local: self.local(&merged) })
+        Some(Report { at_ms: now, prs: Some(prs), local: self.local(&merged), activity })
     }
 }
 

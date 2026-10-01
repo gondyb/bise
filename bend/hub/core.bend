@@ -66,6 +66,8 @@ type In is Data:
   IForceRun{}
   IConfirmOpen{}
   IConfirmClose{}
+  IForge{}
+  IForgeCard{}
   INone{}
 
 type CardK is Data:
@@ -454,8 +456,9 @@ def status_str(a: M.Agent, +x: X.Rt) -> String:
 def relation(+from: String, +to: String, +fp: Maybe<&2, String>, +tp: Maybe<&2, String>) -> String:
   Bool.pick(String, String.eq(from, M.USER()), "user",
     Bool.pick(String, String.eq(from, M.HUB()), "hub",
+      Bool.pick(String, String.eq(from, M.GITHUB()), "peer",
       Bool.pick(String, M.maybe_str_is(tp, from) || (String.eq(from, M.MAIN()) && Bool.not(String.eq(to, M.MAIN()))), "parent",
-        Bool.pick(String, M.maybe_str_is(fp, to) || String.eq(to, M.MAIN()), "child", "peer"))))
+        Bool.pick(String, M.maybe_str_is(fp, to) || String.eq(to, M.MAIN()), "child", "peer")))))
 
 def parent_of(m: Maybe<&2, M.Agent>) -> Maybe<&2, String>:
   match m:
@@ -1463,14 +1466,22 @@ def answer.q.sent(-o: M.St, p: X.Cx<o> & SendR, +c: M.Card, +asker: String, +tex
       +cx3 = line(o, cx2, M.MAIN(), "route", cat(["you → @", asker, " (answer to card #", ns(id), ") : ", text]))
       close_card(o, cx3, id, "answered")
 
+def answer.q.main(-o: M.St, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
+  +id = M.Card.id(c)
+  +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (\"", M.one_line(M.Card.text(c)), "\"): \"", M.one_line(text), "\""]))
+  close_card(o, cx2, id, "answered")
+
 def answer.q(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
   match m:
     case Some{+q}:
       answer.q.sent(o, send(o, cx, msg(M.USER(), M.Msg.from(q), text, False{}, Some{M.Msg.id(q)}, False{}, False{})), c, M.Msg.from(q), text)
     case None{}:
-      +id = M.Card.id(c)
-      +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (\"", M.one_line(M.Card.text(c)), "\"): \"", M.one_line(text), "\""]))
-      close_card(o, cx2, id, "answered")
+      # pr-news: a card the hub opened about an agent (checks that still
+      # fail after two tries): the answer goes to that agent, main reads it
+      +ag = M.Card.agent(c)
+      pick_lazy(X.Cx<o>, Bool.not(String.eq(ag, M.MAIN())) && Maybe.is_some(&2, String, M.resolve(st(o, cx), ag)),
+        u => answer.q.sent(o, send(o, cx, msg(M.USER(), ag, text, False{}, None{}, False{}, False{})), c, ag, text),
+        u => answer.q.main(o, cx, c, text))
 
 def answer.dropped(-o: M.St, p: X.Cx<o> & DropR, +c: M.Card) -> X.Cx<o>:
   match p:
@@ -2475,7 +2486,12 @@ def in_tag(+t: String) -> In:
   # holds is gone (the agents interrupted)
   Bool.pick(In, String.eq(t, "confirm_open"), IConfirmOpen{},
   Bool.pick(In, String.eq(t, "confirm_close"), IConfirmClose{},
-  INone{})))))))))))))))))))))))))))
+  # pr-news (pr-design §6): GitHub's news from the hub's Rust side, a
+  # message from `github` to the agent that owns the PR; a card for the
+  # user when a check still fails after two tries
+  Bool.pick(In, String.eq(t, "forge"), IForge{},
+  Bool.pick(In, String.eq(t, "forge_card"), IForgeCard{},
+  INone{})))))))))))))))))))))))))))))
 
 # `/close N`: the user files a card without answering it
 def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
@@ -2557,6 +2573,10 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
       open_confirm(o, cx, C.get_s(i, "agent"), C.get_s(i, "text"))
     case IConfirmClose{}:
       confirm_close(o, M.card_of(M.St.cards(st(o, cx)), C.get_nat(i, "card")), cx, C.get_nat(i, "card"), C.get_s(i, "res"))
+    case IForge{}:
+      fst(o, send(o, cx, msg(M.GITHUB(), C.get_s(i, "to"), C.get_s(i, "text"), False{}, None{}, False{}, False{})))
+    case IForgeCard{}:
+      open_card(o, cx, "question", C.get_s(i, "agent"), C.get_s(i, "text"), None{})
     case INone{}:
       cx
 

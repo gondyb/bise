@@ -575,6 +575,13 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
                 push_event(&mut app.events, &mut app.cache, Ev::Info(l.to_string()));
             }
         }
+        // `/prs` (pr-news, designer): one dim head row, then each PR like
+        // a PR line, its URL dim under it
+        "prs" => {
+            for e in prs_events(&v) {
+                push_event(&mut app.events, &mut app.cache, e);
+            }
+        }
         "confirm" => {
             let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
             let text = s("text");
@@ -1118,6 +1125,20 @@ fn answer_route(text: &str) -> Option<(&str, u64, &str)> {
     Some((who, id.strip_suffix(')')?.parse().ok()?, said))
 }
 
+/// The feed rows of the hub's `prs` answer to `/prs`:
+/// `{head, rows: [{tone, number, url, text}]}`.
+pub(super) fn prs_events(v: &serde_json::Value) -> Vec<Ev> {
+    // the head at col 1, like every feed row's glyph column (designer)
+    let head = format!(" {}", v["head"].as_str().unwrap_or_default());
+    let mut out = vec![Ev::Fold { head, text: String::new(), open: false }];
+    for r in v["rows"].as_array().into_iter().flatten() {
+        let s = |k: &str| r[k].as_str().unwrap_or_default().to_string();
+        let Some(number) = r["number"].as_u64() else { continue };
+        out.push(Ev::Pr { tone: s("tone"), number, url: s("url"), text: s("text"), url_row: true });
+    }
+    out
+}
+
 /// The synthetic lines of the hub (`sb <kind> : <text>`) as feed events.
 /// A hub line `sb <kind> : <text>` (hub line protocol, contract C2).
 /// v1 kinds keep working (an old transcript still renders); v2 adds:
@@ -1255,6 +1276,16 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
             }
             None => Ev::Info(format!("→ {}", text)),
         },
+        // pr-news: `pr : tone : number : url : text` (fields escaped)
+        "pr" => {
+            let mut f = raw.splitn(4, " : ").map(field);
+            let mut next = || f.next().unwrap_or_default();
+            let (tone, number, url, text) = (next(), next(), next(), next());
+            match number.parse::<u64>() {
+                Ok(number) => Ev::Pr { tone, number, url, text, url_row: false },
+                Err(_) => Ev::Info(text),
+            }
+        }
         "spawn" => Ev::Info(format!("✚ {}", text)),
         "direct" => Ev::Info(format!("⇄ {}", text)),
         "warn" => Ev::Warn(text),
@@ -1292,6 +1323,24 @@ mod hub_line_tests {
             Ev::Warn(t) => format!("warn {t}"),
             _ => "other".into(),
         })
+    }
+
+    #[test]
+    fn pr_lines() {
+        // pr-news: `pr : tone : number : url : text`, a ` : ` in the text escaped
+        let ev = parse_hub_line("pr : red : 412 : https://github.com/o/r/pull/412 : checks fail \\: e2e · dark is on it");
+        assert!(
+            matches!(&ev, Some(Ev::Pr { tone, number: 412, url, text, .. }) if tone == "red" && url.ends_with("/412") && text == "checks fail : e2e · dark is on it"),
+        );
+        assert!(draw(&[ev.unwrap()]).contains("#412 checks fail : e2e · dark is on it"));
+        // no number: an info line, never lost
+        assert_eq!(p("pr : plain : x : u : hi"), Some("info hi".into()));
+        // `/prs`: a dim head at col 1, each row a PR line with its URL under it
+        let evs = prs_events(&serde_json::json!({"head": "1 PR open", "rows": [
+            {"tone": "red", "number": 415, "url": "https://github.com/o/r/pull/415", "text": "sb/x · x · checks fail: e2e"}]}));
+        let rows = draw(&evs);
+        assert!(rows.starts_with(" 1 PR open\n"), "{rows}");
+        assert!(rows.contains("#415 sb/x · x · checks fail: e2e\n   https://github.com/o/r/pull/415"), "{rows}");
     }
 
     #[test]

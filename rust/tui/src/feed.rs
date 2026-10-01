@@ -351,6 +351,7 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
             | Ev::Card { .. }
             | Ev::Err(_)
             | Ev::Info(_)
+            | Ev::Pr { .. }
             | Ev::Compact
             | Ev::Compacted { .. }
             | Ev::Fold { .. }

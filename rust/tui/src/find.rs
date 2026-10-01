@@ -420,6 +420,7 @@ fn tier_of(ev: &Ev) -> Option<Tier> {
         | Ev::Err(_)
         | Ev::Warn(_)
         | Ev::Info(_)
+        | Ev::Pr { .. }
         | Ev::Card { .. }
         | Ev::Compacted { .. }
         | Ev::Fold { .. }
@@ -456,6 +457,7 @@ fn sig(ev: &Ev) -> u64 {
         ],
         Ev::Card { text, .. } | Ev::Compacted { text, .. } | Ev::Undelivered { text, .. } => [5, text.len(), 0, 0, 0],
         Ev::Fold { head, text, open } => [6, head.len(), text.len(), *open as usize, 0],
+        Ev::Pr { text, .. } => [7, text.len(), 0, 0, 0],
         _ => [0; 5],
     };
     lens.iter().fold(0xcbf2_9ce4_8422_2325, |h, &x| mix(h, x))
@@ -470,6 +472,7 @@ fn haystack(ev: &Ev) -> String {
         Ev::Answered { question, answer, why, .. } => vec![cap(question), cap(answer), cap(why)],
         Ev::Card { text, .. } | Ev::Compacted { text, .. } | Ev::Undelivered { text, .. } => vec![cap(text)],
         Ev::Fold { head, text, .. } => vec![cap(head), cap(text)],
+        Ev::Pr { number, text, .. } => return format!("#{} {}", number, cap(text)),
         Ev::Tool(td) => return tool_text(td),
         _ => Vec::new(),
     };

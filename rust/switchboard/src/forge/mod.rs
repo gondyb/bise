@@ -16,6 +16,7 @@
 //! and pr-merge (wave 3).
 
 pub mod github;
+pub mod news;
 pub mod poll;
 
 use crate::place::{PrSnapshot, PrState};
@@ -83,7 +84,68 @@ pub trait Forge: Send {
     /// The latest PR whose head is each of `branches` (none for a branch
     /// without one): one call for them all.
     fn fetch(&self, repo: &RepoRef, branches: &[String]) -> Result<Vec<PrSnapshot>, ForgeError>;
+
+    /// pr-news (pr-design §6.1, §6.2): the PR's reviews and comments, and
+    /// for `logs` the failing checks with their log's tail. Asked only
+    /// when the PR changed (`updatedAt` moved). The default: nothing (a
+    /// forge that has no such details).
+    fn activity(&self, _repo: &RepoRef, _pr: &PrSnapshot, _logs: bool) -> Result<Activity, ForgeError> {
+        Ok(Activity::default())
+    }
 }
+
+/// What people and CI said on a PR (pr-news): all of it, the hub keeps
+/// what it already passed on ([`news`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Activity {
+    /// Reviews, review-thread comments (unresolved threads only) and the
+    /// PR's own comments, oldest first.
+    pub notes: Vec<Note>,
+    /// The failing checks of the head commit (with `logs`).
+    pub failed: Vec<FailedCheck>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoteKind {
+    /// A review: `CHANGES_REQUESTED`, `COMMENTED`, `APPROVED`, `DISMISSED`.
+    Review(String),
+    /// A comment in a review thread, on a file's line.
+    Thread { path: String, line: Option<u64> },
+    /// A comment on the PR itself.
+    Comment,
+}
+
+/// One review or comment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Note {
+    /// The forge's id (unique per kind; `r12`, `t34`, `c56`).
+    pub id: String,
+    pub author: String,
+    /// The forge's `authorAssociation` (`OWNER`, `MEMBER`,
+    /// `COLLABORATOR`, `CONTRIBUTOR`, `NONE`…) and whether the author is
+    /// a bot: [`news::trusted`] decides whose words are passed on.
+    pub association: String,
+    pub bot: bool,
+    pub kind: NoteKind,
+    pub body: String,
+    /// The commit it is about (a review's, a thread comment's).
+    pub commit: Option<String>,
+    /// ISO 8601 (`2026-10-01T12:00:00Z`).
+    pub at: String,
+}
+
+/// A check that failed on the PR's head, with the end of its log
+/// (`gh run view --log-failed`, the last [`LOG_TAIL`] lines; empty when
+/// the CI is not GitHub Actions or the log is gone).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailedCheck {
+    pub name: String,
+    pub url: String,
+    pub tail: String,
+}
+
+/// How many lines of a failing check's log reach the agent (pr-design §6.1).
+pub const LOG_TAIL: usize = 60;
 
 /// The hub's PR events (pr-design §10). `Seen`, `Merged` and `Closed`
 /// are journaled (the number survives a restart, so a restart never
@@ -195,9 +257,10 @@ pub fn log_line(e: &PrEvent) -> String {
     }
 }
 
-/// Whether a journal event is one of [`journal_line`]'s.
+/// Whether a journal event is one of the hub's PR lines: [`journal_line`]'s
+/// and pr-news' read marks (`pr_read`, [`news::News::read_journal`]).
 pub fn is_pr_line(ev: &serde_json::Value) -> bool {
-    matches!(ev["type"].as_str(), Some("pr_seen" | "pr_merged" | "pr_closed"))
+    matches!(ev["type"].as_str(), Some("pr_seen" | "pr_merged" | "pr_closed" | "pr_read"))
 }
 
 /// Read one of [`journal_line`]'s lines into what the journal knows.

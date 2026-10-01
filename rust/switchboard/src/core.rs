@@ -670,6 +670,11 @@ pub struct Hub {
     pr_ok_ms: BTreeMap<String, u64>,
     pub pr_late: Option<crate::forge::ForgeError>,
     pr_done: BTreeSet<String>,
+    /// pr-news (pr-design §6): who owns each PR, what was passed on, the
+    /// checks' tries (forge/news.rs); `pr_bots`: the repo's `[pr]
+    /// trusted_bots` (the daemon reads config.toml).
+    pr_news: crate::forge::news::News,
+    pub pr_bots: Vec<String>,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -824,6 +829,8 @@ impl Hub {
             pr_ok_ms: BTreeMap::new(),
             pr_late: None,
             pr_done: BTreeSet::new(),
+            pr_news: Default::default(),
+            pr_bots: Vec::new(),
             dirty: false,
             link,
             revive: None,
@@ -858,6 +865,7 @@ impl Hub {
             // the hub's own lines (the PR numbers): never sb-core's
             if crate::forge::is_pr_line(ev) {
                 crate::forge::read_line(&mut self.pr_known, ev);
+                self.pr_news.read_journal(ev);
                 continue;
             }
             let out = self.raw(&json!({"t": "replay", "ev": ev}));
@@ -1257,10 +1265,15 @@ impl Hub {
             let known = self.pr_known.get(&l.place).copied();
             let new = prs.iter().find(|pr| pr.branch == l.branch).filter(|pr| forge::belongs(pr, known, l.tip.as_deref()));
             for e in forge::diff(&l.place, self.prs.get(&l.place), new, known) {
+                // the repo's first PR (the journal knew none): its line says more
+                let first = self.pr_known.is_empty();
                 if let Some(j) = forge::journal_line(&e) {
                     forge::read_line(&mut self.pr_known, &j);
                     fx.push(Effect::Journal(j));
                 }
+                let at = forge::news::At { place: &p.id, branch: &l.branch, agents: &p.agents };
+                let outs = self.pr_news.event(&e, Some(&at), first);
+                self.news_out(fx, env, outs);
                 fx.push(Effect::Pr(e));
             }
             self.pr_ok_ms.insert(l.place.clone(), r.at_ms);
@@ -1285,11 +1298,43 @@ impl Hub {
                 self.pr_cleanup(fx, env, l, pr, &agents);
             }
         }
+        // pr-news: the reviews, comments and failing checks of the PRs
+        // that changed, to the agent that owns each
+        for (branch, act) in &r.activity {
+            let Some(l) = r.local.iter().find(|l| &l.branch == branch) else { continue };
+            let (Some(p), Some(pr)) = (place(&l.place), self.prs.get(&l.place).cloned()) else { continue };
+            let at = forge::news::At { place: &p.id, branch: &l.branch, agents: &p.agents };
+            let outs = self.pr_news.activity(&at, &pr, act, &self.pr_bots);
+            self.news_out(fx, env, outs);
+        }
         // the places gone (dropped): their PR goes with them
         let ids: BTreeSet<&str> = places.iter().map(|p| p.id.as_str()).collect();
+        self.pr_news.retain(&ids);
         self.prs.retain(|k, _| ids.contains(k.as_str()));
         self.pr_lids.retain(|k, _| ids.contains(k.as_str()));
         self.pr_ok_ms.retain(|k, _| ids.contains(k.as_str()));
+    }
+
+    /// pr-news' decisions, carried out: a message from `github` (sb-core's
+    /// `forge`, a pseudo sender like a peer), a line in main's feed (`sb
+    /// pr : tone : number : url : text`), a question card for the user
+    /// (`forge_card`: its answer goes to the agent), a journal line.
+    fn news_out(&mut self, fx: &mut Fx, env: &mut dyn Env, outs: Vec<crate::forge::news::Out>) {
+        use crate::forge::news::Out;
+        for o in outs {
+            match o {
+                Out::Tell { to, text } => self.core(fx, env, None, json!({"t": "forge", "to": to, "text": text})),
+                Out::Line { tone, number, url, text } => fx.push(line(
+                    MAIN,
+                    "pr",
+                    &join_fields(&[tone.as_str().to_string(), number.to_string(), url, text]),
+                )),
+                Out::Card { agent, text } => {
+                    self.core(fx, env, None, json!({"t": "forge_card", "agent": agent, "text": text}))
+                }
+                Out::Journal(j) => fx.push(Effect::Journal(j)),
+            }
+        }
     }
 
     /// pr-design §6.4: a merged PR archives its place's agents and
@@ -1958,6 +2003,25 @@ impl Hub {
                 self.core(fx, env, c, json!({"t": "close", "card": card}))
             }
             UserCmd::Tasks => fx.push(notice(client, &board::user_board(&self.st, env.now()))),
+            UserCmd::Prs => {
+                // `prs`: rows drawn like the PR lines; `text` for a client
+                // that does not know them (sb's CLI prints it)
+                let places = crate::place::places(&self.st, &self.prs);
+                let text = crate::forge::news::prs_list(&places);
+                match crate::forge::news::prs_rows(&places) {
+                    None => fx.push(notice(client, &text)),
+                    Some((head, rows)) => {
+                        let rows: Vec<Value> = rows
+                            .iter()
+                            .map(|r| json!({"tone": r.tone.as_str(), "number": r.number, "url": r.url, "text": r.text}))
+                            .collect();
+                        fx.push(Effect::ToClient {
+                            client,
+                            body: json!({"ev": "prs", "head": head, "rows": rows, "text": text}),
+                        })
+                    }
+                }
+            }
             UserCmd::Interrupt => {
                 self.core(fx, env, c, json!({"t": "interrupt", "agent": focus}))
             }
@@ -2156,7 +2220,13 @@ impl Hub {
             },
             AgentReq::Land { here, message } => {
                 match self.land_job(from, here, &message) {
-                    Ok(job) => fx.push(Effect::Land { token, job: Box::new(job) }),
+                    Ok(job) => {
+                        // pr-news: the PR's news go to the place's last lander
+                        if job.worktree {
+                            self.pr_news.landed(&job.place, &job.agent);
+                        }
+                        fx.push(Effect::Land { token, job: Box::new(job) })
+                    }
                     Err(e) => reply(fx, json!({"ok": false, "error": e})),
                 }
                 return;
