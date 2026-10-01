@@ -117,6 +117,10 @@ cp "$scripted" "$app/repl-scripted"
 # the prompts: prompts/ since the root cleanup, at the top of an older version
 if [ -d "$vdir/prompts" ]; then cp -R "$vdir/prompts" "$app/prompts"; pr=prompts/
 else cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"; pr=""; fi
+# the built-in plugins and computer use's browser extension (versions.sh
+# puts them in the version dir; read at run time from the app root)
+if [ -d "$vdir/plugins" ]; then cp -R "$vdir/plugins" "$app/plugins"; fi
+if [ -d "$vdir/computer-use/extension" ]; then mkdir -p "$app/computer-use"; cp -R "$vdir/computer-use/extension" "$app/computer-use/extension"; fi
 cp "$js" "$app/$jsrt_at"
 # VERSION: the dev repo path means nothing on the user's machine (the
 # daemon would look for versions.sh there); the target says what it runs on

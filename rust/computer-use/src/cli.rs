@@ -252,13 +252,20 @@ pub fn setup_check(paths: &Paths, helper: Option<&std::path::Path>, start: Optio
 
 /// Where the unpacked extension is, for the "load unpacked" steps (before
 /// the Web Store): `$BISE_CU_EXTENSION`, the app root's
-/// `computer-use/extension`, then the try folder
+/// `computer-use/extension` (`$BISE_APP_ROOT`, else the executable's
+/// folder when it holds VERSION), then the try folder
 /// `~/.bise/dev/try/computer-use/extension`.
 pub fn extension_dir(paths: &Paths) -> Option<PathBuf> {
     let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
     let mut c: Vec<PathBuf> = Vec::new();
     c.extend(env("BISE_CU_EXTENSION"));
     c.extend(env("BISE_APP_ROOT").map(|r| r.join("computer-use").join("extension")));
+    // a version dir or a bundle: the executable's folder holds VERSION
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok()).and_then(|e| e.parent().map(PathBuf::from)) {
+        if dir.join("VERSION").is_file() {
+            c.push(dir.join("computer-use").join("extension"));
+        }
+    }
     c.push(paths.root.join("dev").join("try").join("computer-use").join("extension"));
     c.into_iter().find(|p| p.join("manifest.json").is_file())
 }

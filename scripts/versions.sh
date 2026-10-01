@@ -126,6 +126,14 @@ build_from() {
   # commit's REPL reads them there)
   if [ -d "$src/prompts" ]; then cp -R "$src/prompts" "$tmp/prompts"
   else cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"; fi
+  # the built-in plugins (plugins/: computer use's tools and skill) and
+  # computer use's browser extension, read at run time from the app root
+  # (a version without plugins/ had no computer use: the try of d3391ca)
+  if [ -d "$src/plugins" ]; then cp -R "$src/plugins" "$tmp/plugins"; fi
+  if [ -d "$src/computer-use/extension" ]; then
+    mkdir -p "$tmp/computer-use"; cp -R "$src/computer-use/extension" "$tmp/computer-use/extension"
+    rm -rf "$tmp/computer-use/extension/test"
+  fi
 
   # the V8 engine: the RELEASE build of this source's rust/jsrt (BISE-133:
   # ~60 MB, the debug one was 110 MB, 93% of a version), from bins.sh's
