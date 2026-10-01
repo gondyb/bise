@@ -1,9 +1,40 @@
 # voice to voice: design proposal
 
-Status: proposal for review, nothing built. Designer reviewed it (brand): pick confirmed, changes folded in. Mocks (local only): `site/content/voice-ux.html`
+Status: proposal for review, nothing built. Round 1 reviewed by designer; round 2 = the user's notes (§0), the current pick is E, voice mode. Mocks (local only): `site/content/voice-ux.html`
 on localhost:4747 (four directions, an animation lab, dark/light, NO_COLOR, 80/100/150 columns).
 
 You talk to main, main talks back. The agents keep working; the thread keeps the words.
+
+## 0. Round 2: voice mode (E), the current pick
+
+The user's notes on round 1: the big talking kiss (D's speaking) and "mouth + arcs" are the
+favourites; doubt that hands-free turn-taking works (models misjudge when you're done); D dies,
+but it should keep a minified history; the pick should put the composer at half the screen,
+D's big kiss inside it, the thread above.
+
+- **Name and keys:** *voice mode*. ctrl+r twice enters (ctrl+r alone stays dictation), esc
+  leaves. Header `● voice mode 2:14`; divider `you ⇄ main · voice mode · headphones`; the
+  transcript lines `· voice mode · 14:02 …` / `· voice mode ended · 7 min · …`.
+- **The pane:** the composer grows to half the screen (12 rows at 100 × 40). Left: the big
+  kiss, 41 × 9 cells in half blocks (listening: the `*` breathes; thinking: it turns; speaking:
+  the mouth opens with the level and up to 3 arcs `)))` open beside it; cut in: it shuts to a
+  line). Right: who talks (`you` in accent, `:* main`), then the words as they're said
+  (≤ 28 cells a line, so 80 columns fit), then a status row. The thread stays above.
+- **While main works:** the words give way to a minified history, 4 rows, newest at the bottom,
+  one per action, ticking every ~1.6 s: `✉ talking to designer`, `$ perf · running npm test`,
+  `⇄ reading Hero.tsx`, `✓ perf · done`. D keeps the same rows under its caption.
+- **Who talks when (the user's doubt):** the screen never guesses in silence. When you stop,
+  `about to answer ●●●··` fills in ~1.2 s; talking again empties it; space sends at once;
+  holding space keeps the floor while you think. Backchannels ("mm", "ok", "right") never cut
+  main off: barge-in takes ~0.4 s of real words.
+- **Any agent:** voice mode talks with the agent in view (`you ⇄ cookies`); one brand voice for
+  now; the name over the words says who answers; the kiss stays (it's bise talking).
+- **Approvals:** by voice ("allow") and by key, both always on.
+- **Build:** all at once, no sequencing (the user).
+- Still open: which brand voice (audition 3 Voxtral TTS voices on the same 3 lines); does
+  `/voice` become voice mode's settings; under 30 rows, does the kiss shrink to B's lanes.
+
+Round 1 follows, kept for the record; where it says "call", read "voice mode".
 
 ## 1. What exists
 
@@ -92,11 +123,7 @@ the small-jobs model (~0.3 s) so thinking never feels dead. cpal has no echo can
 macOS, VoiceProcessingIO; elsewhere headphones. Headphones vs speakers from the output device
 (macOS); when unknown, ask once.
 
-## 8. Open questions
+## 8. Open questions (round 1; answered in §0)
 
-1. The word: "call" (/talk, hang up), designer's and my pick over "voice mode". OK?
-2. The key: ctrl+r twice, or a new one?
-3. Approvals by voice ("allow") or keys only?
-4. One bise voice for everyone, or the user's pick?
-5. Calls with an agent directly (you → cookies), or main only?
-6. Build order: A first (hold-to-talk + spoken answers, smallest), then the call?
+"voice mode", not "call" · ctrl+r twice · approvals by voice and keys · one brand voice for now ·
+voice mode with any agent · everything at once.
