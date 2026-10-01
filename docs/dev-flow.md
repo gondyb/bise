@@ -19,7 +19,8 @@ UI?
 - **Q4 yes**: in PR flow the agents stay alive until the merge.
 - **Q5: the user chooses** one PR or a PR per phase; bise doesn't
   prescribe. Main asks when it matters and the user hasn't said.
-- Q3 (push after each land in trunk flow) is still open.
+- **Q3 yes**: in trunk flow, main is pushed after every land
+  (`[flow] push = true` by default).
 
 ## 1. The answer in short
 
@@ -192,9 +193,11 @@ review item for you (`approvals is ready to land: 14 commits, +3,120
 −410 · 1 land it · 2 show the diff · 3 not yet`), then lands it like
 above. Today main does that by hand (`is-ancestor` then `update-ref`).
 
-**Pushing**: in trunk flow, main lands locally. `[flow] push = true`
-pushes main after every land (what this repo does now); else only when
-you ask.
+**Pushing** (the user's Q3): in trunk flow, the hub pushes main after
+every land, `[flow] push = true` by default (what this repo does now).
+`push = false` keeps the lands local until you ask. A push that fails
+(offline, main moved on the remote): the hub fetches, rebases the lands
+not pushed yet, tries again; still failing, main says it once.
 
 ## 6. What changes in the agents' instructions
 
@@ -306,10 +309,8 @@ flow, and the choice:
 
 ## 9. Open questions (for the user)
 
-Answered: Q1, Q2, Q4, Q5 (§0). Still open:
+Answered: Q1, Q2, Q3, Q4, Q5 (§0). Still open:
 
-3. Trunk flow: push main after every land (what this repo does), or only
-   when you ask?
 6. The sidebar for a shared worktree: grouped under one line (A) or
    flat rows with the branch on the held line (B)? (mock, "the flow")
 Answered later (2026-10-01): **Q7, who rebases a shared branch that
