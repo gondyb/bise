@@ -61,6 +61,7 @@ Let the user's bise agents (AI agents running in the bise app on the same Mac) o
 | `tabs` | Open, list, navigate and close the agents' own tabs, and read their URL and title to report where an agent is. The user's own tabs are never read or changed. |
 | `tabGroups` | Each agent's tabs live in a tab group named after the agent ("bise · api-v2"), so the user sees at a glance which tabs are an agent's. |
 | `nativeMessaging` | The extension talks only to the bise app installed on the same Mac (native host dev.bise.computer_use), which relays the agents' requests. Nothing goes to a server. |
+| `alarms` | Reconnects to the bise app on this Mac after Chrome stops the extension's background worker (an alarm every 30 s wakes it; nothing else can, since the extension opens the connection). |
 | `scripting` | Injects a small overlay into an agent's own tabs: the "↖ agent" marker, and detecting when the user touches that tab (the agent then pauses). |
 | Host permission `<all_urls>` | Agents work on whatever site their task needs (the user's dashboards, shops, docs). The extension acts only in tabs that an agent opened itself; some pages are always refused (browser settings, extension stores, password managers). |
 | Remote code | **No**: all code ships in the package. |

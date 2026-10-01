@@ -79,16 +79,23 @@ the app bundle. The only cost is release size (below).
 
 ## 5. Paths not tested yet
 
-| Path | Mark | Size |
-|---|---|---|
-| The "bise started debugging this browser" bar's **Cancel**: Chrome detaches every debugger. It must read as a stop by the user (C6 `stopped`, "you stopped it"), and the agent must not reattach until the user's next message. | must | S |
-| `chrome://`, the Web Store, other extensions' pages, the PDF viewer: `chrome.debugger` cannot attach. Need a clear error code (`not_allowed_page`) and summary. | must | S |
-| `file://` pages need "Allow access to file URLs". Error + setup hint. | later | S |
-| MV3 service worker suspended after 30 s idle while an agent waits: reconnect on the next call (bench covers short waits only). | must | S |
-| Chrome quit or the Mac asleep mid-program; the user closes the agent's tab group by hand; two browsers connected at once. | must | M |
-| Cross-origin iframes (OOPIF), shadow DOM, canvas apps (Figma web) in snapshots. | later | M |
-| Screen Recording grant → helper relaunch (cu-apps): tested with a fake helper only. | must | S |
-| Work profile (see §3) | must | S |
+Status 24849b3 (cu-untested): the musts below are tested on the real
+stack by `computer-use/bench/paths.mjs` (cancel 9, refused 8, group 2,
+worker 4, quit 9, helper 7 checks, all green, ~1.5 min). Four checks need
+a headed browser or the user's Mac and stay manual:
+`docs/computer-use-manual-checks.md` (the real Cancel bar, Mac sleep, the
+Screen Recording grant with Quit & Reopen, a work profile).
+
+| Path | Mark | Size | State |
+|---|---|---|---|
+| The "bise started debugging this browser" bar's **Cancel**: Chrome detaches every debugger. It must read as a stop by the user (C6 `stopped`, "you stopped it"), and the agent must not reattach until the user's next message. | must | S | done (paths.mjs; the real bar: manual check) |
+| `chrome://`, the Web Store, other extensions' pages, the PDF viewer. | must | S | done: kept `refused` (no new code), messages and summaries name the page; the PDF viewer attaches but has no text, so snapshot/read say "get the file from its URL" (skill: "Pages bise can't read") |
+| `file://` pages need "Allow access to file URLs". Error + setup hint. | later | S | |
+| MV3 service worker suspended while an agent waits. | must | S | done: an `alarms` wake every 30 s (new permission, no install warning); calls wait up to 45 s for the hello |
+| Chrome quit or the Mac asleep mid-program; the user closes the agent's tab group by hand; two browsers connected at once. | must | M | done except sleep (manual): a quit browser is `no_browser` at once ("Chrome is closed"), told apart from a stopped worker by hello.pid (C4) |
+| Cross-origin iframes (OOPIF), shadow DOM, canvas apps (Figma web) in snapshots. | later | M | |
+| Screen Recording grant → helper relaunch. | must | S | done with the real helper's quit and reopen; the grant itself: manual |
+| Work profile (see §3) | must | S | done for machine policies (`rust/computer-use/src/policy.rs`: setup-check reads /Library/Managed Preferences and names the blocking policy); cloud-managed profiles are out of reach (manual check) |
 
 ## 6. Safety
 
