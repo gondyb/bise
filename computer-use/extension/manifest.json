@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "bise computer use",
+  "version": "0.1.0",
+  "description": "Lets your bise agents use the web in their own tab groups, in the background.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzMRdGBzfwXkiUQ2BXUsC2rSxmAkxGscwSJ9W5Jf1kYS4Tk8P0RTfMz+O4Iao0Lrn31l90PYd5iJ9uQFNNwJbhBqfV97zYxmu9D319ans9orUsnNvrTObLu3n9FBUqJpBFpJYBOMBdFVGhDPCOjoIO7itEaoQXAfDsoo9+0m/i94dKTVZ4Jgcj/DYb51Bm0h2II5AE00Gd8+ee1Lv4Q3gZE79bQBTn+5UG/DZ6wGzus2Vt5XGkIwZPWiGhE36OPyr+MkhgELm+FVYZ0yAHqO5xuuzHaSAEFWHGzq0EijHH3F/2iK5zaXjOo6I9f7Ti2QjODR28DVO33UuKNDBWO1lPwIDAQAB",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "debugger",
+    "nativeMessaging",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  }
+}

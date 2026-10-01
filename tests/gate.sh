@@ -396,6 +396,7 @@ for f in $changed; do
     rust/Cargo.toml|rust/Cargo.lock|rust/.cargo/*) add bise-session; add bise-home; add bise-catalog; add bend-plugins; add bend-images; add bend-tui; add switchboard; add bend-harness ;;
     rust/home/*) add bise-home; add bend-plugins; add bend-images; add bend-tui; add switchboard; add bise-catalog; add bend-harness ;;
     rust/catalog/*) add bise-catalog; add bend-harness ;;
+    rust/computer-use/*) add bise-computer-use; add bend-harness ;;
     rust/plugins/*) add bend-plugins; add bend-tui; add bend-harness ;;
     rust/images/*) add bend-images; add bend-tui; add bend-harness ;;
     rust/tui/*) add bend-tui; add bend-harness ;;

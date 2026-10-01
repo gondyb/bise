@@ -87,6 +87,7 @@ pub mod timing;
 mod crash;
 mod help;
 mod approvals_screen;
+mod computer_use;
 mod keybar;
 mod keycheck;
 pub(crate) mod scan;

@@ -17,6 +17,8 @@ pub fn home() -> PathBuf {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Scope {
+    /// bise's own plugins, in the app root's `plugins/` (computer use)
+    BuiltIn,
     User,
     Workspace,
 }
@@ -24,6 +26,7 @@ pub enum Scope {
 impl Scope {
     pub fn as_str(self) -> &'static str {
         match self {
+            Scope::BuiltIn => "built-in",
             Scope::User => "user",
             Scope::Workspace => "workspace",
         }
@@ -128,16 +131,24 @@ impl Resolution {
 
 #[derive(Clone, Debug)]
 pub struct Roots {
+    /// the app root's `plugins/` (scope `built-in`): always discovered,
+    /// shadowed by a user or workspace plugin of the same name
+    pub builtin: Option<PathBuf>,
     pub user: Option<PathBuf>,
     pub workspace: Option<PathBuf>,
     /// where `${PLUGIN_DATA}` roots live (one folder per plugin name)
     pub data: PathBuf,
     pub disabled: Vec<String>,
+    /// the opt-in plugins turned on (a manifest with
+    /// `"extensions": {"dev.bise": {"default": "off"}}` loads only when
+    /// its name is here)
+    pub enabled: Vec<String>,
 }
 
 impl Roots {
-    /// The standard roots: `$BEND_PLUGINS_HOME` or `~/.agents/plugins`,
-    /// and `<workspace>/.agents/plugins`.
+    /// The standard roots: the built-in one ([`builtin_root`]),
+    /// `$BEND_PLUGINS_HOME` or `~/.agents/plugins`, and
+    /// `<workspace>/.agents/plugins`.
     pub fn standard(workspace: Option<&Path>) -> Roots {
         let user = match std::env::var("BEND_PLUGINS_HOME") {
             Ok(p) if !p.is_empty() => PathBuf::from(p),
@@ -145,11 +156,94 @@ impl Roots {
         };
         let data = bise_home::Home::from_env().plugin_data_dir();
         Roots {
+            builtin: builtin_root(),
             user: Some(user),
             workspace: workspace.map(|w| w.join(".agents").join("plugins")),
             data,
             disabled: crate::state::disabled(&crate::state::state_path()),
+            enabled: crate::state::enabled(&crate::state::state_path()),
         }
+    }
+}
+
+/// What a session's plugins depend on, as one number: the enable state and,
+/// in each root, every plugin folder's name and the size and mtime of its
+/// `plugin.json`, `mcp.json` and `skills/*/SKILL.md`. Cheap (stats only):
+/// the hub compares it every 2 s and relaunches a REPL whose plugins
+/// changed at its next idle (an installed, removed, enabled or edited
+/// plugin), same session.
+pub fn fingerprint(roots: &Roots) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    roots.disabled.hash(&mut h);
+    roots.enabled.hash(&mut h);
+    let stat = |p: &Path, h: &mut std::collections::hash_map::DefaultHasher| {
+        if let Ok(m) = std::fs::metadata(p) {
+            m.len().hash(h);
+            m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).hash(h);
+        }
+    };
+    let sorted = |d: &Path| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path()).collect();
+        v.sort();
+        v
+    };
+    for root in [&roots.builtin, &roots.user, &roots.workspace].into_iter().flatten() {
+        root.hash(&mut h);
+        for p in sorted(root) {
+            if !p.is_dir() {
+                continue;
+            }
+            p.hash(&mut h);
+            stat(&p.join("plugin.json"), &mut h);
+            stat(&p.join("mcp.json"), &mut h);
+            for s in sorted(&p.join("skills")) {
+                s.hash(&mut h);
+                stat(&s.join("SKILL.md"), &mut h);
+            }
+        }
+    }
+    h.finish()
+}
+
+/// The built-in root: `plugins/` in bise's app root (`$BISE_APP_ROOT`;
+/// else the executable's folder when it is a version dir or a bundle, i.e.
+/// holds `VERSION`; else, in dev, the source tree the executable was built
+/// in or this crate's tree). None when there is none.
+pub fn builtin_root() -> Option<PathBuf> {
+    let has = |root: &Path| root.join("plugins").is_dir();
+    if let Some(r) = std::env::var_os("BISE_APP_ROOT").filter(|v| !v.is_empty()) {
+        let r = PathBuf::from(r);
+        return has(&r).then(|| r.join("plugins"));
+    }
+    let exe = std::env::current_exe().ok().map(|e| e.canonicalize().unwrap_or(e));
+    if let Some(dir) = exe.as_deref().and_then(Path::parent) {
+        if dir.join("VERSION").exists() {
+            return has(dir).then(|| dir.join("plugins"));
+        }
+        // rust/target/<profile>/bise -> the repo
+        for up in dir.ancestors().take(4) {
+            if up.join("rust/Cargo.toml").exists() && has(up) {
+                return Some(up.join("plugins"));
+            }
+        }
+    }
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    (cfg!(debug_assertions) && has(&tree)).then(|| tree.canonicalize().unwrap_or(tree).join("plugins"))
+}
+
+/// The bise a built-in plugin's `"command": "bise"` runs: the harness that
+/// resolves it (the bridge is `bise plugins serve`), not a `bise` on PATH
+/// (another version, or none).
+fn bise_exe() -> String {
+    if let Some(b) = std::env::var_os("BEND_HARNESS_BIN").filter(|v| !v.is_empty()) {
+        return PathBuf::from(b).to_string_lossy().into_owned();
+    }
+    let exe = std::env::current_exe().ok();
+    let named = exe.as_ref().and_then(|e| e.file_name()).is_some_and(|n| n == "bise" || n == "bend-harness");
+    match exe.filter(|_| named) {
+        Some(e) => e.to_string_lossy().into_owned(),
+        None => "bise".into(),
     }
 }
 
@@ -193,8 +287,15 @@ pub struct Manifest {
     pub name: String,
     pub version: Option<String>,
     pub description: Option<String>,
+    /// the extensions bise does not know (reported, ignored)
     pub extensions: Vec<String>,
+    /// `"extensions": {"dev.bise": {"default": "off"}}`: opt-in, loaded
+    /// only once enabled (computer use: /computer-use turns it on)
+    pub default_off: bool,
 }
+
+/// bise's own manifest extension.
+pub const BISE_EXTENSION: &str = "dev.bise";
 
 fn opt_string(o: &Map<String, Value>, k: &str) -> Result<Option<String>, String> {
     match o.get(k) {
@@ -254,13 +355,25 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         }
     }
     let mut extensions = Vec::new();
+    let mut default_off = false;
     if let Some(ex) = o.get("extensions") {
         let ex = ex.as_object().ok_or("/extensions must be an object")?;
         for (k, v) in ex {
-            if !v.is_object() {
+            let Some(v) = v.as_object() else {
                 return Err(format!("/extensions/{} must be an object", k));
+            };
+            if k == BISE_EXTENSION {
+                for (f, fv) in v {
+                    match (f.as_str(), fv.as_str()) {
+                        ("default", Some("off")) => default_off = true,
+                        ("default", Some("on")) => {}
+                        ("default", _) => return Err(format!("/extensions/{}/default must be \"on\" or \"off\"", k)),
+                        _ => return Err(format!("unknown field /extensions/{}/{}", k, f)),
+                    }
+                }
+            } else {
+                extensions.push(k.clone());
             }
-            extensions.push(k.clone());
         }
     }
     Ok(Manifest {
@@ -268,6 +381,7 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         version: opt_string(o, "version")?,
         description: opt_string(o, "description")?,
         extensions,
+        default_off,
     })
 }
 
@@ -549,6 +663,7 @@ fn load_unsupported(p: &mut Plugin, extensions: &[String], out: &mut Vec<Diagnos
 struct Candidate {
     plugin: Plugin,
     extensions: Vec<String>,
+    default_off: bool,
 }
 
 fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -> Vec<Candidate> {
@@ -588,6 +703,7 @@ fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -
             .map_err(|e| format!("unreadable: {}", e))
             .and_then(|t| parse_manifest(&t));
         let mut extensions = Vec::new();
+        let mut default_off = false;
         match parsed {
             Ok(m) => {
                 p.namespace = identifier(&m.name);
@@ -597,11 +713,12 @@ fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -
                 p.description = m.description;
                 p.state = State::Loaded;
                 extensions = m.extensions;
+                default_off = m.default_off;
             }
             Err(e) => out.push(diag("plugin.manifest.invalid", Severity::Error, &folder,
                 format!("{}: {}", manifest.display(), e))),
         }
-        found.push(Candidate { plugin: p, extensions });
+        found.push(Candidate { plugin: p, extensions, default_off });
     }
     found
 }
@@ -610,7 +727,7 @@ fn discover(root: &Path, scope: Scope, data: &Path, out: &mut Vec<Diagnostic>) -
 pub fn resolve(roots: &Roots) -> Resolution {
     let mut diags = Vec::new();
     let mut cands = Vec::new();
-    for (root, scope) in [(&roots.user, Scope::User), (&roots.workspace, Scope::Workspace)] {
+    for (root, scope) in [(&roots.builtin, Scope::BuiltIn), (&roots.user, Scope::User), (&roots.workspace, Scope::Workspace)] {
         if let Some(r) = root {
             cands.extend(discover(r, scope, &roots.data, &mut diags));
         }
@@ -634,17 +751,20 @@ pub fn resolve(roots: &Roots) -> Resolution {
                     c.plugin.name, c.plugin.root.display())));
         }
     }
-    // workspace over user
-    let ws_names: Vec<String> = cands
-        .iter()
-        .filter(|c| c.plugin.state == State::Loaded && c.plugin.scope == Scope::Workspace)
-        .map(|c| c.plugin.name.clone())
-        .collect();
-    for c in cands.iter_mut() {
-        if c.plugin.state == State::Loaded && c.plugin.scope == Scope::User && ws_names.contains(&c.plugin.name) {
-            c.plugin.state = State::Shadowed;
-            diags.push(diag("plugin.shadowed", Severity::Info, &c.plugin.name,
-                format!("the workspace plugin {:?} shadows the user one at {}", c.plugin.name, c.plugin.root.display())));
+    // workspace over user over built-in
+    for (lower, higher) in [(Scope::User, Scope::Workspace), (Scope::BuiltIn, Scope::User), (Scope::BuiltIn, Scope::Workspace)] {
+        let names: Vec<String> = cands
+            .iter()
+            .filter(|c| c.plugin.state == State::Loaded && c.plugin.scope == higher)
+            .map(|c| c.plugin.name.clone())
+            .collect();
+        for c in cands.iter_mut() {
+            if c.plugin.state == State::Loaded && c.plugin.scope == lower && names.contains(&c.plugin.name) {
+                c.plugin.state = State::Shadowed;
+                diags.push(diag("plugin.shadowed", Severity::Info, &c.plugin.name,
+                    format!("the {} plugin {:?} shadows the {} one at {}", higher.as_str(), c.plugin.name,
+                        lower.as_str(), c.plugin.root.display())));
+            }
         }
     }
     // namespaces
@@ -670,12 +790,18 @@ pub fn resolve(roots: &Roots) -> Resolution {
     }
     // enable state, then components
     for c in cands.iter_mut() {
-        if c.plugin.state == State::Loaded && roots.disabled.contains(&c.plugin.name) {
+        let off = roots.disabled.contains(&c.plugin.name) || (c.default_off && !roots.enabled.contains(&c.plugin.name));
+        if c.plugin.state == State::Loaded && off {
             c.plugin.state = State::Disabled;
         }
         if c.plugin.state == State::Loaded {
             load_skills(&mut c.plugin, &mut diags);
             load_mcp(&mut c.plugin, &mut diags);
+            if c.plugin.scope == Scope::BuiltIn {
+                for s in c.plugin.servers.iter_mut().filter(|s| s.command == "bise") {
+                    s.command = bise_exe();
+                }
+            }
             load_unsupported(&mut c.plugin, &c.extensions, &mut diags);
         }
     }

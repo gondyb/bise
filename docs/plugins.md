@@ -110,8 +110,15 @@ live REPLs, so two sessions (or two Switchboard tasks) never share it.
    the user one is listed as `shadowed`. Same `name` twice in one root:
    both dropped (`plugin.name.collision`).
 5. **Enable state.** `~/.bend-harness/plugins.json`:
-   `{"disabled": ["name", ...]}`. A disabled plugin is listed, its
-   components are not loaded.
+   `{"disabled": ["name", ...], "enabled": ["name", ...]}`. A disabled
+   plugin is listed, its components are not loaded. **Opt-in**: a
+   manifest with `"extensions": {"dev.bise": {"default": "off"}}` (bise's
+   own extension, never reported as unsupported) loads only when its name
+   is in `enabled`; `disabled` still wins. `plugins enable <name>` adds to
+   `enabled` and drops from `disabled`, `disable` the reverse. The
+   built-in `computer` plugin is opt-in: `/computer-use` turns it on,
+   `/computer-use off|uninstall` turns it off (docs/computer-use-ship.md
+   §1).
 6. **Skills.** Each `skills/<dir>/SKILL.md`, realpath inside the plugin
    root, with a YAML frontmatter holding a one-line `name` and
    `description`. Published as `<namespace>:<name>`. A bad one:
@@ -192,8 +199,32 @@ tests use temp dirs.
   `invalid`), root, skills, MCP servers, unsupported components, then the
   diagnostics. Static: it does not start servers.
 - `bend-harness plugins enable|disable <name>`: edits
-  `~/.bend-harness/plugins.json`; applies at the next session start or
-  `/reload`.
+  `~/.bend-harness/plugins.json`; applies at the agents' next idle (below).
+
+### Reload on change
+
+A plugin installed, removed, enabled, disabled or edited while bise runs
+reaches every agent without a restart of the TUI (the user: a voice
+recording, a draft, the scroll must survive). The hub keeps, per live
+REPL, its workspace and `bend_plugins::resolve::fingerprint` of its roots
+(the enable state; in the built-in, user and workspace roots each plugin
+folder and the size and mtime of its `plugin.json`, `mcp.json` and
+`skills/*/SKILL.md`), taken at spawn. Every 2 s on the tick, and when an
+agent goes idle, it compares: a REPL whose fingerprint moved relaunches
+at its next idle, same session and port (the path a key change and a
+version switch take, `switch_idle_repls`); a busy one finishes its turn
+first. The new REPL starts a fresh bridge and lists the new skills in its
+prompt: a restored session keeps its saved system prompt (prompt cache,
+BISE-268) unless the hub sets `BEND_FRESH_PROMPT=1`, which it does when
+the plugins fingerprint differs from the one its prompt was last built
+with (`<agent dir>/prompt-plugins.fp`; a version switch or a TUI restart
+counts too). The prompt's `## Plugins` section (BEND_TOOLS_NOTE,
+`tools_env::session_note`) names each loaded plugin, its description and
+its skills, so an agent knows what a plugin is for before it searches.
+Only REPLs restart: the TUI and the hub keep running. Test:
+`tests/plugins_reload_e2e.py` (install → relaunch at idle, the
+conversation kept, the plugin loaded; nothing changes → no relaunch; a
+disable → a relaunch).
 - `/plugins` in the TUI prints the workspace's static listing (the
   single-agent TUI, gone with BISE-113, also showed its session's
   `D/report.txt`).

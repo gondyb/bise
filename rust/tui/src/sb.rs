@@ -462,6 +462,12 @@ impl Sb {
 
     /// What the user typed, for `agent` (in view or not).
     fn send_input_to(&mut self, agent: &str, text: String) {
+        // computer use (C6, m_3893): a message to an agent you stopped is
+        // its go-ahead; `@name …` is for that agent
+        if !text.starts_with('/') {
+            let to = text.split_whitespace().next().and_then(|w| w.strip_prefix('@')).filter(|n| self.agent(n).is_some());
+            crate::computer_use::resume_if_stopped(to.unwrap_or(agent));
+        }
         self.send(json!({"op": "input", "focus": agent, "text": text}));
     }
 }
@@ -1052,6 +1058,30 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             None => sb.send(serde_json::json!({"op": "approvals", "mode": ""})),
         },
         "/welcome" => crate::onboarding::run(app),
+        // computer-use-design.md §8: the setup steps, polled live
+        // opt-in (computer-use-ship.md §1): opening it turns the plugin on,
+        // off/uninstall turn it off (the agents follow at their next idle)
+        "/computer-use" => match typed.split_whitespace().nth(1) {
+            None => {
+                crate::computer_use::set_on(true);
+                app.computer_use = Some(crate::computer_use::Screen::open());
+            }
+            Some(w @ ("off" | "uninstall")) => out.push(Ev::Info(crate::computer_use::turn_off(w == "uninstall"))),
+            Some(other) => out.push(Ev::Warn(format!("/computer-use {other}: off or uninstall"))),
+        },
+        // §7.3: the turn stops and the agent lets go of Chrome and its apps
+        // until you write to it again
+        "/stop" => match typed.split_whitespace().nth(1).map(|n| n.trim_start_matches('@').to_string()) {
+            Some(name) if sb.agent(&name).is_some() => {
+                if sb.agent(&name).is_some_and(|a| a.status == "working") {
+                    sb.send(json!({"op": "interrupt", "agent": name}));
+                }
+                // main's feed says it once, from the hub (m_3904)
+                crate::computer_use::stop(&name);
+            }
+            Some(name) => out.push(Ev::Warn(format!("/stop: no agent named {name}"))),
+            None => out.push(Ev::Warn("/stop <agent>".into())),
+        },
         // BISE-298: which model does what
         "/models" | "/roles" => {
             crate::onboarding::provider_request(crate::onboarding::Ask {
@@ -1296,6 +1326,8 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
             }
         }
         "spawn" => Ev::Info(format!("✚ {}", text)),
+        // computer use (design §7.3): `↖ api-v2 stopped driving Chrome · you stopped it`
+        "computer" => Ev::Info(text),
         "direct" => Ev::Info(format!("⇄ {}", text)),
         "warn" => Ev::Warn(text),
         _ => Ev::Info(text),

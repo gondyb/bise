@@ -1,0 +1,11 @@
+[package]
+name = "bise-computer-use"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "Computer use for bise: the broker between the agents, the browser extension and the macOS helper (docs/computer-use-design.md)."
+
+[dependencies]
+bise-home = { path = "../home" }
+serde_json = "1"
+libc = "0.2"

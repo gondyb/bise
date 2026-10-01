@@ -6,6 +6,7 @@ license.workspace = true
 description = "Switchboard: one main agent that routes to task sub-agents (hub, agent CLI, client protocol)."
 
 [dependencies]
+bend-plugins = { path = "../plugins" }
 bise-catalog = { path = "../catalog" }
 bise-home = { path = "../home" }
 bise-session = { path = "../session" }

@@ -16,6 +16,7 @@ bise-catalog = { path = "../catalog" }
 bise-home = { path = "../home" }
 bise-session = { path = "../session" }
 bend-plugins = { path = "../plugins" }
+bise-computer-use = { path = "../computer-use" }
 bend-tui = { path = "../tui" }
 switchboard = { path = "../switchboard" }
 serde_json = "1"

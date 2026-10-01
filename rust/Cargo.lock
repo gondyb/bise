@@ -76,6 +76,7 @@ dependencies = [
  "bend-plugins",
  "bend-tui",
  "bise-catalog",
+ "bise-computer-use",
  "bise-home",
  "bise-session",
  "serde_json",
@@ -147,6 +148,15 @@ dependencies = [
  "libc",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "bise-computer-use"
+version = "0.1.0"
+dependencies = [
+ "bise-home",
+ "libc",
+ "serde_json",
 ]
 
 [[package]]
@@ -1626,6 +1636,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "switchboard"
 version = "0.1.0"
 dependencies = [
+ "bend-plugins",
  "bise-catalog",
  "bise-home",
  "bise-session",

@@ -1,0 +1,13 @@
+<!doctype html>
+<title>Slow page</title>
+<h1>Slow page</h1>
+<div id="later"></div>
+<div id="modal" style="position:fixed; inset:0; z-index:10; background:rgba(0,0,0,.4)">
+  <div style="background:#fff; margin:100px auto; width:300px; padding:20px">Cookies? <button onclick="document.getElementById('modal').remove()">Accept cookies</button></div>
+</div>
+<button id="under" style="position:relative; z-index:0" onclick="this.textContent='clicked under'">Under the popup</button>
+<script>
+  // A button that shows up after 1.2 s (auto-wait), a text after 1.5 s.
+  setTimeout(() => { const b = document.createElement("button"); b.textContent = "Load more"; b.onclick = () => (b.textContent = "loaded"); document.getElementById("later").append(b); }, 1200);
+  setTimeout(() => { const p = document.createElement("p"); p.textContent = "Results are ready"; document.body.append(p); }, 1500);
+</script>

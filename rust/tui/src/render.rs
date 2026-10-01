@@ -337,6 +337,24 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
+        // computer use (design §8, m_3774): an action's own row, like `$`
+        // and `ƒ`: `↖ clicked "Add to cart" · amazon.fr`, `✗ couldn't …`
+        // in the error color, a pause or a stop dim
+        Ev::Sub { name, preview, .. } if crate::computer_use::sub_row(name, preview).is_some() => {
+            let (did, line) = crate::computer_use::sub_row(name, preview).unwrap_or((crate::computer_use::Did::Done, String::new()));
+            let room = width.saturating_sub(3);
+            match did {
+                crate::computer_use::Did::Done => vec![Line::from(vec![
+                    Span::styled(format!(" {} ", crate::computer_use::mark()), dim_st),
+                    Span::styled(fit_chars(&line, room), Style::default().fg(text())),
+                ])],
+                crate::computer_use::Did::Failed => vec![Line::from(vec![
+                    Span::styled(format!(" {} ", crate::theme::glyph(G_FAILED)), err_st),
+                    Span::styled(fit_chars(&line, room), err_st),
+                ])],
+                crate::computer_use::Did::Held => vec![Line::from(vec![Span::raw("   "), Span::styled(fit_chars(&line, room), dim_st)])],
+            }
+        }
         // a sub-call inside a TypeScript run: `↳ github.search_issues ✓`;
         // a failed one says why, in the error color
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![

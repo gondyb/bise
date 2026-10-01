@@ -231,6 +231,15 @@ struct Shell {
     /// step, `bise login`) relaunches it at its next idle, same session
     /// (BISE-266).
     spawn_keys: BTreeMap<String, u64>,
+    /// The plugins each live REPL was spawned with (its workspace, and
+    /// `bend_plugins::resolve::fingerprint` of its roots, by agent dir): a
+    /// plugin installed, removed, enabled or edited since relaunches it at
+    /// its next idle, same session, so it gets the new tools and skills.
+    /// Never the TUI: only the REPL restarts (the user: a recording or a
+    /// draft in progress must survive).
+    spawn_plugins: BTreeMap<String, (PathBuf, u64)>,
+    /// The last plugins check (every 2 s on the tick).
+    plugins_checked: Option<std::time::Instant>,
     /// The small model failed and agent_model answered: role lines use
     /// agent_model for the rest of this hub's life (BISE-126).
     small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -257,6 +266,8 @@ struct Shell {
     /// The PR poller (pr-design §7, `forge::poll`), on its own thread;
     /// its answers come back as `Input::Prs`.
     prs: Option<crate::forge::poll::Poller>,
+    /// computer use's events.jsonl: each stop, one line in main's feed
+    cu: crate::computer_use::Watch,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -791,6 +802,10 @@ impl Shell {
             Effect::Journal(ev) => {
                 let _ = writeln!(self.journal, "{}", ev);
                 let _ = self.journal.flush();
+                // /drop (design §7.3): its tab group closes too
+                if let Some(name) = crate::computer_use::archived(&ev) {
+                    crate::computer_use::drop_agent(name);
+                }
             }
             Effect::Spawn {
                 agent,
@@ -1151,6 +1166,35 @@ impl Shell {
         self.switch_idle_repls();
     }
 
+    /// The plugins of a live REPL changed since it was spawned (design:
+    /// docs/plugins.md "Reload on change"): it relaunches at its next idle,
+    /// same session and port, like a key change; a busy one finishes its
+    /// turn first. At most every 2 s unless `now`.
+    fn plugins_changed(&mut self, now: bool) {
+        if !now && self.plugins_checked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
+            return;
+        }
+        self.plugins_checked = Some(std::time::Instant::now());
+        let mut by_ws: BTreeMap<PathBuf, u64> = BTreeMap::new();
+        let mut stale = Vec::new();
+        for (d, (ws, h)) in &self.spawn_plugins {
+            if !self.repls.contains_key(d) || self.switching.contains_key(d) || self.reload_repls.contains(d) {
+                continue;
+            }
+            let cur = *by_ws.entry(ws.clone()).or_insert_with(|| plugins_fingerprint(ws));
+            if cur != *h {
+                stale.push(d.clone());
+            }
+        }
+        for d in stale {
+            log_line(&self.opts.paths, &format!("plugins changed: the REPL of {} relaunches at its next idle", d));
+            self.reload_repls.insert(d);
+        }
+        if !self.reload_repls.is_empty() {
+            self.switch_idle_repls();
+        }
+    }
+
     /// Every idle REPL still on another version's binary, or adopted by
     /// a reload (BISE-131), is asked to reload (a turn boundary: it
     /// checkpoints and exits); the hub then restarts it on its own
@@ -1312,6 +1356,7 @@ impl Shell {
                     .to_string(),
             )
             .env_remove("BEND_CONTINUE")
+            .env_remove("BEND_FRESH_PROMPT")
             .env_remove("BEND_CRASH_NOTE")
             // this hub's sb-core is not the agents' business (a hub an
             // agent starts picks its own)
@@ -1323,6 +1368,9 @@ impl Shell {
         }
         let keys = self.opts.spawn_env.map(|f| f()).unwrap_or_default();
         self.spawn_keys.insert(dir.clone(), hash_keys(&keys));
+        let ws = PathBuf::from(&a.ws.path);
+        let fp = plugins_fingerprint(&ws);
+        self.spawn_plugins.insert(dir.clone(), (ws, fp));
         for (k, v) in keys {
             match v {
                 Some(v) => cmd.env(k, v),
@@ -1334,7 +1382,14 @@ impl Shell {
         crate::procs::own_session(&mut cmd);
         if resume && cont && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
+            // its plugins changed since its prompt was built: the restored
+            // session takes this start's prompt (runtime/persist.bend
+            // with_cfg), else it never learns of a new plugin
+            if prompt_is_stale(&adir, fp) {
+                cmd.env("BEND_FRESH_PROMPT", "1");
+            }
         }
+        let _ = std::fs::write(adir.join(PROMPT_PLUGINS_FILE), fp.to_string());
         if let Some(n) = crash_note {
             cmd.env("BEND_CRASH_NOTE", n);
         }
@@ -1348,10 +1403,11 @@ impl Shell {
             stall_for_tests();
             // sb, the hub's PATH, the user's login-shell PATH, the
             // standard dirs; the model is told once whether rg and git
-            // are there (BISE-166). Here, off the hub's loop: the first
-            // spawn may wait for the login shell (read once, at most 3 s)
+            // are there (BISE-166), then which plugins it has and what
+            // for. Here, off the hub's loop: the first spawn may wait for
+            // the login shell (read once, at most 3 s)
             let agent_path = crate::tools_env::hub_agent_path(&paths.bin_dir());
-            cmd.env("BEND_TOOLS_NOTE", crate::tools_env::tools_note_for(&agent_path))
+            cmd.env("BEND_TOOLS_NOTE", crate::tools_env::session_note(&agent_path, &workdir))
                 .env("PATH", agent_path);
             // the AGENTS.md files of its working folder (a task: its
             // worktree's), read again at each start and /reload (BISE-232)
@@ -1435,6 +1491,7 @@ impl Shell {
                 leftover,
             });
             self.keys_changed();
+            self.plugins_changed(true);
         } else {
             self.step(Input::ReplLine {
                 agent: name,
@@ -2042,6 +2099,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
         spawn_keys: BTreeMap::new(),
+        spawn_plugins: BTreeMap::new(),
+        plugins_checked: None,
         small_broken: Default::default(),
         setup: None,
         archived: BTreeSet::new(),
@@ -2055,6 +2114,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         lands: crate::land::Queue::default(),
         features: features::Features::load(&paths.state),
         prs: None,
+        cu: crate::computer_use::Watch::new(),
     };
     // the features' facts (dev-flow §5.1), off the loop
     sh.refresh_features();
@@ -2151,9 +2211,14 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.step(i);
                 if tick {
                     sh.check_starts();
+                    sh.plugins_changed(false);
                     sh.switch_idle_repls();
                     sh.announce_update();
                     sh.plan_prs();
+                    // computer use (design §7.3): each stop, one line in main's feed
+                    for l in sh.cu.poll() {
+                        sh.feed(crate::model::MAIN, &format!("sb computer : {}", crate::util::wire_escape(&l)));
+                    }
                 }
             }
             Msg::ReplConnected {
@@ -2381,6 +2446,23 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
 }
 
 /// A hash of a REPL's spawn keys (never the keys themselves, kept).
+/// The plugins fingerprint of a workspace's roots (built-in, user,
+/// `<ws>/.agents/plugins`, the enable state).
+/// In an agent's dir: the plugins fingerprint its REPL's prompt was
+/// last built with.
+const PROMPT_PLUGINS_FILE: &str = "prompt-plugins.fp";
+
+/// Whether a session's prompt predates its plugins: the fingerprint of
+/// its last start differs from `fp` (none recorded: a session from
+/// before this file, its prompt rebuilt once).
+fn prompt_is_stale(adir: &Path, fp: u64) -> bool {
+    std::fs::read_to_string(adir.join(PROMPT_PLUGINS_FILE)).map(|s| s.trim() != fp.to_string()).unwrap_or(true)
+}
+
+fn plugins_fingerprint(ws: &Path) -> u64 {
+    bend_plugins::resolve::fingerprint(&bend_plugins::resolve::Roots::standard(Some(ws)))
+}
+
 fn hash_keys(keys: &[(String, Option<String>)]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
