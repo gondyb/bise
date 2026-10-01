@@ -262,7 +262,10 @@ The helper (`dev.bise.computer-use`) is started by the broker with
 - Commands: `bise computer-use stop <agent>|--all`, `resume <agent>`,
   `drop <agent>` (the hub calls it at `/drop`), `setup-check --json`
   (the `/computer-use` rows), `repair` (rewrites manifests and shim),
-  `live-test --json`.
+  `live-test --json`, `request accessibility|screen_recording` (C5
+  `request` through the broker; `screen_recording` answers
+  `{"what","relaunching":true}` when macOS quits the helper mid-request,
+  d2b5d61).
 
 ## Wave 1 · cu-broker
 
