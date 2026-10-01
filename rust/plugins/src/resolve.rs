@@ -161,6 +161,45 @@ impl Roots {
     }
 }
 
+/// What a session's plugins depend on, as one number: the enable state and,
+/// in each root, every plugin folder's name and the size and mtime of its
+/// `plugin.json`, `mcp.json` and `skills/*/SKILL.md`. Cheap (stats only):
+/// the hub compares it every 2 s and relaunches a REPL whose plugins
+/// changed at its next idle (an installed, removed, enabled or edited
+/// plugin), same session.
+pub fn fingerprint(roots: &Roots) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    roots.disabled.hash(&mut h);
+    let stat = |p: &Path, h: &mut std::collections::hash_map::DefaultHasher| {
+        if let Ok(m) = std::fs::metadata(p) {
+            m.len().hash(h);
+            m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).hash(h);
+        }
+    };
+    let sorted = |d: &Path| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path()).collect();
+        v.sort();
+        v
+    };
+    for root in [&roots.builtin, &roots.user, &roots.workspace].into_iter().flatten() {
+        root.hash(&mut h);
+        for p in sorted(root) {
+            if !p.is_dir() {
+                continue;
+            }
+            p.hash(&mut h);
+            stat(&p.join("plugin.json"), &mut h);
+            stat(&p.join("mcp.json"), &mut h);
+            for s in sorted(&p.join("skills")) {
+                s.hash(&mut h);
+                stat(&s.join("SKILL.md"), &mut h);
+            }
+        }
+    }
+    h.finish()
+}
+
 /// The built-in root: `plugins/` in bise's app root (`$BISE_APP_ROOT`;
 /// else the executable's folder when it is a version dir or a bundle, i.e.
 /// holds `VERSION`; else, in dev, the source tree the executable was built

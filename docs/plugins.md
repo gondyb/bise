@@ -192,8 +192,25 @@ tests use temp dirs.
   `invalid`), root, skills, MCP servers, unsupported components, then the
   diagnostics. Static: it does not start servers.
 - `bend-harness plugins enable|disable <name>`: edits
-  `~/.bend-harness/plugins.json`; applies at the next session start or
-  `/reload`.
+  `~/.bend-harness/plugins.json`; applies at the agents' next idle (below).
+
+### Reload on change
+
+A plugin installed, removed, enabled, disabled or edited while bise runs
+reaches every agent without a restart of the TUI (the user: a voice
+recording, a draft, the scroll must survive). The hub keeps, per live
+REPL, its workspace and `bend_plugins::resolve::fingerprint` of its roots
+(the enable state; in the built-in, user and workspace roots each plugin
+folder and the size and mtime of its `plugin.json`, `mcp.json` and
+`skills/*/SKILL.md`), taken at spawn. Every 2 s on the tick, and when an
+agent goes idle, it compares: a REPL whose fingerprint moved relaunches
+at its next idle, same session and port (the path a key change and a
+version switch take, `switch_idle_repls`); a busy one finishes its turn
+first. The new REPL starts a fresh bridge and lists the new skills in its
+prompt. Only REPLs restart: the TUI and the hub keep running. Test:
+`tests/plugins_reload_e2e.py` (install → relaunch at idle, the
+conversation kept, the plugin loaded; nothing changes → no relaunch; a
+disable → a relaunch).
 - `/plugins` in the TUI prints the workspace's static listing (the
   single-agent TUI, gone with BISE-113, also showed its session's
   `D/report.txt`).

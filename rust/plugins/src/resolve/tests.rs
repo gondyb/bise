@@ -259,3 +259,31 @@ fn the_repo_ships_the_computer_plugin() {
     assert_eq!(p.servers.len(), 1);
     assert_eq!(p.servers[0].args, ["computer-use", "mcp"]);
 }
+
+#[test]
+fn the_fingerprint_moves_when_a_plugin_comes_goes_or_changes() {
+    let t = tmp("fp");
+    let mut r = roots(&t);
+    let empty = fingerprint(&r);
+    assert_eq!(fingerprint(&r), empty, "stable");
+    write(&t.0.join("user/demo/plugin.json"), &manifest("demo"));
+    let one = fingerprint(&r);
+    assert_ne!(one, empty, "installed");
+    write(&t.0.join("user/demo/mcp.json"), "{}");
+    let mcp = fingerprint(&r);
+    assert_ne!(mcp, one, "an mcp.json added");
+    write(&t.0.join("user/demo/skills/s/SKILL.md"), "---\nname: s\ndescription: d\n---\n");
+    let skill = fingerprint(&r);
+    assert_ne!(skill, mcp, "a skill added");
+    write(&t.0.join("user/demo/mcp.json"), "{\"mcpServers\":{}}");
+    assert_ne!(fingerprint(&r), skill, "mcp.json edited");
+    let edited = fingerprint(&r);
+    r.disabled = vec!["demo".into()];
+    assert_ne!(fingerprint(&r), edited, "disabled");
+    r.disabled.clear();
+    // a file that isn't a plugin folder changes nothing
+    write(&t.0.join("user/notes.txt"), "x");
+    assert_eq!(fingerprint(&r), edited);
+    fs::remove_dir_all(t.0.join("user/demo")).unwrap();
+    assert_eq!(fingerprint(&r), empty, "removed: back to empty");
+}

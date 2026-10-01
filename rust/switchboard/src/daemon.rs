@@ -226,6 +226,15 @@ struct Shell {
     /// step, `bise login`) relaunches it at its next idle, same session
     /// (BISE-266).
     spawn_keys: BTreeMap<String, u64>,
+    /// The plugins each live REPL was spawned with (its workspace, and
+    /// `bend_plugins::resolve::fingerprint` of its roots, by agent dir): a
+    /// plugin installed, removed, enabled or edited since relaunches it at
+    /// its next idle, same session, so it gets the new tools and skills.
+    /// Never the TUI: only the REPL restarts (the user: a recording or a
+    /// draft in progress must survive).
+    spawn_plugins: BTreeMap<String, (PathBuf, u64)>,
+    /// The last plugins check (every 2 s on the tick).
+    plugins_checked: Option<std::time::Instant>,
     /// The small model failed and agent_model answered: role lines use
     /// agent_model for the rest of this hub's life (BISE-126).
     small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -1108,6 +1117,35 @@ impl Shell {
         self.switch_idle_repls();
     }
 
+    /// The plugins of a live REPL changed since it was spawned (design:
+    /// docs/plugins.md "Reload on change"): it relaunches at its next idle,
+    /// same session and port, like a key change; a busy one finishes its
+    /// turn first. At most every 2 s unless `now`.
+    fn plugins_changed(&mut self, now: bool) {
+        if !now && self.plugins_checked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
+            return;
+        }
+        self.plugins_checked = Some(std::time::Instant::now());
+        let mut by_ws: BTreeMap<PathBuf, u64> = BTreeMap::new();
+        let mut stale = Vec::new();
+        for (d, (ws, h)) in &self.spawn_plugins {
+            if !self.repls.contains_key(d) || self.switching.contains_key(d) || self.reload_repls.contains(d) {
+                continue;
+            }
+            let cur = *by_ws.entry(ws.clone()).or_insert_with(|| plugins_fingerprint(ws));
+            if cur != *h {
+                stale.push(d.clone());
+            }
+        }
+        for d in stale {
+            log_line(&self.opts.paths, &format!("plugins changed: the REPL of {} relaunches at its next idle", d));
+            self.reload_repls.insert(d);
+        }
+        if !self.reload_repls.is_empty() {
+            self.switch_idle_repls();
+        }
+    }
+
     /// Every idle REPL still on another version's binary, or adopted by
     /// a reload (BISE-131), is asked to reload (a turn boundary: it
     /// checkpoints and exits); the hub then restarts it on its own
@@ -1280,6 +1318,9 @@ impl Shell {
         }
         let keys = self.opts.spawn_env.map(|f| f()).unwrap_or_default();
         self.spawn_keys.insert(dir.clone(), hash_keys(&keys));
+        let ws = PathBuf::from(&a.ws.path);
+        let fp = plugins_fingerprint(&ws);
+        self.spawn_plugins.insert(dir.clone(), (ws, fp));
         for (k, v) in keys {
             match v {
                 Some(v) => cmd.env(k, v),
@@ -1392,6 +1433,7 @@ impl Shell {
                 leftover,
             });
             self.keys_changed();
+            self.plugins_changed(true);
         } else {
             self.step(Input::ReplLine {
                 agent: name,
@@ -1999,6 +2041,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
         spawn_keys: BTreeMap::new(),
+        spawn_plugins: BTreeMap::new(),
+        plugins_checked: None,
         small_broken: Default::default(),
         setup: None,
         archived: BTreeSet::new(),
@@ -2106,6 +2150,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.step(i);
                 if tick {
                     sh.check_starts();
+                    sh.plugins_changed(false);
                     sh.switch_idle_repls();
                     sh.announce_update();
                     sh.plan_prs();
@@ -2338,6 +2383,12 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
 }
 
 /// A hash of a REPL's spawn keys (never the keys themselves, kept).
+/// The plugins fingerprint of a workspace's roots (built-in, user,
+/// `<ws>/.agents/plugins`, the enable state).
+fn plugins_fingerprint(ws: &Path) -> u64 {
+    bend_plugins::resolve::fingerprint(&bend_plugins::resolve::Roots::standard(Some(ws)))
+}
+
 fn hash_keys(keys: &[(String, Option<String>)]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
