@@ -19,15 +19,21 @@ pub static RELEASES: AtomicBool = AtomicBool::new(false);
 /// The real ports: the default mic and speaker, the listener of the
 /// voice role, Voxtral TTS, the small-jobs "on it".
 fn live_ports(listen: &super::ListenJob) -> Result<Ports, String> {
-    let speaker = super::audio::open_speaker().unwrap_or_else(|_| Box::new(super::audio::NoSpeaker));
+    // round 2: the mic and the speaker together, the echo cancelled when
+    // the platform can; no output device: the words show, nothing plays
+    let (mic, speaker, aec): (Box<dyn super::Mic>, Box<dyn super::Speaker>, bool) = match super::audio::open_voice_io() {
+        Ok(io) => (io.mic, io.speaker, io.aec),
+        Err(_) => (Box::new(super::audio::CpalMic), Box::new(super::audio::NoSpeaker), false),
+    };
     Ok(Ports {
-        mic: Box::new(super::audio::CpalMic),
+        mic,
         vad: Box::new(super::vad::Vad::new()),
         speaker,
         listener: super::listen::listener_for(listen),
         synth: Box::new(super::tts::VoxtralTts),
         acker: Box::new(super::ack::SmallAck),
         route: super::route::output_route(),
+        aec,
     })
 }
 
@@ -99,6 +105,7 @@ fn fake_ports(wav: &str) -> Result<(Ports, Jobs), String> {
         synth: Box::new(FakeSynth),
         acker: Box::new(super::ack::SmallAck),
         route: super::Route::Headphones,
+        aec: false,
     };
     let fake = |name: &str| super::Endpoint {
         name: name.into(),
@@ -278,8 +285,55 @@ pub(crate) fn pump(app: &mut App) {
     if vm.agent() != app.sb.focus {
         vm.set_agent(&app.sb.focus.clone());
     }
+    // the agent's work since your last message, minified for the pane
+    vm.set_work(work_of(&app.events));
     let acts = vm.tick(Instant::now());
     apply(app, acts);
+}
+
+/// How many work lines the pane may show (it keeps the last that fit).
+const WORK_MAX: usize = 12;
+
+/// One line, cut to `n` characters with `…`.
+fn short(s: &str, n: usize) -> String {
+    let line = s.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    if line.chars().count() <= n {
+        line.to_string()
+    } else {
+        format!("{}…", line.chars().take(n.saturating_sub(1)).collect::<String>())
+    }
+}
+
+/// The agent's tool calls and thinking since your last message in the
+/// feed in view (round 2: the minified history beside the kiss).
+pub(crate) fn work_of(events: &[Ev]) -> Vec<super::Work> {
+    use super::{Work, WorkKind, WorkState};
+    let from = events.iter().rposition(|e| matches!(e, Ev::You(..))).map_or(0, |i| i + 1);
+    let mut out: Vec<Work> = Vec::new();
+    for e in &events[from..] {
+        match e {
+            Ev::Tool(t) => {
+                let name = t.name.clone().unwrap_or_else(|| "tool".into());
+                let what = t.intent.clone().or_else(|| t.args.clone()).unwrap_or_default();
+                let text = if what.trim().is_empty() { name } else { format!("{} {}", name, short(&what, 48)) };
+                let state = match t.state {
+                    crate::wire::ToolState::Run => WorkState::Running,
+                    crate::wire::ToolState::Ok => WorkState::Done,
+                    crate::wire::ToolState::Fail => WorkState::Failed,
+                };
+                out.push(Work { kind: WorkKind::Tool, text, state });
+            }
+            Ev::Thinking { text, .. } => {
+                out.push(Work { kind: WorkKind::Thinking, text: short(text, 48), state: WorkState::Done })
+            }
+            Ev::Assistant(text) => {
+                out.push(Work { kind: WorkKind::Message, text: short(text, 48), state: WorkState::Done })
+            }
+            _ => {}
+        }
+    }
+    let n = out.len();
+    out.split_off(n.saturating_sub(WORK_MAX))
 }
 
 /// The feed events of `agent`'s line (live, not replayed): its messages
@@ -319,6 +373,11 @@ pub(crate) fn space(app: &mut App, k: &KeyEvent) -> bool {
 /// to their handlers (ctrl+c, the agents). True: taken.
 pub(crate) fn key(app: &mut App, k: &KeyEvent) -> bool {
     let Some(vm) = app.voice_mode.as_mut() else { return false };
+    // round 2 (the user): ctrl+c leaves voice mode, like esc, never bise
+    if k.code == KeyCode::Char('c') && k.modifiers == KeyModifiers::CONTROL {
+        leave(app);
+        return true;
+    }
     let plain = (k.modifiers - KeyModifiers::SHIFT).is_empty();
     if vm.typing() {
         match k.code {

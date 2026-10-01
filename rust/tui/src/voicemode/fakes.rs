@@ -198,6 +198,7 @@ impl Fakes {
             synth: Box::new(FakeSynth(self.synth.clone())),
             acker: Box::new(FakeAcker(self.acker.clone())),
             route,
+            aec: false,
         }
     }
 

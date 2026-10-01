@@ -73,6 +73,42 @@ pub struct Ports {
     pub synth: Box<dyn Synthesizer>,
     pub acker: Box<dyn Acker>,
     pub route: Route,
+    /// the speaker's echo is cancelled in the mic (VoiceProcessingIO):
+    /// barge-in works on speakers too
+    pub aec: bool,
+}
+
+/// Round 2: speech with no words yet (the batch listener has none until
+/// the turn ends) cuts the agent off after this long; "mm" is shorter.
+const BARGE_IN_NO_WORDS: Duration = Duration::from_millis(800);
+/// Without echo cancelling, the mic stays shut this long after the
+/// agent's voice ends (the speaker's buffer and the room's tail).
+const ECHO_TAIL: Duration = Duration::from_millis(500);
+/// What is heard this long after the agent spoke is checked for its echo.
+const ECHO_WINDOW: Duration = Duration::from_secs(3);
+
+/// Lowercase letters and digits of each word (the echo check).
+fn norm_words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// `heard` is the agent's own voice coming back through the mic: most of
+/// its words are words the agent just said (round 2: on speakers it
+/// answered itself).
+pub fn is_echo(heard: &str, said: &str) -> bool {
+    let h = norm_words(heard);
+    if h.is_empty() {
+        return false;
+    }
+    let s: std::collections::HashSet<String> = norm_words(said).into_iter().collect();
+    if s.is_empty() {
+        return false;
+    }
+    let hits = h.iter().filter(|w| s.contains(*w)).count();
+    hits * 10 >= h.len() * 6
 }
 
 /// The calls voice mode makes; a missing voice or small-jobs model
@@ -269,6 +305,11 @@ pub struct VoiceMode {
     wave_at: Instant,
     /// the agent's work this turn, minified for the pane's right side
     work: Vec<super::Work>,
+    /// the speaker's echo is cancelled in the mic
+    aec: bool,
+    /// what the agent said lately (the echo check) and when its voice ended
+    echo_said: String,
+    speech_end: Option<Instant>,
 }
 
 impl VoiceMode {
@@ -294,6 +335,9 @@ impl VoiceMode {
             started: now,
             cfg,
             route: ports.route,
+            aec: ports.aec,
+            echo_said: String::new(),
+            speech_end: None,
             releases,
             _mic_stream: mic_stream,
             mic_rx,
@@ -500,7 +544,7 @@ impl VoiceMode {
         self.pump_mic(now);
         self.pump_heard(now);
         self.pump_ack(now);
-        self.pump_speech();
+        self.pump_speech(now);
         self.turn_taking(now);
         self.wave(now);
         if self.failed.as_ref().is_some_and(|(_, t)| now.duration_since(*t) > FAIL_SHOWN) {
@@ -515,7 +559,7 @@ impl VoiceMode {
     /// One level per WAVE_STEP for each lane (a late tick fills the gap
     /// with the level now).
     fn wave(&mut self, now: Instant) {
-        let you = if self.mic_live() { self._mic_stream.level() } else { 0.0 };
+        let you = if self.mic_live_at(now) { self._mic_stream.level() } else { 0.0 };
         let agent = self.speaker.level();
         while now.duration_since(self.wave_at) >= WAVE_STEP {
             self.wave_at += WAVE_STEP;
@@ -533,17 +577,19 @@ impl VoiceMode {
         self.speech.as_ref().is_some_and(|s| !s.over) || !self.queue.is_empty()
     }
 
-    /// Your voice may cut the agent off: headphones (or hands-free asked).
+    /// Your voice may cut the agent off: the echo is cancelled, or the
+    /// voice is in headphones. Never on bare speakers, hands-free or not
+    /// (round 2: it heard itself and answered itself).
     fn barge_ok(&self) -> bool {
-        match self.cfg.listen {
-            ListenMode::HandsFree => true,
-            ListenMode::Hold => false,
-            ListenMode::Auto => self.route == Route::Headphones,
-        }
+        self.cfg.listen != ListenMode::Hold && (self.aec || self.route == Route::Headphones)
     }
 
     /// The mic's words go to the listener now.
     fn mic_live(&self) -> bool {
+        self.mic_live_at(Instant::now())
+    }
+
+    fn mic_live_at(&self, now: Instant) -> bool {
         if self.muted || self.typing {
             return false;
         }
@@ -553,12 +599,27 @@ impl VoiceMode {
         if self.speaking() && !self.barge_ok() {
             return self.holding;
         }
+        // the voice just ended: its tail is still in the room
+        if !self.barge_ok() && !self.holding && self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_TAIL) {
+            return false;
+        }
         true
     }
 
-    fn pump_mic(&mut self, _now: Instant) {
+    /// `heard` is the agent's own voice (while it talks or just after).
+    fn echo(&self, heard: &str, now: Instant) -> bool {
+        let recent = self.speaking() || self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_WINDOW);
+        recent && is_echo(heard, &self.echo_said)
+    }
+
+    /// The agent's work this turn (live.rs builds it from the feed).
+    pub fn set_work(&mut self, work: Vec<super::Work>) {
+        self.work = work;
+    }
+
+    fn pump_mic(&mut self, now: Instant) {
         while let Ok(b) = self.mic_rx.try_recv() {
-            if !self.mic_live() || self.flushing.is_some() {
+            if !self.mic_live_at(now) || self.flushing.is_some() {
                 continue;
             }
             let voiced = self.vad.feed(&b.pcm);
@@ -636,7 +697,22 @@ impl VoiceMode {
 
     /// The speech: the next one starts, its synth streams to the speaker
     /// sentence by sentence, the speaker's clock lights its words.
-    fn pump_speech(&mut self) {
+    fn pump_speech(&mut self, now: Instant) {
+        let was_talking = self.speaking();
+        self.pump_speech_step();
+        // the echo check: what is said, and when the voice stopped
+        if let Some(sp) = self.speech.as_ref().filter(|s| !s.over) {
+            let said: String = sp.spoken.sentences.iter().map(|s| s.say.as_str()).collect::<Vec<_>>().join(" ");
+            if !self.echo_said.ends_with(&said) {
+                self.echo_said = said;
+            }
+        }
+        if was_talking && !self.speaking() {
+            self.speech_end = Some(now);
+        }
+    }
+
+    fn pump_speech_step(&mut self) {
         if self.speech.as_ref().is_none_or(|s| s.over) {
             if let Some(next) = self.queue.pop_front() {
                 if let Some(old) = self.speech.take() {
@@ -753,8 +829,12 @@ impl VoiceMode {
             if let (Some(start), Some(last)) = (self.speech_start, self.last_voice) {
                 let talking = now.saturating_duration_since(last) < PAUSE;
                 let long = last.saturating_duration_since(start);
-                let words = !only_backchannels(&self.heard);
-                if talking && ((long >= BARGE_IN && words) || long >= BARGE_IN_ANYWAY) {
+                // the batch listener has no words before the turn ends:
+                // the length of the speech decides ("mm" is short)
+                let none_yet = self.heard.trim().is_empty();
+                let words = !only_backchannels(&self.heard) && !self.echo(&self.heard, now);
+                let cut = (long >= BARGE_IN && words) || (none_yet && long >= BARGE_IN_NO_WORDS) || long >= BARGE_IN_ANYWAY;
+                if talking && cut && !(!none_yet && self.echo(&self.heard, now)) {
                     self.cut_in(now, false);
                 } else if !talking && !self.holding {
                     // "mm", "ok": the agent goes on
@@ -794,7 +874,8 @@ impl VoiceMode {
         self.flushing = None;
         let text = self.heard.trim().to_string();
         self.reset_turn();
-        if text.is_empty() {
+        // the agent's own voice through the mic: never a turn
+        if text.is_empty() || self.echo(&text, now) {
             return;
         }
         self.turns += 1;
@@ -935,7 +1016,7 @@ impl VoiceMode {
             agent: self.agent.clone(),
             who,
             words,
-            you_level: if self.mic_live() { self._mic_stream.level() } else { 0.0 },
+            you_level: if self.mic_live_at(now) { self._mic_stream.level() } else { 0.0 },
             agent_level: self.speaker.level(),
             you_wave: self.you_wave.iter().copied().collect(),
             agent_wave: self.agent_wave.iter().copied().collect(),

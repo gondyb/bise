@@ -513,6 +513,84 @@ fn backchannels_are_words_that_never_count() {
     assert!(only_backchannels(" ouais d'accord"));
 }
 
+// ---- round 2: the echo (the user: on speakers it answered itself) ----
+
+#[test]
+fn its_own_words_through_the_mic_are_never_a_turn() {
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" go");
+    r.message("Running the tests now.");
+    r.tick();
+    r.synth_all(0, 24_000);
+    r.done(1);
+    r.tick();
+    assert_ne!(r.phase(), Phase::Speaking);
+    // the room gives its last words back
+    r.talk(500);
+    r.hear(" running the tests now");
+    r.quiet(1600);
+    r.flushed();
+    assert!(sends(&r.tick()).is_empty(), "its echo is dropped");
+    // later, your own words go
+    r.at += 4_000;
+    assert_eq!(sends(&r.turn(" what about the docs")), ["what about the docs"]);
+}
+
+#[test]
+fn hands_free_on_bare_speakers_never_lets_its_voice_cut_itself() {
+    let cfg = VoiceModeConfig { listen: ListenMode::HandsFree, ..VoiceModeConfig::default() };
+    let mut r = Rig::with(Route::Speakers, cfg, true, true, false);
+    r.turn(" go");
+    r.sent();
+    r.message("Running the tests now.");
+    r.tick();
+    r.talk(1500);
+    assert!(r.sent().is_empty(), "the mic waits while it talks");
+    assert_eq!(r.f.speaker.lock().unwrap().stops, 0);
+}
+
+#[test]
+fn with_echo_cancelling_speakers_cut_in_by_voice() {
+    let f = Fakes::new();
+    let mut p = f.ports(Route::Speakers);
+    p.aec = true;
+    let t0 = Instant::now();
+    let vm = VoiceMode::start("main", p, f.jobs(true, false), VoiceModeConfig::default(), true, t0).unwrap();
+    let mut r = Rig { f, vm, t0, at: 0 };
+    r.turn(" go");
+    r.message("Running the tests now.");
+    r.tick();
+    // no words yet (the batch listener): 0.8 s of speech cuts in
+    r.talk(500);
+    assert_eq!(r.f.speaker.lock().unwrap().stops, 0, "0.5 s: maybe a mm");
+    r.talk(400);
+    assert_eq!(r.f.speaker.lock().unwrap().stops, 1);
+}
+
+#[test]
+fn without_echo_cancelling_the_mic_waits_for_the_voice_tail() {
+    let mut r = Rig::new(Route::Speakers);
+    r.turn(" go");
+    r.message("Done.");
+    r.tick();
+    r.synth_all(0, 2_400);
+    r.done(1);
+    r.tick();
+    r.sent();
+    r.talk(300);
+    assert!(!r.sent().contains(&"audio".to_string()), "the tail is still in the room");
+    r.talk(400);
+    assert!(r.sent().contains(&"audio".to_string()));
+}
+
+#[test]
+fn the_echo_check_is_about_most_of_the_words() {
+    assert!(is_echo(" running the tests now", "Running the tests now."));
+    assert!(is_echo("les tests passent", "Les tests passent tous."));
+    assert!(!is_echo(" no stop, use the other branch", "Running the tests now."));
+    assert!(!is_echo(" hello", ""));
+}
+
 #[test]
 fn a_mic_that_cannot_open_keeps_voice_mode_closed() {
     let f = Fakes::new();
