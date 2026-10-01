@@ -25,6 +25,7 @@ pub mod cli;
 pub mod client;
 pub mod core;
 pub mod daemon;
+pub mod flow;
 pub mod model;
 pub mod paths;
 pub mod place;

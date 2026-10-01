@@ -435,6 +435,8 @@ impl Shell {
     /// id, the effort ("" when the model takes none), and the words it
     /// takes (the `/reasoning` list).
     fn snapshot(&mut self) -> Value {
+        // the repo's flow, as config.toml says now (flow-prompts saves it)
+        self.hub.flow = crate::flow::FlowConfig::load(&self.opts.paths).mode;
         let mut snap = self.hub.snapshot(now_ms());
         // one gate card for several agents' identical calls: it names them all
         self.gate_card_agents(&mut snap);

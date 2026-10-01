@@ -597,6 +597,9 @@ pub struct Hub {
     /// `waits to land · 2nd`, set by the daemon). Runtime only.
     pub prs: BTreeMap<String, crate::place::PrSnapshot>,
     pub lids: BTreeMap<String, String>,
+    /// The repo's `[flow] mode` (None: not set), for the views' held
+    /// header (`lands via PRs` / `lands on main`); the daemon reads it.
+    pub flow: Option<crate::flow::FlowMode>,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -742,6 +745,7 @@ impl Hub {
             on_you: BTreeSet::new(),
             prs: BTreeMap::new(),
             lids: BTreeMap::new(),
+            flow: None,
             dirty: false,
             link,
             revive: None,
@@ -1051,7 +1055,8 @@ impl Hub {
             .collect();
         let places = crate::place::places(&self.st, &self.prs);
         let places = crate::place::views(&places, &self.lids, now, PR_STALE_MS);
-        json!({"ev": "state", "agents": agents, "cards": cards, "places": places})
+        json!({"ev": "state", "agents": agents, "cards": cards, "places": places,
+               "flow": self.flow.map(|f| f.as_str())})
     }
 
     /// A question card whose asker heard from main since, without a
