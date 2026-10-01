@@ -262,12 +262,13 @@ item:
 ┃   14 commits on computer-use, 3 behind main · +3,120 −410
 ┃   the check passes. nothing of it is on main.
 ┃
-┃   1 build it to try
+┃   1 try it
 ┃   2 show the diff
 ┃   3 not yet
 ```
 
-`1` syncs if behind, then builds the branch with the repo's `[flow] try`
+`1 try it` (designer: one step for you, it builds then opens) syncs if
+behind, then builds the branch with the repo's `[flow] try`
 command, in a temp worktree, without touching your folder or the running
 version. In this repo: `scripts/versions.sh build computer-use`, which
 prints a version dir; the item then says how to run it: `try it in
@@ -281,16 +282,21 @@ trial").
 **The merge, on your go only.** After a try the item turns into:
 
 ```
-┃ ? computer-use: merge it into main?
+┃ ? merge computer-use into main?
 ┃
 ┃   you tried fd25c45 18m ago. 14 commits · the check passes.
 ┃
-┃   1 merge it into main
-┃   2 keep working on it
-┃   3 drop it (the branch is kept 30 days: /restore)
+┃   1 merge
+┃   2 keep working
+┃   3 drop the branch
 ```
 
-`1`: the hub holds the feature's lands, rebases it on main, runs the
+The item names the feature (it may sit there a while). `3` deletes
+work, so it asks once more on the same item: `drop computer-use? 14
+commits go.` `1 drop it` / `2 keep it` (the tip is still kept in
+`refs/switchboard/trash/`, `/restore`). No "always" on either item.
+
+`1 merge`: the hub holds the feature's lands, rebases it on main, runs the
 full check, fast-forwards main (the history stays linear, as in this
 repo), pushes main (`push = true`), archives the feature's agents, then
 deletes the local branch (its tip kept in `refs/switchboard/trash/` like
@@ -406,7 +412,7 @@ flow, and the choice:
 - **Sidebar, trunk flow**: a land waiting shows `…` (in a box's border,
   or as a solo row's mark); ctrl held, its words say `waits to land ·
   2nd`.
-- **Sidebar, a feature branch** (§5.1; designer to confirm): its agents
+- **Sidebar, a feature branch** (§5.1; confirmed by designer): its agents
   land on one branch, so by BISE-306's rule a feature with 2 or more
   live agents is a box, even when each has its own worktree: `╭─ ψ
   computer-use ───── ─`, its agents inside. Its mark (in the border, or

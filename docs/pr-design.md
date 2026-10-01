@@ -164,7 +164,7 @@ row's last column, as before the boxes.
    §7): 2 or more live agents landing on one feature branch make a box,
    even in separate worktrees (they share the branch); its mark is `Δ`
    while its try build builds or is on trial, else `ψ`, never `↑`.
-   Alone, a row with that mark. Designer to confirm.
+   Alone, a row with that mark. Confirmed by designer.
 
 The ready-to-merge item names its place once pr-merge builds it (a
 `place` field on the card); until then the TUI ties a `merge` item to a
