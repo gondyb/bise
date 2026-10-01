@@ -1,4 +1,4 @@
-//! The worktree boxes in the panel (pr-design §4.1): the 6 rules at the
+//! The worktrees in the panel (pr-design §4.1, option B): the 6 rules at the
 //! panel's widths (24, 31, 44), ctrl up and held, NO_COLOR, ASCII.
 
 use super::places::{Place, Pr};
@@ -112,14 +112,22 @@ fn panel_w(width: u16) -> u16 {
     crate::layout::cols(width, 40).panel.unwrap().w
 }
 
-/// Option A at 31 columns (150 wide), at rest: your folder's rows, then
-/// the agents alone in a worktree as plain rows with their mark in the
-/// last column, then a box only for the worktree 2 agents share (its
-/// rows' mark column blank, the border carries it), the inbox.
+/// A section's title row: ` ψ <branch>` at the titles' column.
+fn is_title(l: &str) -> bool {
+    l.starts_with("  ψ ") || l.starts_with("  Δ ")
+}
+
+/// Option B at 31 columns (150 wide), at rest: the `agents` section
+/// holds every agent not in a shared worktree at its number, the solo
+/// ones with their mark in the last column; then a section for the
+/// worktree 2 agents share, its title like `agents` (no box lines, its ↑
+/// in the mark column, its rows' mark column blank), the inbox.
 #[test]
-fn a_box_only_when_they_share() {
+fn a_section_only_when_they_share() {
     let app = mock();
+    let w = panel_w(150) as usize;
     let r = rows(&app, panel_w(150), 24);
+    let title = format!("  ψ sb/dark-mode{}↑", " ".repeat(w - 17));
     let want = [
         "  agents",
         "",
@@ -131,51 +139,70 @@ fn a_box_only_when_they_share() {
         "  7 … release                …",
         "  8 ○ docs                   ↑",
         "",
-        "╭─ ψ sb/dark-mode ───────── ↑ ─",
-        "│ 1 ∿ dark-mode     3m",
-        "╰ 4 ∿ i18n •       42s",
+        title.as_str(),
+        "  1 ∿ dark-mode     3m",
+        "  4 ∿ i18n •       42s",
         "",
         "  inbox",
     ];
     for (k, line) in want.iter().enumerate() {
         assert_eq!(r[k], *line, "row {k}:\n{}", show(&r));
     }
-    // the mark one column from the edge, the columns line up with the box's
-    assert_eq!(r[4].chars().count(), panel_w(150) as usize);
+    // no box line anywhere, not even in the blank column left of the panel
+    assert!(!r.iter().any(|l| l.contains(['╭', '│', '╰', '─'])), "{}", show(&r));
+    // the mark one column from the edge, the title's in the same column
+    assert_eq!(r[4].chars().count(), w);
+    assert_eq!(r[10].chars().count(), w);
     let col = |l: &str, w: &str| l.char_indices().position(|(i, _)| l[i..].starts_with(w));
     assert_eq!(col(&r[2], "1m"), col(&r[11], "3m"), "{}", show(&r));
     assert_eq!(col(&r[2], "1m"), col(&r[4], "5m"), "{}", show(&r));
-    // a long name in the box takes the mark's column back before it is cut
+    // the title in the `agents` title's color, its ↑ by the PR (dim)
+    let (buf, _) = buffer(&app, panel_w(150), 24);
+    assert_eq!(buf[(2, 10)].symbol(), "ψ");
+    assert_eq!((buf[(2, 10)].fg, buf[(4, 10)].fg), (buf[(2, 0)].fg, buf[(2, 0)].fg));
+    assert_eq!((buf[(w as u16 - 1, 10)].symbol(), buf[(w as u16 - 1, 10)].fg), ("↑", dim()));
+    // a long name in the section takes the mark's column back before it is cut
     let mut long = mock();
     long.sb.agents[4].name = "i18n-everywhere".into();
     long.sb.places[0].agents[1] = "i18n-everywhere".into();
     let r = rows(&long, panel_w(150), 24);
-    assert!(r.iter().any(|l| l.starts_with("╰ 4 ∿ i18n-everywhere 42s")), "{}", show(&r));
+    assert!(r.iter().any(|l| l.starts_with("  4 ∿ i18n-everywhere 42s")), "{}", show(&r));
     // the selection follows the rows' order, the numbers stay
     let names: Vec<&str> = app.sb.nav().iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["main", "cookies", "login-fix", "emoji-csv", "palette", "release", "docs", "dark-mode", "i18n"]);
 }
 
-/// A shared box that drops to one live agent is a plain row on the next
-/// draw (its ↑ in the mark column), and a box again when a second one
-/// joins; boxes order by their lowest number.
+/// The `agents` section is in number order, your folder's agents and
+/// the solo ones mixed (designer: they sit at their number).
 #[test]
-fn a_box_down_to_one_agent_is_a_row() {
+fn solo_rows_sit_at_their_number() {
+    let mut app = mock();
+    // dark-mode alone (1) sits between main (0) and cookies (2)
+    app.sb.agents[4].status = "archived".into();
+    let names: Vec<String> = app.sb.blocks()[0].1.iter().map(|a| a.name.clone()).collect();
+    assert_eq!(names, ["main", "dark-mode", "cookies", "login-fix", "emoji-csv", "palette", "release", "docs"]);
+}
+
+/// A shared section that drops to one live agent is a plain row on the
+/// next draw (its ↑ in the mark column), and a section again when a
+/// second one joins; sections order by their lowest number.
+#[test]
+fn a_section_down_to_one_agent_is_a_row() {
     let mut app = mock();
     app.sb.agents[4].status = "archived".into();
     let r = rows(&app, panel_w(150), 24);
-    assert!(!r.iter().any(|l| l.contains('╭') || l.contains('╰')), "{}", show(&r));
+    assert!(!r.iter().any(|l| is_title(l)), "{}", show(&r));
     let dark = r.iter().find(|l| l.contains("dark-mode")).unwrap();
     assert!(dark.starts_with("  1 ∿ dark-mode     3m") && dark.ends_with('↑'), "{}", show(&r));
-    // right after your folder's rows, by its number
-    assert!(r[4].contains("dark-mode") && r[5].contains("login-fix"), "{}", show(&r));
-    // a second one joins: the box is back
+    // at its number, right after main
+    assert!(r[3].contains("dark-mode") && r[4].contains("cookies"), "{}", show(&r));
+    // a second one joins: the section is back
     app.sb.agents[4].status = "working".into();
     app.sb.agents[6].place_id = "wt:login-fix".into();
     app.sb.places[1].agents.push("palette".into());
     app.sb.places[3].agents.clear();
     let r = rows(&app, panel_w(150), 30);
-    let boxes: Vec<&String> = r.iter().filter(|l| l.starts_with('╭')).collect();
+    let boxes: Vec<&String> = r.iter().filter(|l| is_title(l)).collect();
     assert_eq!(boxes.len(), 2, "{}", show(&r));
     assert!(boxes[0].contains("sb/dark-mode") && boxes[1].contains("sb/login-fix"), "{}", show(&r));
     // palette's own worktree (its draft still open, no agent): a row with
@@ -241,30 +268,30 @@ fn a_private_worktree_is_a_worktree() {
     // the divider: the folder
     app.sb.focus = "fix".into();
     assert_eq!(panel::viewed_who(&app).place.as_deref(), Some("fix"));
-    // two agents in it: one box, the folder in its border
+    // two agents in it: one section, the folder in its title
     let mut app = mock();
     for n in ["fix", "fix-2"] {
         app.sb.agents.push(Agent { place: path.into(), ..agent(n, "working", &format!("pt:{path}")) });
     }
     app.sb.places.push(private(&["fix", "fix-2"], None));
     let r = rows(&app, panel_w(150), 30);
-    let top = r.iter().position(|l| l.starts_with("╭─ ψ fix ")).unwrap_or_else(|| panic!("{}", show(&r)));
-    assert!(r[top].ends_with('─') && !r[top].contains('↑'), "{}", show(&r));
-    assert!(r[top + 1].starts_with("│ 9 ∿ fix") && r[top + 2].starts_with('╰') && r[top + 2].contains("fix-2"), "{}", show(&r));
-    assert!(!r.iter().any(|l| l.ends_with('ψ') && l.contains("fix")), "no ψ in the box's rows: {}", show(&r));
+    let top = r.iter().position(|l| l == "  ψ fix").unwrap_or_else(|| panic!("{}", show(&r)));
+    assert!(r[top - 1].is_empty(), "{}", show(&r));
+    assert!(r[top + 1].starts_with("  9 ∿ fix") && r[top + 2].contains("fix-2"), "{}", show(&r));
+    assert!(!r.iter().any(|l| l.ends_with('ψ') && l.contains("fix")), "no ψ in the section's rows: {}", show(&r));
     // a branch checked out there, with a PR: its name and its ↑
     app.sb.places[6].branch = Some("feat/login".into());
     app.sb.places[6].pr = Some(pr(420, "pending", "pass"));
     let r = rows(&app, panel_w(150), 30);
-    assert!(r.iter().any(|l| l.starts_with("╭─ ψ feat/login ") && l.ends_with("↑ ─")), "{}", show(&r));
+    assert!(r.iter().any(|l| l.starts_with("  ψ feat/login ") && l.ends_with('↑')), "{}", show(&r));
     app.sb.focus = "fix".into();
     let who = panel::viewed_who(&app);
     assert_eq!((who.place.as_deref(), who.with.clone()), (Some("feat/login"), vec!["fix-2".to_string()]));
 }
 
 /// The marks' colors: ↑ red when checks fail, accent only through an
-/// inbox item (ready to merge), faint draft, dim open; ψ and … dim; the
-/// shared box's border unchanged.
+/// inbox item (ready to merge), faint draft, dim open; ψ and … dim; a
+/// section's title in the titles' color, its ↑ by the same rules.
 #[test]
 fn the_marks_colors() {
     let app = mock();
@@ -284,12 +311,17 @@ fn the_marks_colors() {
     let (qbuf, qr) = buffer(&quiet, panel_w(150), 24);
     let docs = qr.iter().position(|l| l.contains("docs")).unwrap() as u16;
     assert_eq!(qbuf[(panel_w(150) - 1, docs)].fg, dim());
-    // the box: lines in the rule color, ψ dim, its ↑ dim (never accent)
+    // the section: no line, ψ in the titles' color, its ↑ dim (never
+    // accent), red when its checks fail
     let dark = y("sb/dark-mode");
-    assert_eq!((at(0, dark).symbol(), at(0, dark).fg), ("╭", rule()));
-    assert_eq!(at(3, dark).fg, dim());
-    let arrow = (0..31).find(|x| at(*x, dark).symbol() == "↑").map(|x| at(x, dark).fg);
-    assert_eq!(arrow, Some(dim()));
+    assert_eq!(at(0, dark).symbol(), " ");
+    assert_eq!((at(2, dark).symbol(), at(2, dark).fg), ("ψ", text()));
+    assert_eq!((mark(dark).symbol(), mark(dark).fg), ("↑", dim()));
+    let mut red = mock();
+    red.sb.places[0].pr.as_mut().unwrap().checks = "fail".into();
+    red.sb.cards[0].text = "#412 merge it?".into();
+    let (rbuf, _) = buffer(&red, panel_w(150), 24);
+    assert_eq!(rbuf[(panel_w(150) - 1, dark)].fg, error());
 }
 
 /// Ctrl held: the rows' state words, the mark stays; under each solo
@@ -316,8 +348,17 @@ fn ctrl_held_says_the_words() {
     }
     assert!(r[at("main :*") + 1].contains("cookies"), "{}", show(&r));
     let dark = at("sb/dark-mode");
-    assert_eq!(r[dark], "╭─ ψ sb/dark-mode ──── ↑ #412 ─", "{}", show(&r));
-    assert_eq!(r[dark + 1], "│  changes asked · checks pass");
+    assert_eq!(r[dark], "  ψ sb/dark-mode ↑ #412", "{}", show(&r));
+    assert_eq!(r[dark + 1], "  changes asked · checks pass");
+    assert!(r[dark - 1].is_empty() && r[dark + 2].starts_with("  1 ∿ dark-mode"), "{}", show(&r));
+    // no PR: the title alone, the hub's lid under it
+    let mut none = mock();
+    none.sb.places[0].pr = None;
+    none.sb.places[0].lid = Some("no PR yet · 2 commits".into());
+    hold(&mut none);
+    let nr = rows(&none, panel_w(150), 32);
+    let d = nr.iter().position(|l| l.contains("sb/dark-mode")).unwrap();
+    assert_eq!((nr[d].as_str(), nr[d + 1].as_str()), ("  ψ sb/dark-mode", "  no PR yet · 2 commits"), "{}", show(&nr));
     // red only on `checks fail`
     let (buf, _) = buffer(&app, panel_w(150), 32);
     let y = at("#415") as u16;
@@ -341,8 +382,9 @@ fn ctrl_held_says_the_words() {
 
 /// The 24-column panel (95 wide): the same blocks; a row drops its time
 /// first, then its %, the mark column never; the name is cut before it
-/// touches the mark; the words line cut with `…`; the box's branch cut
-/// first. The widest panel (44): the whole branch.
+/// touches the mark; the words line cut with `…`; a section's branch
+/// cut first, its mark (held, `↑ #412`) stays. The widest panel (44):
+/// the whole branch.
 #[test]
 fn at_24_and_44_columns() {
     let mut app = mock();
@@ -357,7 +399,7 @@ fn at_24_and_44_columns() {
     let login = r.iter().find(|l| l.contains("login-fix")).unwrap();
     assert_eq!(login, "  3 ∿ login-fix-every… ↑", "{}", show(&r));
     let dark = r.iter().find(|l| l.contains("sb/dark")).unwrap();
-    assert_eq!(dark, "╭─ ψ sb/dark-mode-… ─ ↑ ─", "{}", show(&r));
+    assert_eq!(dark, "  ψ sb/dark-mode-ever… ↑", "{}", show(&r));
     hold(&mut app);
     let r = rows(&app, narrow, 30);
     let at = |s: &str| r.iter().position(|l| l.contains(s)).unwrap_or_else(|| panic!("{s}:\n{}", show(&r)));
@@ -370,43 +412,34 @@ fn at_24_and_44_columns() {
     let words = app.sb.places[1].words_line(Some("login-fix-everywhere"), 60).unwrap();
     let t: String = words.spans.iter().map(|s| s.content.to_string()).collect();
     assert_eq!(t, "     #415 · checks fail: e2e/login · ψ sb/login-fix");
-    assert_eq!(r[at("sb/dark")], "╭─ ψ sb/dark-… ─ ↑ #412 ─", "{}", show(&r));
+    assert_eq!(r[at("sb/dark")], "  ψ sb/dark-mode… ↑ #412", "{}", show(&r));
+    assert_eq!(r[at("sb/dark") + 1], "  changes asked · check…", "{}", show(&r));
     let wide = panel_w(400);
     let r = rows(&app, wide, 30);
     let dark = r.iter().position(|l| l.contains("sb/dark")).unwrap();
-    assert!(r[dark].starts_with("╭─ ψ sb/dark-mode-everywhere ──") && r[dark].ends_with("─ ↑ #412 ─"), "{}", show(&r));
+    assert_eq!(r[dark], "  ψ sb/dark-mode-everywhere ↑ #412", "{}", show(&r));
 }
 
-/// A box never splits across the scroll: it goes under `+ n more` whole;
-/// a selected agent in a box brings its whole box into view.
+/// A section never splits across the scroll: it goes under `+ n more`
+/// whole; a selected agent in a section brings its whole section into
+/// view.
 #[test]
-fn a_box_never_splits() {
+fn a_section_never_splits() {
     let mut app = mock();
     for h in 6..24 {
         for sel in [None, Some(0), Some(4), Some(7), Some(8)] {
             app.sb.selected = sel;
             let r = rows(&app, panel_w(150), h);
-            let mut open = false;
-            for l in &r[2..] {
-                if l.starts_with('╭') {
-                    open = true;
-                } else if l.starts_with('│') || l.starts_with('╰') {
-                    assert!(open, "h {h} sel {sel:?}: a box without its border\n{}", show(&r));
-                    if l.starts_with('╰') {
-                        open = false;
-                    }
-                }
-            }
-            if let Some(y) = r.iter().position(|l| l.starts_with('╭')) {
-                assert!(r[y..].iter().any(|l| l.starts_with('╰')), "h {h} sel {sel:?}: split\n{}", show(&r));
-            }
+            let has = |s: &str| r.iter().any(|l| l.contains(s));
+            let (title, first, last) = (has("sb/dark-mode"), has("1 ∿ dark-mode"), has("4 ∿ i18n"));
+            assert!(title == first && first == last, "h {h} sel {sel:?}: split\n{}", show(&r));
         }
     }
-    // the selection on i18n: its box whole on screen
+    // the selection on i18n: its section whole on screen
     app.sb.selected = Some(8);
     let r = rows(&app, panel_w(150), 12);
     let y = r.iter().position(|l| l.contains("sb/dark-mode")).unwrap_or_else(|| panic!("{}", show(&r)));
-    assert!(r[y + 2].starts_with("╰ 4"), "{}", show(&r));
+    assert!(r[y + 2].starts_with("  4 ∿ i18n"), "{}", show(&r));
 }
 
 /// `NO_COLOR`: the red and the accent ↑ are bold, the others plain,
@@ -418,7 +451,7 @@ fn no_color_and_ascii() {
     let mark = |k: usize, asks: bool| app.sb.places[k].row_mark(asks);
     crate::theme::set_ascii_for_tests(true);
     let ascii: Vec<String> = [mark(1, false), mark(2, false), mark(4, false)].iter().map(|s| s.content.to_string()).collect();
-    let border: String = app.sb.places[0].border(31, true).spans.iter().map(|s| s.content.to_string()).collect();
+    let border: String = app.sb.places[0].title(31, true).spans.iter().map(|s| s.content.to_string()).collect();
     crate::theme::set_ascii_for_tests(false);
     assert_eq!(ascii[0], "P");
     assert!(ascii[1].is_ascii() && !ascii[1].is_empty() && ascii[2].is_ascii() && !ascii[2].is_empty(), "{ascii:?}");

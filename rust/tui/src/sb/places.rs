@@ -1,13 +1,14 @@
-//! The worktrees in the panel (pr-design §4.1, dev-flow §3.1): one box
-//! per worktree, git in its border, its agents inside behind a rail.
-//! Git lives in borders, agents live in rows.
+//! The worktrees in the panel (pr-design §4.1, dev-flow §3.1, option B
+//! of sidebar-wt): a worktree 2 or more agents share is a section like
+//! `agents` and `inbox`, git in its title, its agents' rows under it; an
+//! agent alone in one carries its mark in its row's last column.
 //!
 //! The hub sends `places` (the worktrees only, in their first agent's
 //! order, the frozen contract of switchboard's `place.rs`) and each
 //! agent's `place_id`; this module reads them and draws what is git's:
-//! the border (`╭─ ψ sb/dark-mode ──── ↑ ─`), the held lid line
-//! (`changes asked · checks pass`), the PR's mark and words for the
-//! divider and the header.
+//! the section's title (` ψ sb/dark-mode      ↑ `), the held lid line
+//! (`changes asked · checks pass`), a solo row's mark, the PR's words
+//! for the divider and the header.
 
 use super::*;
 use unicode_width::UnicodeWidthStr;
@@ -195,18 +196,21 @@ impl Place {
         self.lid.as_deref().is_some_and(|l| l.starts_with("waits to land"))
     }
 
-    /// The top border, `w` columns from the panel's gap column (the
-    /// rail's): `╭─ ψ sb/dark-mode ───── ↑ ─`; ctrl held (`held`) `↑
-    /// #412`; a land waiting `… ─`. Short on room the branch is cut with
-    /// `…` first, ψ and the mark stay; it never wraps.
-    pub(crate) fn border(&self, w: usize, held: bool) -> Line<'static> {
-        let line = Style::default().fg(rule());
+    /// The title of a shared worktree's section (option B, sidebar-wt),
+    /// `w` columns, like `agents` and `inbox` (their color, 1 blank
+    /// before): ` ψ sb/dark-mode        ↑ `, the mark in the rows' mark
+    /// column (`↑` by [`Pr::mark_style`], never the accent; `…` while its
+    /// land waits; a feature none: `Δ` dim for its glyph while it
+    /// tries). Ctrl held (`held`) the number joins the mark, left-packed:
+    /// ` ψ sb/dark-mode ↑ #412`. Short on room the branch is cut with `…`
+    /// first; the glyph, the mark and its number stay.
+    pub(crate) fn title(&self, w: usize, held: bool) -> Line<'static> {
+        let t = Style::default().fg(text());
         let d = Style::default().fg(dim());
         let mut right: Vec<Span<'static>> = Vec::new();
         if let Some(pr) = self.live_pr() {
             right.push(Span::styled(theme::pr_glyph(), pr.mark_style()));
-            // the number only where it fits with ψ (a 2-column fill)
-            if held && w >= 3 + 2 + 2 + 3 + 1 + format!(" #{}", pr.number).width() + 2 {
+            if held {
                 let num = if pr.state == "draft" || pr.stale_ms.is_some() { Style::default().fg(faint()) } else { d };
                 right.push(Span::styled(format!(" #{}", pr.number), num));
             }
@@ -214,29 +218,30 @@ impl Place {
             right.push(Span::styled(theme::glyph(G_WAITING), d));
         }
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
-        // `╭─ ` `ψ ` the branch ` ` at least one `─`, then ` mark ─`
-        let tail = if right.is_empty() { 0 } else { right_w + 3 };
-        let fixed = 3 + self.glyph().width() + 1 + 1 + tail;
-        let room = w.saturating_sub(fixed + 1);
+        let glyph = self.glyph();
+        let gst = if self.feature && self.trying { d } else { t };
+        // ` ψ ` the branch, 1 blank, the right side, 1 blank of margin
+        let fixed = 1 + glyph.width() + 1 + if right.is_empty() { 0 } else { 1 + right_w } + 1;
+        let room = w.saturating_sub(fixed);
+        // the number goes before the branch is cut below 2 columns
+        if held && room < 2 && right.len() > 1 {
+            return self.title(w, false);
+        }
         let branch = match &self.label() {
             Some(b) if room >= 2 => panel::fit(b, room),
             _ => String::new(),
         };
-        let mut spans = vec![
-            Span::styled("╭─ ", line),
-            Span::styled(self.glyph().to_string(), d),
-        ];
+        let mut spans = vec![Span::raw(" "), Span::styled(glyph.to_string(), gst)];
         if !branch.is_empty() {
-            spans.push(Span::styled(format!(" {}", branch), d));
+            spans.push(Span::styled(format!(" {}", branch), t));
         }
-        spans.push(Span::raw(" "));
-        let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        let fill = w.saturating_sub(used + tail);
-        spans.push(Span::styled("─".repeat(fill), line));
         if !right.is_empty() {
-            spans.push(Span::raw(" "));
+            let used: usize = spans.iter().map(|s| s.content.width()).sum();
+            // at rest the mark sits in the rows' mark column (2 from the
+            // right edge); held, left-packed after the branch
+            let pad = if held { 1 } else { w.saturating_sub(used + right_w + 1).max(1) };
+            spans.push(Span::raw(" ".repeat(pad)));
             spans.extend(right);
-            spans.push(Span::styled(" ─", line));
         }
         Line::from(spans)
     }
@@ -321,9 +326,10 @@ impl Place {
         ])
     }
 
-    /// The lid line, ctrl held, `w` columns from the gap column: dim, no
-    /// glyph, at the border's text column (after the rail and 2 blanks):
-    /// the hub's lid, else the PR's words; None when nothing to say.
+    /// The lid line under a section's title, ctrl held, `w` columns: dim
+    /// (red only on `checks fail`), at the title's column, cut with `…`:
+    /// the hub's lid, else the PR's words (the title has the number);
+    /// None when nothing to say.
     pub(crate) fn lid_line(&self, w: usize) -> Option<Line<'static>> {
         let d = Style::default().fg(dim());
         let words = match (&self.lid, self.live_pr()) {
@@ -331,8 +337,8 @@ impl Place {
             (None, Some(pr)) => pr.words(d),
             (None, None) => return None,
         };
-        let mut spans = vec![Span::styled("│", Style::default().fg(rule())), Span::raw("  ")];
-        spans.extend(fit_spans(words, w.saturating_sub(4)));
+        let mut spans = vec![Span::raw(" ")];
+        spans.extend(fit_spans(words, w.saturating_sub(2)));
         Some(Line::from(spans))
     }
 }
@@ -394,6 +400,10 @@ mod tests {
         l.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    fn text_color() -> Color {
+        crate::theme::text()
+    }
+
     fn pr(state: &str, review: &str, checks: &str) -> Pr {
         Pr { number: 412, url: "https://github.com/acme/web/pull/412".into(), state: state.into(), review: review.into(), checks: checks.into(), ..Pr::default() }
     }
@@ -402,8 +412,9 @@ mod tests {
         Place { id: "wt:x".into(), branch: Some(branch.into()), agents: vec!["x".into()], pr, lid: lid.map(Into::into), ..Place::default() }
     }
 
-    /// dev-flow §7, pr-design §4.1 item 8: a feature's border and mark are
-    /// `Δ` while its try build builds or is on trial, else `ψ`; never `↑`.
+    /// dev-flow §7, pr-design §4.1 item 8: a feature's title glyph and
+    /// solo mark are `Δ` (dim) while its try build builds or is on
+    /// trial, else `ψ`; never `↑`, its title's mark column blank.
     #[test]
     fn a_feature_is_psi_then_delta_while_trying() {
         let v = serde_json::json!({"places": [
@@ -412,16 +423,18 @@ mod tests {
         ]});
         let mut p = parse(&v).remove(0);
         assert!(p.feature && !p.trying);
-        assert_eq!(text(&p.border(31, false)), "╭─ ψ computer-use ─────────────");
+        assert_eq!(text(&p.title(31, false)), " ψ computer-use");
+        assert_eq!(p.title(31, false).spans[1].style.fg, Some(text_color()));
         assert_eq!(p.row_mark(false).content, "ψ");
-        assert_eq!(p.lid_line(60).map(|l| text(&l)).unwrap(), "│  feature · 14 commits · 3 behind main · not tried");
+        assert_eq!(p.lid_line(60).map(|l| text(&l)).unwrap(), " feature · 14 commits · 3 behind main · not tried");
         p.trying = true;
-        assert_eq!(text(&p.border(31, false)), "╭─ Δ computer-use ─────────────");
+        assert_eq!(text(&p.title(31, false)), " Δ computer-use");
+        assert_eq!(p.title(31, false).spans[1].style.fg, Some(dim()));
         assert_eq!(p.row_mark(true).content, "Δ");
         assert_eq!(p.row_mark(true).style.fg, Some(dim()));
         // never ↑, even if a PR were sent for its branch
         p.pr = Some(pr("open", "approved", "pass"));
-        assert!(!text(&p.border(31, true)).contains('↑'));
+        assert!(!text(&p.title(31, true)).contains('↑'));
         // an older hub: no feature key
         let old = parse(&serde_json::json!({"places": [{"id": "wt:x", "agents": []}]}));
         assert!(!old[0].feature && !old[0].trying);
@@ -448,44 +461,53 @@ mod tests {
         assert!(parse(&serde_json::json!({})).is_empty());
     }
 
+    /// Option B: the title is ` ψ <branch>` in the section titles' color,
+    /// the mark in the rows' mark column (the 2nd column from the right);
+    /// held, `↑ #412` left-packed after the branch.
     #[test]
-    fn the_border_carries_the_branch_and_the_mark() {
+    fn the_title_carries_the_branch_and_the_mark() {
         let p = place("sb/dark-mode", Some(pr("open", "pending", "pass")), None);
-        assert_eq!(text(&p.border(31, false)), "╭─ ψ sb/dark-mode ───────── ↑ ─");
-        assert_eq!(text(&p.border(31, true)), "╭─ ψ sb/dark-mode ──── ↑ #412 ─");
-        // 24 columns: the branch is cut first, ψ and ↑ stay
-        let b = text(&p.border(24, true));
-        assert_eq!(b, "╭─ ψ sb/dark… ─ ↑ #412 ─");
-        assert_eq!(b.width(), 24);
-        // no PR: no mark, the line runs to the end
+        let rest = text(&p.title(31, false));
+        assert_eq!(rest, " ψ sb/dark-mode              ↑");
+        assert_eq!(rest.width(), 30, "the mark in the rows' mark column, 1 blank after");
+        assert_eq!(text(&p.title(31, true)), " ψ sb/dark-mode ↑ #412");
+        let t = p.title(31, false);
+        assert!(t.spans.iter().filter(|s| s.content.contains("ψ") || s.content.contains("sb/")).all(|s| s.style.fg == Some(text_color())));
+        // 24 columns: the branch is cut first, ψ, ↑ and its number stay
+        let p = place("sb/dark-mode-everywhere", Some(pr("open", "pending", "pass")), None);
+        assert_eq!(text(&p.title(24, true)), " ψ sb/dark-mode… ↑ #412");
+        assert_eq!(text(&p.title(24, false)), " ψ sb/dark-mode-ever… ↑");
+        assert_eq!(text(&p.title(24, false)).width(), 23);
+        // no PR: no mark
         let none = place("sb/emoji-csv", None, None);
-        assert_eq!(text(&none.border(31, false)), "╭─ ψ sb/emoji-csv ─────────────");
+        assert_eq!(text(&none.title(31, false)), " ψ sb/emoji-csv");
         // a merged or closed PR: no mark
         let closed = place("sb/x", Some(pr("closed", "none", "none")), None);
-        assert!(!text(&closed.border(31, true)).contains('↑'));
+        assert!(!text(&closed.title(31, true)).contains('↑'));
         // trunk: a land waiting
         let land = place("sb/emoji-csv", None, Some("waits to land · 2nd"));
-        assert_eq!(text(&land.border(31, false)), "╭─ ψ sb/emoji-csv ───────── … ─");
+        assert_eq!(text(&land.title(31, false)), " ψ sb/emoji-csv              …");
         // never wider than its room, whatever the branch
         for w in [12, 18, 24, 31, 44] {
             let long = place("sb/a-very-long-branch-name-for-sure", Some(pr("open", "none", "none")), None);
-            assert_eq!(text(&long.border(w, true)).width(), w, "{w}");
+            assert!(text(&long.title(w, true)).width() < w, "{w}");
+            assert!(text(&long.title(w, false)).width() < w, "{w}");
         }
     }
 
     #[test]
     fn the_lid_says_the_prs_state() {
         let lid = |p: &Place| p.lid_line(31).map(|l| text(&l));
-        assert_eq!(lid(&place("b", Some(pr("open", "changes_requested", "pass")), None)).unwrap(), "│  changes asked · checks pass");
-        assert_eq!(lid(&place("b", Some(pr("draft", "none", "running")), None)).unwrap(), "│  draft · checks running");
-        assert_eq!(lid(&place("b", Some(pr("open", "none", "none")), None)).unwrap(), "│  open");
+        assert_eq!(lid(&place("b", Some(pr("open", "changes_requested", "pass")), None)).unwrap(), " changes asked · checks pass");
+        assert_eq!(lid(&place("b", Some(pr("draft", "none", "running")), None)).unwrap(), " draft · checks running");
+        assert_eq!(lid(&place("b", Some(pr("open", "none", "none")), None)).unwrap(), " open");
         let failing = Pr { failing: vec!["e2e/login".into()], ..pr("open", "none", "fail") };
-        assert_eq!(lid(&place("b", Some(failing.clone()), None)).unwrap(), "│  checks fail: e2e/login");
+        assert_eq!(lid(&place("b", Some(failing.clone()), None)).unwrap(), " checks fail: e2e/login");
         let stale = Pr { stale_ms: Some(12 * 60_000), ..pr("open", "approved", "pass") };
-        assert_eq!(lid(&place("b", Some(stale), None)).unwrap(), "│  approved · checks pass · s…");
+        assert_eq!(lid(&place("b", Some(stale), None)).unwrap(), " approved · checks pass · sta…");
         // the hub's lid wins, as it is
-        assert_eq!(lid(&place("b", None, Some("no PR yet · 2 commits"))).unwrap(), "│  no PR yet · 2 commits");
-        assert_eq!(lid(&place("b", Some(pr("open", "none", "pass")), Some("waits to land · 2nd"))).unwrap(), "│  waits to land · 2nd");
+        assert_eq!(lid(&place("b", None, Some("no PR yet · 2 commits"))).unwrap(), " no PR yet · 2 commits");
+        assert_eq!(lid(&place("b", Some(pr("open", "none", "pass")), Some("waits to land · 2nd"))).unwrap(), " waits to land · 2nd");
         assert_eq!(lid(&place("b", None, None)), None);
         // red only on the words `checks fail`
         let l = place("b", Some(failing), None).lid_line(31).unwrap();

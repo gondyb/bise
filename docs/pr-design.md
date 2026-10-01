@@ -22,10 +22,10 @@ finds the PR by its branch (nothing to declare) and follows it by polling
 GitHub through `gh api graphql`, with your gh login: no new sign-in, bise
 never reads the token. In the sidebar (§4.1) an agent alone in its
 worktree carries the PR's `↑` in its row's last column; a worktree
-several agents share is a small box with the `↑` in its top border. `↑`
-is dim, red when checks fail, accent only while an inbox item asks you
-to merge it. Ctrl held: the number and the state in words, under the
-row or on the box's lid line. The divider of the
+several agents share is a section, like `agents`, with the `↑` on its
+title row. `↑` is dim, red when checks fail, accent only while an inbox
+item asks you to merge it. Ctrl held: the number and the state in
+words, under the row or under the section's title. The divider of the
 agent you view links the PR. GitHub's news (a review,
 red checks) go to the agent that owns the PR, main reads them and says it
 in one line; main escalates only what is yours (a product call in a
@@ -59,7 +59,7 @@ you, red only for failing checks, pink only on the inbox item itself
 
 | Place | At rest | Ctrl held |
 |---|---|---|
-| **sidebar** | **§4.1**: a box for a worktree several agents share; alone, the agent's row carries `↑` in its last column (BISE-306) | §4.1 |
+| **sidebar** | **§4.1**: a section (a title row, no box lines) for a worktree several agents share; alone, the agent's row carries `↑` in its last column (BISE-309) | §4.1 |
 | **divider** (the agent you view) | the approved order model · effort · mode · gust, it has room, so both, the branch first, after the mode, before the gust (the gust is the status, it stays last): `you → dark-mode · sonnet · high · yolo · ψ sb/dark-mode · ↑ #412 · ∿∿∿` (the number is a link), the context short on the right `31k · 15%`. Short on room (designer): the branch name goes first (`ψ · ↑ #412`), then ψ, then the number (`↑`), the mode last | `… · ψ sb/dark-mode · ↑ #412 changes asked · checks pass · ∿∿∿ working · 3m`, right `31k / 200k tokens · 15%` |
 | **header** | nothing new (the folder and the inbox count) | `↑ 3 PRs` with the other counts |
 | **main's feed** | one level-2 line per event: opened, changes asked (and who is on it), checks fail, back in review, merged / closed (dim) | — |
@@ -86,15 +86,17 @@ line under the row (my pick), B in the state column (short words only).
 Ready to merge: A an inbox item with a merge option (my pick), B one line
 from main, you merge on GitHub.
 
-### 4.1 The sidebar: a box only when they share (BISE-306, option A)
+### 4.1 The sidebar: a section only when they share (BISE-309, option B)
 
 Several agents can share a worktree and its branch ([dev-flow.md](dev-flow.md)
 §3.1). The first build (pr-tui, a444390) drew every worktree as a box;
-the user found it heavy (5 boxes for 6 agents) and picked designer's
-option A of the lighter variants (site/content/sidebar-wt.html, local):
-**a box only when 2 or more live agents share a worktree.** Alone in its
-worktree, an agent is a plain row and its git state is the mark in the
-row's last column, as before the boxes.
+the user found it heavy (5 boxes for 6 agents). Designer's lighter
+variants (site/content/sidebar-wt.html, local): option A (BISE-306,
+aedc362) kept a box only for a shared worktree; the user then picked
+option B, designer's own pick: **a worktree that 2 or more live agents
+share is a section, like `agents` and `inbox`: a title row, its
+agents' rows under it, no box lines.** Alone in its worktree, an agent
+is a plain row and its git state is the mark in the row's last column.
 
 ```
  agents
@@ -105,23 +107,25 @@ row's last column, as before the boxes.
   6 ○ palette            6%  ↑      (faint: draft)
   7 … release            8%  …      (waits to land)
 
-╭─ ψ sb/dark-mode ────────── ↑ ─
-│ 1 ∿ dark-mode     3m  12%
-╰ 4 ∿ i18n •       42s  31%
+ ψ sb/dark-mode              ↑
+  1 ∿ dark-mode     3m  12%
+  4 ∿ i18n •       42s  31%
 
  inbox
   1 ? docs  #409 is approv…
 ```
 
-1. **Order**, top to bottom: your folder's rows (main first), then the
-   agents alone in a worktree, each group by number, no blank row
-   between them; then the worktrees with an open PR and no live agent
-   (a row with no number and no glyph, the branch faint at the name's
-   column, its mark in the mark column); then one box per shared
-   worktree, ordered by its lowest number; the inbox; `▸ n archived`.
-   One blank row between blocks. Numbers never change; the order
-   follows the blocks. A shared box that drops to one live agent is a
-   plain row on the next draw, and a box again when a second one joins.
+1. **Order**, top to bottom: the `agents` section: every live agent
+   not in a shared worktree, your folder's and the ones alone in
+   theirs alike, in number order (main is 0; a solo row sits at its
+   number, not after your folder's rows); then the worktrees with an
+   open PR and no live agent (a row with no number and no glyph, the
+   branch faint at the name's column, its mark in the mark column);
+   then one section per shared worktree, ordered by its lowest number;
+   the inbox; `▸ n archived`. One blank row before each section's
+   title. Numbers never change; the order follows the sections. A
+   shared section that drops to one live agent is a plain row on the
+   next draw, and a section again when a second one joins.
 2. **The mark** (1 cell, the last column, 1 blank before the frame;
    your folder's rows leave it blank), first that applies: `…` dim (the
    land waits in the trunk queue), `↑` faint when the forge's answer is
@@ -130,13 +134,15 @@ row's last column, as before the boxes.
    through the inbox), `↑` faint draft, `↑` dim any other open PR, `ψ`
    dim a worktree with no PR yet (or a merged or closed one). No dirty
    or ahead marker: commits show only in words, held.
-3. **A shared box** is drawn as before: the border `╭─ ψ <branch> ── ↑
-   ─` and its rail in the rule color, ψ and the branch dim, `↑` by the
-   rules above (never the accent: pink stays on the inbox item), `…` in
-   its border when it waits to land. Its rows keep the mark column
-   blank (the border carries it); a long name takes those cells back.
-   A box never splits across the panel's scroll; if it doesn't fit, it
-   goes under `+ n more`, whole.
+3. **A shared section**: its title row ` ψ <branch>` at the `agents`
+   title's column, in the titles' color and weight, ψ included (one
+   color, no bold); its mark right-aligned in the rows' mark column,
+   `↑` by the rules above (never the accent: pink stays on the inbox
+   item), `…` while its land waits, nothing with no PR. No box lines,
+   no rail. Its rows keep the mark column blank (the title carries
+   it); a long name takes those cells back. A section never splits
+   across the panel's scroll; if it doesn't fit, it goes under `+ n
+   more`, whole.
 4. **Ctrl held**: the rows' state words in the time and % cells, the
    mark stays. Under each solo row, one dim line at the name's column,
    cut with `…`: the hub's lid as it is (`no PR yet · 2 commits`,
@@ -146,25 +152,33 @@ row's last column, as before the boxes.
    only on `checks fail`. The branch isn't written when it ends with the
    agent's name (`sb/<name>`); otherwise it ends the line, `· ψ
    <branch>`, so the cut eats the branch and the state stays.
-   Your folder's rows get no line. A box: `↑ #412` in its border and its
-   lid line inside, under the border, as before.
-5. **Short on room** (the 24-column panel): a row drops its time first,
-   then its %, before its name is cut; the mark column stays (held, the
-   state word stays and the name is cut). A box's branch is cut with
-   `…` first; a border never wraps.
+   Your folder's rows get no line. A section: its title says `ψ
+   sb/dark-mode ↑ #412`, the mark and number left-packed after the
+   branch; under it, at the title's column, its lid line, dim (red only
+   on `checks fail`), cut with `…`: the hub's lid, else the PR's words
+   (`changes asked · checks pass`; the title has the number). No PR:
+   the title `ψ <branch>` and the lid `no PR yet · 2 commits`.
+5. **Short on room** (the 24-column panel; under 90 columns there is
+   no panel): a row drops its time first, then its %, before its name
+   is cut; the mark column stays (held, the state word stays and the
+   name is cut). A section's branch is cut with `…` first; the glyph,
+   the mark and, held, `↑ #412` stay.
 6. **Which worktrees**: one rule for every worktree, hub worktrees and
    the private ones of BISE-136 (`gate.sh new`) alike: an agent in it
    shows by these rules; a worktree with no live agent and no open PR
    (a scratch worktree, a merged PR) is never shown.
 7. **NO_COLOR**: the marks keep their glyph; the red and the accent `↑`
-   are bold, the others plain; `checks fail` bold. **ASCII**: `↑` is
-   `P`, ψ and `…` the glyph table's fallbacks, the box `+ - |`.
+   are bold, the others plain; `checks fail` bold; a section's title
+   plain (no number and its ψ tell it from a row). **ASCII**: `↑` is
+   `P`, ψ and `…` the glyph table's fallbacks.
 
 8. **A feature branch in trunk flow** ([dev-flow.md](dev-flow.md) §5.1,
-   §7): 2 or more live agents landing on one feature branch make a box,
-   even in separate worktrees (they share the branch); its mark is `Δ`
-   while its try build builds or is on trial, else `ψ`, never `↑`.
-   Alone, a row with that mark. Confirmed by designer.
+   §7): 2 or more live agents landing on one feature branch make a
+   section, even in separate worktrees (they share the branch): its
+   title's glyph is `Δ`, dim, while its try build builds or is on trial
+   (the branch keeps the title color), else `ψ`; its mark column stays
+   blank, never `↑`. Alone, a row with that glyph as its mark.
+   Confirmed by designer.
 
 The ready-to-merge item names its place once pr-merge builds it (a
 `place` field on the card); until then the TUI ties a `merge` item to a
@@ -240,7 +254,7 @@ agent or main), rare.
 | PR opened (seen first) | main (level 3) | main: `:* dark-mode opened #412: …` |
 | review: changes requested, or new comments | **the owning agent**, main copied. A PR belongs to its branch, and several agents may share it ([dev-flow.md](dev-flow.md) §3.1): "owning" = the agent that pushed the commit the review is about, else the one that opened the PR, else main picks | the agent fixes, pushes, reports; main: one line |
 | checks fail | the owning agent (failing check names + the log's last 60 lines, `gh run view --log-failed`) | same; after 2 tries on the same check, main asks you (inbox) |
-| approved, checks pass | the hub opens an inbox item (§6.3) | the item is pink in the inbox; the box's `↑` stays dim |
+| approved, checks pass | the hub opens an inbox item (§6.3) | the item is pink in the inbox; a section title's `↑` stays dim |
 | merged | main | `✓ perf's #401 merged · perf archived, its worktree removed` |
 | closed without merge | main | dim line; the agent and its branch stay |
 | owning agent archived or dropped | main | main restores it (`/restore`) or answers itself |

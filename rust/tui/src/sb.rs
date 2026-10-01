@@ -152,8 +152,8 @@ pub(super) struct Sb {
     pub(super) focus: String,
     views: HashMap<String, View>,
     agents: Vec<Agent>,
-    /// The worktrees, one box each in the panel (pr-design §4.1), in
-    /// their first agent's order.
+    /// The worktrees (pr-design §4.1: a section in the panel when agents
+    /// share one, else a solo row's mark), in their first agent's order.
     places: Vec<places::Place>,
     /// The repo's flow, `pr` or `trunk` ("" until the hub says): the
     /// header's held `lands via PRs` (dev-flow §7).
@@ -309,21 +309,20 @@ impl Sb {
         out
     }
 
-    /// The live agents by block (pr-design §4.1, option A): the plain
-    /// rows first (None): your folder's agents (main first), then the
-    /// agents alone in their worktree; then one box per worktree that 2
-    /// or more live agents share, ordered by its lowest number. In each
-    /// group, the order of their numbers (QA M: a newcomer that takes a
+    /// The live agents by block (pr-design §4.1, option B of
+    /// sidebar-wt): the `agents` section first (None): every agent not
+    /// in a shared worktree, your folder's and the ones alone in theirs
+    /// alike, at their number (main is 0); then one section per worktree
+    /// that 2 or more live agents share, ordered by its lowest number. In
+    /// each, the order of their numbers (QA M: a newcomer that takes a
     /// dropped agent's number sits at that number's row, not last).
-    /// Numbers never change; the order follows the blocks.
+    /// Numbers never change; the order follows the sections.
     fn blocks(&self) -> Vec<(Option<&places::Place>, Vec<&Agent>)> {
         let numbers = self.numbers();
         let num = |name: &str| numbers.iter().find(|(n, _)| n == name).map_or(usize::MAX, |(_, k)| *k);
         let live: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
-        let mut folder: Vec<&Agent> = live.iter().copied().filter(|a| self.place_of(a).is_none()).collect();
-        folder.sort_by_key(|a| num(&a.name));
-        let mut solo: Vec<&Agent> = live.iter().copied().filter(|a| self.place_of(a).is_some() && self.box_of(a).is_none()).collect();
-        solo.sort_by_key(|a| num(&a.name));
+        let mut rows: Vec<&Agent> = live.iter().copied().filter(|a| self.box_of(a).is_none()).collect();
+        rows.sort_by_key(|a| num(&a.name));
         let mut boxes: Vec<(Option<&places::Place>, Vec<&Agent>)> = self
             .places
             .iter()
@@ -335,7 +334,7 @@ impl Sb {
             })
             .collect();
         boxes.sort_by_key(|(_, v)| v.iter().map(|a| num(&a.name)).min().unwrap_or(usize::MAX));
-        let mut out = vec![(None, folder.into_iter().chain(solo).collect())];
+        let mut out = vec![(None, rows)];
         out.extend(boxes);
         out
     }
@@ -350,13 +349,14 @@ impl Sb {
         self.agents.iter().filter(|a| !a.archived() && self.place_of(a).is_some_and(|q| std::ptr::eq(p, q))).collect()
     }
 
-    /// Option A (sidebar-wt): a worktree is a box only when 2 or more
-    /// live agents share it.
+    /// Option B (sidebar-wt): a worktree is a section only when 2 or
+    /// more live agents share it.
     fn shared(&self, p: &places::Place) -> bool {
         self.live_in(p).len() >= 2
     }
 
-    /// The box `a` sits in: its worktree when another live agent shares it.
+    /// The section `a` sits in: its worktree when another live agent
+    /// shares it.
     fn box_of(&self, a: &Agent) -> Option<&places::Place> {
         self.place_of(a).filter(|p| self.shared(p))
     }

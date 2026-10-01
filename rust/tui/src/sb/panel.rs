@@ -517,10 +517,8 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let w = area.width as usize;
     let title = Line::from(Span::styled(format!(" {}", PANEL_TITLE), Style::default().fg(text())));
     let mut lines: Vec<Line> = Vec::new();
-    // pr-design §4.1: the rail of each row of a worktree's box, drawn in
-    // the blank column left of the panel ("" = none)
-    let mut rails: Vec<&'static str> = Vec::new();
-    // the boxes' rows [start, end): never split by the scroll
+    // the shared worktrees' sections, rows [start, end): never split by
+    // the scroll (pr-design §4.1)
     let mut boxes: Vec<(usize, usize)> = Vec::new();
     let numbers = sb.numbers();
     let held = crate::ctrlhint::words(app);
@@ -531,20 +529,12 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     for (place, agents) in sb.blocks() {
         let start = lines.len();
         if let Some(p) = place {
-            // one blank row between blocks; the border and the lid are
-            // git's, never a row (no hit)
+            // a shared worktree's section (option B, sidebar-wt): 1 blank
+            // row, its title, held its lid; git's, never a row (no hit)
             lines.push(Line::from(""));
-            rails.push("");
-            let mut border = p.border(w + 1, held);
-            border.spans.remove(0);
-            border.spans.insert(0, Span::styled("─ ", Style::default().fg(rule())));
-            lines.push(border);
-            rails.push("╭");
-            if let Some(lid) = p.lid_line(w + 1).filter(|_| held) {
-                let mut lid = lid;
-                lid.spans.remove(0);
+            lines.push(p.title(w, held));
+            if let Some(lid) = p.lid_line(w).filter(|_| held) {
                 lines.push(lid);
-                rails.push("│");
             }
         }
         for a in agents {
@@ -554,13 +544,11 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             owners.push((lines.len(), Hit::Agent(a.name.clone())));
             let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
             lines.push(agent_row(app, sb, a, i, n, w, place.is_some()));
-            rails.push(if place.is_some() { "│" } else { "" });
             // ctrl held, alone in its worktree: its git state in words
-            // under its row (option A, sidebar-wt)
+            // under its row (sidebar-wt)
             if let Some(words) = sb.solo_of(a).filter(|_| held && place.is_none()).and_then(|p| p.words_line(Some(&a.name), w)) {
                 owners.push((lines.len(), Hit::Agent(a.name.clone())));
                 lines.push(words);
-                rails.push("");
             }
             // the selected agent: what it is for and its last note, under its row
             if sb.selected == Some(i) && !a.main {
@@ -570,7 +558,6 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
                         format!("     {}", fit(t, w.saturating_sub(6))),
                         Style::default().fg(dim()),
                     )));
-                    rails.push(if place.is_some() { "│" } else { "" });
                 }
             }
             i += 1;
@@ -580,30 +567,21 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             // no number and no glyph each, after the solo rows
             for p in sb.orphans() {
                 lines.push(p.orphan_row(sb.asks_merge(p), w));
-                rails.push("");
                 if let Some(words) = p.words_line(None, w).filter(|_| held) {
                     lines.push(words);
-                    rails.push("");
                 }
             }
         } else {
-            // the last row closes the box
-            if let Some(r) = rails.last_mut() {
-                *r = "╰";
-            }
             boxes.push((start + 1, lines.len()));
         }
     }
     let live = i;
-    let before = lines.len();
     cards_lines(app, w, &mut lines, &mut owners, &mut sel_row);
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
-    rails.resize(lines.len().max(before), "");
     // the body under the title: scrolled to keep the selection in view;
     // what does not fit below ends in `+ {n} more`
     let h = (area.height as usize).saturating_sub(2);
     let (top, shown, more) = window(lines.len(), &owners, &boxes, sel_row, h, sb.archived_open, sb.archived().len());
-    let rails: Vec<&'static str> = rails.into_iter().skip(top).take(shown).collect();
     let mut body: Vec<Line> = lines.into_iter().skip(top).take(shown).collect();
     if let Some(n) = more {
         body.push(Line::from(Span::styled(format!(" + {} more", n), Style::default().fg(dim()))));
@@ -624,18 +602,6 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let mut all = vec![title, Line::from("")];
     all.extend(body);
     frame.render_widget(Paragraph::new(all), area);
-    // the boxes' rails, in the blank column left of the panel (the
-    // frame's rule is 2 columns left; unframed, the feed's gap)
-    if area.x > 0 {
-        let buf = frame.buffer_mut();
-        let st = Style::default().fg(rule());
-        for (k, r) in rails.iter().enumerate().filter(|(_, r)| !r.is_empty()) {
-            let y = area.y + 2 + k as u16;
-            if y < area.bottom() && buf.area.contains((area.x - 1, y).into()) {
-                buf[(area.x - 1, y)].set_symbol(r).set_style(st);
-            }
-        }
-    }
     // BISE-290: its text selects, copies and has links
     crate::textlayer::text(area);
 }

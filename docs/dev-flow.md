@@ -114,17 +114,18 @@ here a place is its own thing in the hub, and agents join it:
   review is about, else the one that opened the PR, else main picks
   (pr-design §6.1).
 - **On screen** (pr-design §4.1; the user picked the grouped boxes,
-  then the lighter option A, BISE-306): a worktree is a box only when 2
-  or more live agents share it. Its top border, in the line color,
-  carries the git facts: `╭─ ψ sb/dark-mode ──────── ↑ ─`; its agents
-  sit inside behind a rail `│`, the last one closing it with `╰`. An
-  agent alone in its worktree is a plain row with its git state as the
-  mark in the last column (`↑` its PR, `ψ` no PR yet, `…` its land
-  waits), after your folder's rows. Ctrl held: a box adds the PR number
-  (`↑ #412`) and one dim lid line (`changes asked · checks pass`, `no PR
-  yet · 2 commits`, in trunk flow `waits to land · 2nd`); a solo row
-  gets the same words on a line under it (`#415 · checks fail`).
-  Numbers never change; the rows' order follows the blocks. The divider
+  then option A, then option B of sidebar-wt, BISE-309): a worktree is
+  a section, like `agents` and `inbox`, only when 2 or more live agents
+  share it. Its title row, in the titles' color, no box lines, carries
+  the git facts: `ψ sb/dark-mode            ↑`; its agents' rows sit
+  under it. An agent alone in its worktree is a plain row in the
+  `agents` section, at its number, with its git state as the mark in
+  the last column (`↑` its PR, `ψ` no PR yet, `…` its land waits).
+  Ctrl held: a section's title adds the PR number (`ψ sb/dark-mode ↑
+  #412`) and one dim lid line under it (`changes asked · checks pass`,
+  `no PR yet · 2 commits`, in trunk flow `waits to land · 2nd`); a solo
+  row gets the same words on a line under it (`#415 · checks fail`).
+  Numbers never change; the rows' order follows the sections. The divider
   of an agent in a shared place says who else is there: `ψ sb/dark-mode
   with i18n`.
 | you say "open a PR" | — | a PR, even here |
@@ -276,8 +277,8 @@ another terminal: ~/.bise/dev/versions/fd25c45/bise` (never `sb restart`
 on its own: switching the live hub is yours, `/version`). Elsewhere:
 whatever `try` says (`pnpm build && pnpm preview`, `cargo run --release`,
 or nothing: main tells you the branch name to check out). While it
-builds, the feature's box shows `Δ` (§6 "a version is building or on
-trial").
+builds, the feature's section title (or its solo row's mark) shows `Δ`
+(§6 "a version is building or on trial").
 
 **The merge, on your go only.** After a try the item turns into:
 
@@ -405,20 +406,20 @@ repeating the git rules (private index, gate, push).
 Most of it is in [pr-design.md](pr-design.md) (PR flow). For the trunk
 flow, and the choice:
 
-- **Sidebar, places** (picked: A, then the lighter option A of
-  sidebar-wt, BISE-306): a box only for a worktree several agents
-  share, git facts in its border; alone, an agent is a row with its mark
-  (§3.1).
-- **Sidebar, trunk flow**: a land waiting shows `…` (in a box's border,
-  or as a solo row's mark); ctrl held, its words say `waits to land ·
-  2nd`.
+- **Sidebar, places** (picked: A, then option A of sidebar-wt,
+  BISE-306, then its option B, BISE-309): a section only for a worktree
+  several agents share, git facts in its title, no box lines; alone, an
+  agent is a row with its mark (§3.1).
+- **Sidebar, trunk flow**: a land waiting shows `…` (in a section
+  title's mark column, or as a solo row's mark); ctrl held, its words
+  say `waits to land · 2nd`.
 - **Sidebar, a feature branch** (§5.1; confirmed by designer): its agents
-  land on one branch, so by BISE-306's rule a feature with 2 or more
-  live agents is a box, even when each has its own worktree: `╭─ ψ
-  computer-use ───── ─`, its agents inside. Its mark (in the border, or
-  a solo row's last column): `Δ` dim while its try build builds or is
-  on trial (book §6's meaning), `ψ` otherwise; never `↑` (no PR in
-  trunk flow). Ctrl held, the lid: `feature · 14 commits · 3 behind main
+  land on one branch, so by BISE-309's rule a feature with 2 or more
+  live agents is a section, even when each has its own worktree: `ψ
+  computer-use`, its agents' rows under it. Its glyph (the title's, or a
+  solo row's mark): `Δ` dim while its try build builds or is on trial
+  (book §6's meaning), `ψ` otherwise; never `↑` (no PR in trunk flow):
+  the title's mark column stays blank. Ctrl held, the lid: `feature · 14 commits · 3 behind main
   · not tried` (or `tried fd25c45 18m ago`).
 - **Main's feed**: `computer-use goes on its own branch: you'll try it
   before it reaches main.` (routing); `✓ computer-use merged into main
