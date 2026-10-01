@@ -4,10 +4,10 @@ Status: design done, not started. Design: [pr-design.md](pr-design.md).
 Mock (local only): `http://localhost:4747/content/pr-support.html`.
 Nothing is built until the user picks (design §11) and says go.
 
-Depends on designer's UI simplification (ui-simplify: sidebar A, the
-right-aligned columns, the ctrl-held words). Phase 1's UI lands after it,
-or draws the cell into today's row if the user wants PRs first (half a
-day more, thrown away later).
+Depends on designer's "less on screen" spec (approved; ui-simplify builds
+it: the right-aligned columns, the gust on the divider, the ctrl-held
+words). Phase 1's UI lands after it; the PR mark goes in ψ's column, so
+it needs no new column.
 
 ## 1. Phases
 

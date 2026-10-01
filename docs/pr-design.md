@@ -4,8 +4,8 @@ Status: design, nothing built. Plan: [pr-plan.md](pr-plan.md). Mock
 (local only, gitignored): `http://localhost:4747/content/pr-support.html`
 (generator in pr-designer's temp folder; the frames use designer's
 `ui2.py` geometry, copied from a real 150-column tmux capture). Drawn on
-designer's UI simplification (sidebar A of `ui-simplify.html`, not picked
-yet). Extends [RFC 0002](rfc-0002-worktrees.md) (worktrees) and the inbox
+designer's "less on screen" spec, approved by the user (being built by
+ui-simplify), and the inbox's `ctrl+1-9` (BISE-302). Extends [RFC 0002](rfc-0002-worktrees.md) (worktrees) and the inbox
 of the book (§12).
 
 ## 1. What the user asked
@@ -56,17 +56,21 @@ green.
 
 | Place | At rest | Ctrl held |
 |---|---|---|
-| **sidebar row** | one cell after ψ: `↑` dim (open), faint (draft), red (checks fail), pink (an inbox item about this PR waits) | a faint line under the row, under the name: `↑ #412 changes asked`, `↑ #415 checks fail` (the feed names the check), `↑ #409 approved · checks pass` (never "green": the brand has no green); cut with `…` before the panel's border; no PR yet: `sb/emoji-csv · no PR yet` |
-| **divider** (the agent you view) | `you → dark-mode · sonnet · ↑ #412` (the number is a link) | `↑ #412 changes asked · checks pass · ψ sb/dark-mode` |
-| **header** | nothing new | `↑ 3 PRs` with the other counts |
+| **sidebar row** | in ψ's column (` N G name …… TTT  PPP  ↑ `): `↑` dim (open), faint (draft), red (checks fail), pink (an inbox item about this PR waits) | a faint line under the row, under the name: `↑ #412 changes asked`, `↑ #415 checks fail` (the feed names the check), `↑ #409 approved · checks pass` (never "green": the brand has no green); cut with `…` before the panel's border; no PR yet: `sb/emoji-csv · no PR yet` |
+| **divider** (the agent you view) | the approved order model · effort · mode · gust, the PR after the mode, before the gust (the gust is the status, it stays last): `you → dark-mode · sonnet · high · yolo · ↑ #412 · ∿∿∿` (the number is a link), the context short on the right `31k · 15%` | `… · ↑ #412 changes asked · checks pass · ψ sb/dark-mode · ∿∿∿ working · 3m`, right `31k / 200k tokens · 15%`; the sidebar row shows ψ again |
+| **header** | nothing new (the folder and the inbox count) | `↑ 3 PRs` with the other counts |
 | **main's feed** | one level-2 line per event: opened, changes asked (and who is on it), checks fail, back in review, merged / closed (dim) | — |
 | **inbox** | only: ready to merge (§6.3), a review question main can't answer, checks that still fail after two tries | — |
 | **`/prs`** | a list in the feed: every open PR of this repo's agents, plus the one on your own branch | — |
 
-Designer's rules, kept: a PR implies a branch, so the cell sits next to
-ψ. Short of room, the PR cell goes before ψ. With sidebar C (an activity
-line under working agents), the held PR line replaces it while ctrl is
-down: never two lines under a row. Forbidden in the cell: every glyph the
+**In ψ's column, not after it.** The approved row is full at the panel's
+31 columns (main's `✉ 2`, a pink `•` after a name, one column of
+margin): a cell after ψ would cost 2 columns and cut every name. A PR
+implies a branch, so `↑` takes ψ's column while the PR is open; ψ shows
+while there is a branch and no PR, and comes back on the row while ctrl
+is held (the PR then on the line under it). Nothing moves, nothing is
+cut. With sidebar C (an activity line under working agents), the held PR
+line replaces it while ctrl is down: never two lines under a row. Forbidden in the cell: every glyph the
 row already uses (`✓ ? ✗ ∿ ○ · :* ψ @ $ ƒ ▸`).
 
 **The glyph.** `↑` (U+2191): in SF Mono, JetBrains Mono and Menlo
@@ -75,9 +79,7 @@ uses it (it shows only in key hints, always next to a word). Designer's
 first idea `⇡` / `⇣` is missing from SF Mono and JetBrains Mono (a
 fallback font draws it). ASCII (`BISE_ASCII=1`): `#`. It joins §6
 ("marks") and the legend: `↑ a pull request (dim open, red checks fail)`.
-The worktree mark itself may change (the user is choosing, designer's
-`worktree-glyph.html`; designer's pick `⌂`): the PR cell follows it,
-whatever it is; the mock keeps it in one variable.
+The user keeps ψ for worktrees.
 
 **Variants in the mock**: the cell A `↑` (my pick), B `⇡ ⇣`, C the
 number `#412` in ψ's place (4 columns), D nothing at rest. Ctrl held: A a
