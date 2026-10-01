@@ -291,7 +291,8 @@ fn old_layout(name: &str) -> PathBuf {
     sh(&repo, &["git", "init", "-q"]);
     std::fs::write(repo.join("f"), "x").unwrap();
     sh(&repo, &["git", "add", "f"]);
-    sh(&repo, &["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"]);
+    // never the user's signing (an ssh agent that refuses in the background)
+    sh(&repo, &["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-qm", "i"]);
     let wt = st.join("idle-0000000a/worktrees/t1");
     sh(&repo, &["git", "worktree", "add", "-q", "--detach", wt.to_str().unwrap()]);
     d
