@@ -555,7 +555,7 @@ class Tui(Mini):
         s.comp = None
     def row(s, t, html, color="text", size=14, gap=0, out=None, x=None, y=None):
         yy = Mini.row(s, t, html, color, size, gap, out, x, y)
-        s.marks.append((t, yy)); return yy
+        s.marks.append((t, yy, y is not None)); return yy  # a row put at a given y (a fold) may scroll the feed back
     def acc_b(s, t): return f'<tspan fill="{s.c["acc"]}" font-weight="700">{t}</tspan>'
     def gust(s): return f'<tspan class="g" fill="{s.c["acc"]}">∿</tspan>'
     def header(s, spans):
@@ -585,20 +585,35 @@ class Tui(Mini):
         k = s.tl.show(t); r = s.tl.show(t + read, dur=0.1); s.marks.append((t, yy))
         w = w if w is not None else cells(text)
         s.feed.append(f'<g class="{k}"><rect x="{s.fx-14}" y="{yy-15}" width="3" height="19" fill="{s.c["acc"]}"/>'
-                      f'<text x="{s.fx}" y="{yy}" font-size="14" font-weight="700" fill="{s.c["text"]}" xml:space="preserve">{html or E(text)} <tspan font-weight="400" fill="{s.c["faint"]}">✓</tspan></text></g>'
+                      f'<text x="{s.fx}" y="{yy}" font-size="14" font-weight="700" fill="{s.c["text"]}" textLength="{(w + 2) * CW:.1f}" lengthAdjust="spacing" xml:space="preserve">{html or E(text)} <tspan font-weight="400" fill="{s.c["faint"]}">✓</tspan></text></g>'
                       f'<rect class="{r}" x="{s.fx + (w + 1) * CW - 1:.1f}" y="{yy-15}" width="{CW+2:.1f}" height="19" fill="{s.c["bg"]}"/>'
                       f'<text class="{r}" x="{s.fx + (w + 1) * CW:.1f}" y="{yy}" font-size="14" fill="{s.c["acc"]}">✓✓</text>')
-    def main(s, t, text, gap=0): return s.row(t, f'{s.acc(":*")} {text}', gap=gap)
+    def main(s, t, text, gap=0, out=None): return s.row(t, f'{s.acc(":*")} {text}', gap=gap, out=out)
+    def msg(s, t, a, b, text, gap=0, out=None, y=None):
+        """a message between agents, on one row: the chip '✉ a → b', then what it says (dim)."""
+        if y is None: s.y += gap; yy = s.y; s.y += 27
+        else: yy = y
+        k = s.tl.show(t, out); s.marks.append((t, yy))
+        n = cells(a) + cells(b) + 6; w = n * 7.3
+        s.feed.append(f'<g class="{k}"><rect x="{s.fx-4}" y="{yy-14}" width="{w:.0f}" height="20" rx="4" fill="{s.c["chip"]}"/>'
+                      f'<text x="{s.fx+4}" y="{yy}" font-size="12" fill="{s.c["dim"]}" textLength="{(n - 1) * 7.3 - 8:.1f}" lengthAdjust="spacing" xml:space="preserve">✉ <tspan font-weight="700" fill="{s.c["text"]}">{E(a)}</tspan> <tspan fill="{s.c["faint"]}">→</tspan> {E(b)}</text>'
+                      f'<text x="{s.fx + w + 6:.0f}" y="{yy}" font-size="13" fill="{s.c["dim"]}" xml:space="preserve">{E(text)}</text></g>')
+        return yy
     def type(s, t, t2, text, x=None, row=0):
-        """text typed in the composer between t and t2, one cell a step; it stays until the send (s.sent)."""
+        """text typed in the composer between t and t2: whole characters, one at a time (one tspan each, no
+        sliding mask). textLength pins the line to the cell grid, so what is drawn after it lines up in any
+        mono font. it stays until the send (the composer's group hides it)."""
         x = x if x is not None else 64
         n = cells(text); w = n * CW + 2
-        s.n_type = getattr(s, "n_type", 0) + 1
-        s.tl.n += 1; r = f"r{s.tl.n}"; T = s.T; p = lambda v: f"{v / T * 100:.2f}%"
-        s.tl.css.append(f"@keyframes {r}{{0%,{p(t)}{{width:0}}{p(t2)},100%{{width:{w:.1f}px}}}}.{r}{{animation:{r} {T}s steps({n},end) infinite}}")
-        cid = f"ty{s.tl.n}"; yy = s.top + 34 + row * 22
-        s.typed.append((t, f'<clipPath id="{cid}"><rect class="{r}" x="{x}" y="{yy-18}" height="26" width="0"/></clipPath>'
-                           f'<text x="{x}" y="{yy}" font-size="14" fill="{s.c["text"]}" clip-path="url(#{cid})" xml:space="preserve">{E(text)}</text>'))
+        T = s.T; p = lambda v: f"{v / T * 100:.2f}%"
+        chars = list(text); spans = []
+        for i, ch in enumerate(chars):
+            if ch == " ": spans.append(" "); continue  # a space shows nothing: no keyframes
+            s.tl.n += 1; k = f"q{s.tl.n}"; at = t + (t2 - t) * (i + 1) / len(chars)
+            s.tl.css.append(f"@keyframes {k}{{0%,{p(at)}{{opacity:0}}{p(at + .01)},100%{{opacity:1}}}}.{k}{{animation:{k} {T}s linear infinite}}")
+            spans.append(f'<tspan class="{k}">{E(ch)}</tspan>')
+        yy = s.top + 34 + row * 22
+        s.typed.append((t, f'<text x="{x}" y="{yy}" font-size="14" fill="{s.c["text"]}" textLength="{n * CW:.1f}" lengthAdjust="spacing" xml:space="preserve">{"".join(spans)}</text>'))
         return x + w
     typed = None
     def composer(s, sends, who=None):
@@ -625,14 +640,14 @@ class Tui(Mini):
         return "".join(o)
     def _scroll(s):
         """the feed sticks to the bottom: when a new row would pass the divider, it scrolls up (ease-out)."""
-        T = s.T; p = lambda v: f"{v / T * 100:.2f}%"; view = s.top - 14
+        T = s.T; p = lambda v: f"{v / T * 100:.2f}%"; view = s.top - 14 - 27  # one blank row above the divider
         fr, cur = ["0%{transform:translateY(0)}"], 0
-        for t, yb in sorted(s.marks):
+        for t, yb, *back in sorted(s.marks):
             need = max(0, yb + 6 - view)
-            if need > cur:
+            if need > cur or (back and back[0] and need != cur):
                 fr.append(f"{p(t)}{{transform:translateY(-{cur}px);animation-timing-function:ease-out}}{p(t + 0.35)}{{transform:translateY(-{need}px)}}")
                 cur = need
-        if not cur: return "", ""
+        if len(fr) == 1: return "", ""
         fr.append(f"{p(T - 0.3)}{{transform:translateY(-{cur}px)}}100%{{transform:translateY(0)}}")
         return f"@keyframes scr{{{''.join(fr)}}}.scr{{animation:scr {T}s linear infinite}}", ' class="scr"'
     def zen(s, t0, t1, depth=.42):
@@ -649,9 +664,14 @@ class Tui(Mini):
             cls = ' class="zen"'
         comp = s._composer() if s.comp else ""
         scss, scls = s._scroll(); css += scss
-        feedclip = f'<clipPath id="feed"><rect x="0" y="52" width="{(s.px - 17) if s.px else s.W}" height="{s.top - 52}"/></clipPath>'
+        fw = (s.px - 17) if s.px else s.W
+        feedclip = f'<clipPath id="feed"><rect x="0" y="43" width="{fw}" height="{s.top - 43}"/></clipPath>'
+        # a row that scrolls off fades out under the header, instead of being cut in half
+        fade = (f'<linearGradient id="fadeTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{s.c["bg"]}"/>'
+                f'<stop offset=".45" stop-color="{s.c["bg"]}"/><stop offset="1" stop-color="{s.c["bg"]}" stop-opacity="0"/></linearGradient>'
+                f'<rect x="0" y="43" width="{fw}" height="24" fill="url(#fadeTop)"/>') if scls else ""
         body = (f'<rect width="{s.W}" height="{s.H}" fill="{s.c["bg"]}"/>' + feedclip +
-                f'<g clip-path="url(#feed)"><g{scls}>{"".join(s.feed)}</g></g>' + comp + "".join(s.over) + f'<g{cls}>{"".join(s.chrome)}</g>')
+                f'<g clip-path="url(#feed)"><g{scls}>{"".join(s.feed)}</g></g>' + fade + comp + "".join(s.over) + f'<g{cls}>{"".join(s.chrome)}</g>')
         return svg(s.W, s.H, body, "".join(s.tl.css) + css, label, s.c, pad=16)
 
 def t_talk(c):
@@ -725,7 +745,106 @@ def t_screenshot(c):
     m.composer([(0.4, send)])
     return m.svg("you type a message, paste a screenshot with ctrl+v: it lands as one chip in your text, and the agent gets the image.")
 
-SCENES = [("talk", t_talk), ("zen", t_zen), ("screenshot", t_screenshot)]
+def t_resume(c):
+    """hand it something huge: one big goal, main runs agents in waves, restarts the one that stops, keeps going."""
+    m = Tui(c, 11); m.typed = []
+    goal = "dark mode on every page, not just settings"
+    m.header([(2.3, 4.8, f'{m.gust()} 3 working'), (4.8, 6.0, f'{m.gust()} 2 working'), (6.0, 8.2, f'{m.gust()} 3 working'),
+              (8.2, None, f'{m.acc("✓")} 9 done')])
+    m.type(0.2, 1.5, goal); m.you(1.7, goal, gap=0)
+    m.main(2.3, "12 pages. i'll run 3 agents at a time and keep going till it's done.")
+    g = m.gust()
+    m.row(3.4, f'{g} dark-1 {m.dim("·")} {g} dark-2 {m.dim("·")} {g} dark-3', color="dim", gap=8)
+    m.row(4.8, f'{m.acc("✗")} dark-2 {m.dim("stopped: the provider answered 503.")}')
+    m.main(6.0, "started dark-2 again, from page 7.")
+    m.row(7.2, f'{m.dim("▸ 9 agents over 40 minutes")}', size=13, gap=8)
+    m.row(8.2, f'{m.acc("✓")} 12 of 12 pages dark, tests green.')
+    m.composer([(0.2, 1.7)])
+    return m.svg("you give main one big goal. it runs three agents at a time, starts again the one that stops on an error, and keeps going until all 12 pages are done.")
+
+def t_worktree(c):
+    """worktrees? don't think about it: one agent gets its own copy, works there, it is cleaned up after."""
+    m = Tui(c, 10, panel=True); m.typed = []
+    psi = f' <tspan fill="{c["acc"]}">ψ</tspan>'
+    m.header([(0, 1.9, f'{m.gust()} 2 working'), (1.9, 5.0, f'{m.gust()} 3 working'), (5.0, None, f'{m.gust()} 2 working · {m.acc("✓")} 1 done')])
+    m.agents([(0, "main", [(0, ":*")]), (0, "dark-mode", [(0, m.gust())]), (0, "cookies", [(0, m.gust())]),
+              (1.9, "perf", [(1.9, m.gust()), (5.0, "✓")])])
+    k = m.tl.show(1.9, 5.0, dur=0.15)  # the ψ next to perf while its worktree lives
+    m.chrome.append(f'<text class="{k}" x="{m.px + 20 + 5 * 8.45:.0f}" y="{90 + 3 * 22}" font-size="14" fill="{c["acc"]}">ψ</text>')
+    m.main(0.2, "dark-mode and cookies share your folder.")
+    m.main(1.3, "perf needs a clean build to time signup.", gap=8)
+    m.row(1.9, f'   it gets its own worktree:{psi} perf.', color="text")
+    m.row(5.0, f'{m.acc("✓")} perf done {m.dim("· signup 4.1 s → 0.9 s")}', gap=8)
+    m.row(5.6, f'{m.dim("  worktree merged and cleaned up.")}', size=13)
+    m.composer([])
+    return m.svg("dark-mode and cookies share your folder; perf gets its own worktree for a clean build, finishes, and the worktree is cleaned up.")
+
+def t_card(c):
+    """you're not the router: main answers the obvious questions for you; only the real decision reaches you."""
+    m = Tui(c, 12); m.typed = []
+    m.header([(0, None, f'{m.gust()} 3 working')])
+    m.msg(0.4, "dark-mode", "main", "which gray for the borders?")
+    m.main(1.4, "i told dark-mode: the gray in tokens.css, like everywhere else.")
+    m.msg(2.7, "emoji-csv", "main", "add a BOM so excel opens it?", gap=8)
+    m.main(3.7, "i told emoji-csv: yes, excel needs it. the old exports had one.")
+    m.msg(5.0, "cookies", "main", "legal wants the banner. drop it anyway?", gap=8)
+    m.main(6.0, f'{m.acc("that one's yours:")} cookies asks if the banner can go.')
+    ans = "it stays. half the size"
+    m.type(6.6, 7.6, ans); m.you(7.8, ans, gap=8)
+    m.main(8.4, "told cookies. half the size, the buy button shows.")
+    m.composer([(6.6, 7.8)])
+    return m.svg("three agents ask main a question. main answers two of them itself, the way you would, and passes you the one decision that is yours.")
+
+def t_sync(c):
+    """agents sync on their own: they ask and hand off; it folds into one line; nothing for you."""
+    m = Tui(c, 9); m.typed = []
+    m.header([(0, None, f'{m.gust()} 3 working')])
+    y0 = m.y
+    m.msg(0.5, "release", "emoji-csv", "did the export format change?", out=4.4)
+    m.msg(1.4, "emoji-csv", "release", "no. same columns, now in utf-8.", out=4.4)
+    m.msg(2.3, "release", "dark-mode", "a screenshot for the notes?", out=4.4)
+    m.msg(3.2, "dark-mode", "release", "done, docs/dark.png", out=4.4)
+    m.row(4.6, f'{m.dim("▸ 4 messages between 3 agents")}', size=13, y=y0)
+    m.row(5.3, f'{m.acc(":*")} release has what it needs. nothing for you.', y=y0 + 35)
+    m.composer([])
+    return m.svg("release asks emoji-csv and dark-mode what it needs; they answer; the four messages fold into one line, and main says there is nothing for you.")
+
+def t_tools(c):
+    """all your MCPs, always on: bise calls them from code, so a hundred servers don't fill its context."""
+    m = Tui(c, 10); m.typed = []
+    q = "signup is slow on mobile. since when?"
+    m.header([(0, None, "42 MCP servers")])
+    m.main(0.2, "42 MCP servers on. all of them, all the time.")
+    m.row(0.2, f'{m.dim("  github · linear · sentry · slack · notion · postgres · +36")}', size=13)
+    m.type(0.7, 2.0, q); m.you(2.2, q, gap=8)
+    m.row(2.9, f'<tspan fill="{c["faint"]}">╭─</tspan> {m.dim("ƒ typescript")}', size=13, gap=8)
+    bar = f'<tspan fill="{c["faint"]}">│</tspan>'
+    aw = f'<tspan fill="{c["acc"]}">await</tspan>'
+    for i, line in enumerate([f'slow = {aw} tools.sentry.slowest("signup", "mobile")',
+                              f'pr   = {aw} tools.github.mergedBefore(slow.since)',
+                              f'said = {aw} tools.slack.search("signup slow")']):
+        m.row(3.3 + i * 0.45, f'{bar} {line}', size=13, color="dim")
+    m.main(5.0, "since tuesday: #412 added a 4.2 MB hero image.", gap=8)
+    m.row(5.4, "  #support saw it the same day. want perf on it?")
+    m.composer([(0.7, 2.2)])
+    return m.svg("42 MCP servers are on. you ask why signup is slow; main writes a few lines of code that call Sentry, GitHub and Slack, and answers in two lines.")
+
+def t_plugins(c):
+    """bring your Agent Plugins: skills, MCP servers, hooks load as they are."""
+    m = Tui(c, 9); m.typed = []
+    ask = "draft the release notes, the usual way"
+    m.header([(5.2, None, f'{m.gust()} 1 working')])
+    m.main(0.4, "hi. i found your setup:")
+    for i, (a, b) in enumerate([("14 skills", "~/.agents/skills"), ("3 plugins", "~/.agents/plugins, .vibe"), ("6 MCP servers", ".mcp.json")]):
+        m.row(1.0 + i * 0.5, f'   {m.acc("✓")} {a:<16}{m.dim(E(b))}')
+    m.main(2.8, "everything you had works here. nothing to port.", gap=8)
+    m.type(3.4, 4.6, ask); m.you(4.8, ask, gap=8)
+    m.main(5.4, "release started, with your release-notes skill.")
+    m.composer([(3.4, 4.8)])
+    return m.svg("on its first run, bise finds your skills, plugins and MCP servers; you ask for release notes and the agent uses your own skill.")
+
+SCENES = [("talk", t_talk), ("zen", t_zen), ("screenshot", t_screenshot),
+          ("resume", t_resume), ("worktree", t_worktree), ("card", t_card), ("sync", t_sync), ("tools", t_tools), ("plugins", t_plugins)]
 
 FEATS = [("sync", f_sync), ("tools", f_tools), ("card", f_card), ("quiet", f_quiet), ("direct", f_direct),
          ("steer", f_steer), ("resume", f_resume), ("worktree", f_worktree)] + SCENES
