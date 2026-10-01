@@ -35,9 +35,12 @@ Open source: https://github.com/gvergnaud/bise
 
 - Category: **Productivity** (Workflow & Planning if offered)
 - Language: English
-- Icon 128x128: `icons/128.png` (designer)
-- Screenshots (1280x800 or 640x400, 1 to 5): designer. Suggested: (1) Chrome with a "bise · api-v2" tab group in the background and the user's own tab in front; (2) the bise TUI with a `↖ clicked "Add to cart" · amazon.fr` row; (3) the `/computer-use` setup screen.
-- Small promo tile 440x280: optional, designer.
+- Icon 128x128: `computer-use/extension/icons/128.png` (designer's, also in docs/brand/computer-use/icons)
+- Screenshots, 1280x800, upload in this order (designer's, docs/brand/computer-use/store/ on main, source store.html):
+  1. `1-own-tabs.png`
+  2. `2-one-line-per-action.png`
+  3. `3-setup.png` (the setup screen's final words, "Chrome is ready. ask any agent to use it.": re-render if the screen changes)
+- Small promo tile 440x280: `docs/brand/computer-use/store/tile-440x280.png`
 - Official URL: https://bise.dev (verify the domain in Search Console if the console asks)
 - Homepage URL: https://bise.dev
 - Support URL: https://github.com/gvergnaud/bise/issues
