@@ -3,9 +3,13 @@
 //! forwards each call to the broker (C3), starting the broker when none
 //! runs.
 //!
-//! A tool result is one text block: the C1 result as JSON. A C1 error is
-//! `isError: true` with the text `{"error": {code, message, candidates?,
-//! summary?}}`, so a program that gets the text back can tell them apart.
+//! A tool result is one text block: the C1 result as JSON. A C1 error is a
+//! normal result too (`isError: false`), the text `{"error": {code,
+//! message, candidates?, summary?}}`: bise's runtime ends the whole
+//! program on an `isError` result, and code mode must be able to catch
+//! `not_found` or `paused` (C1, m_3802). `isError: true` is for transport
+//! failures only: the broker unreachable or gone mid-action, a broken
+//! reply from the extension or the helper.
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -49,6 +53,12 @@ impl Me {
     }
 }
 
+/// Marks an error as a transport failure (`isError: true`).
+fn transport(mut e: Value) -> Value {
+    e["transport"] = json!(true);
+    e
+}
+
 /// Reads change nothing: safe to send again after the broker restarted.
 fn idempotent(op: &str) -> bool {
     matches!(op, "status" | "tabs" | "apps" | "snapshot" | "screenshot")
@@ -75,7 +85,9 @@ impl Server {
 
     /// One C1 call through the broker.
     pub fn call(&mut self, op: &str, args: &Value) -> Result<Value, Value> {
-        let down = |e: std::io::Error| err("no_browser", format!("the computer-use broker can't start ({}); ask the user to run /computer-use", e));
+        let down = |e: std::io::Error| {
+            transport(err("no_browser", format!("the computer-use broker can't start ({}); ask the user to run /computer-use", e)))
+        };
         for attempt in 0..2 {
             let r = match self.conn() {
                 Ok(c) => c.call(op, args),
@@ -86,10 +98,10 @@ impl Server {
                 Err(_) => {
                     self.conn = None;
                     if attempt == 1 || !idempotent(op) {
-                        return Err(err(
+                        return Err(transport(err(
                             "timeout",
                             "the computer-use broker restarted during this action; check the page with snapshot, then try again",
-                        ));
+                        )));
                     }
                 }
             }
@@ -118,10 +130,14 @@ impl Server {
                 } else {
                     Err(err("bad_args", format!("unknown tool {:?}", name)))
                 };
-                match r {
-                    Ok(v) => json!({"content": [{"type": "text", "text": v.to_string()}], "isError": false}),
-                    Err(e) => json!({"content": [{"type": "text", "text": json!({"error": e}).to_string()}], "isError": true}),
-                }
+                let (body, is_error) = match r {
+                    Ok(v) => (v, false),
+                    Err(mut e) => {
+                        let t = e.as_object_mut().and_then(|o| o.remove("transport")).is_some_and(|v| v == true);
+                        (json!({"error": e}), t)
+                    }
+                };
+                json!({"content": [{"type": "text", "text": body.to_string()}], "isError": is_error})
             }
             _ => return Some(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": format!("no method {}", method)}})),
         };

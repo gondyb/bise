@@ -623,12 +623,13 @@ fn a_broker_restart_through_mcp() {
     let clicks = || ext.st.lock().unwrap().requests.iter().filter(|r| r["args"]["action"] == "click").count();
     let before = clicks();
     let (e, r) = call(&mut server, "act", json!({"target": t, "action": "click", "ref": "e1"}));
-    assert!(e);
+    assert!(e, "the broker gone mid-action is a transport failure: isError");
     assert_eq!(r["error"]["code"], "timeout", "{}", r);
+    assert!(r["error"].get("transport").is_none());
     assert_eq!(clicks(), before);
-    // the stop outlived the restart; errors come as {"error": {...}}
+    // the stop outlived the restart; a C1 error is a normal result {"error": {...}}
     let (e, r) = call(&mut server, "snapshot", json!({"target": t}));
-    assert!(e);
+    assert!(!e);
     assert_eq!(r["error"]["code"], "stopped");
     for h in brokers.lock().unwrap().drain(..) {
         h.shutdown();
@@ -658,7 +659,7 @@ fn mcp_protocol_and_not_set_up() {
     assert_eq!(lines.len(), 4);
     assert_eq!(lines[0]["result"]["serverInfo"]["name"], "bise-computer-use");
     assert_eq!(lines[1]["result"]["tools"].as_array().unwrap().len(), 7);
-    assert_eq!(lines[2]["result"]["isError"], true);
+    assert_eq!(lines[2]["result"]["isError"], false);
     let e: Value = serde_json::from_str(lines[2]["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(e["error"]["code"], "not_set_up");
     assert_eq!(e["error"]["message"], "computer use isn't set up: ask the user to run /computer-use");

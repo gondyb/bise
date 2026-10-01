@@ -353,6 +353,8 @@ fn incoming(sh: &Arc<Shared>, link: u64, msg: &Value) {
                 if !e.is_object() || str_of(&e, "code").is_none() {
                     let m = e.as_str().map(String::from).unwrap_or_else(|| e.to_string());
                     e = err("timeout", format!("the action failed: {}", m));
+                    // a broken reply, not a C1 error: the MCP server says isError
+                    e["transport"] = json!(true);
                 }
                 Err(e)
             };
