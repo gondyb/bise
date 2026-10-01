@@ -1,0 +1,75 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1280px;height:800px;background:#f2ede2;color:#1d1a17;font-family:Newsreader,serif;overflow:hidden;position:relative}
+.cap{position:absolute;left:80px;top:52px;font-size:40px;font-weight:600;letter-spacing:-.02em}
+.cap i{font-family:Caveat;color:#c8264a;font-style:normal;font-size:1.2em}
+.sub{position:absolute;left:80px;top:108px;font-size:22px;color:#5a5349}
+.fig{position:absolute;left:80px;top:170px;width:1120px;height:580px;background:#faf7f0;border:1.5px solid #6b645a;border-radius:10px;box-shadow:3px 3px 0 #1d1a170c;overflow:hidden}
+.mono{font-family:"JetBrains Mono",monospace}
+/* chrome */
+.tabs{height:46px;background:#e6e0d4;display:flex;align-items:flex-end;gap:6px;padding:0 12px}
+.tab{height:36px;padding:0 16px;display:flex;align-items:center;gap:8px;font:14px -apple-system,Helvetica,sans-serif;color:#3a352f;border-radius:9px 9px 0 0}
+.tab.on{background:#faf7f0;color:#1d1a17}
+.grp{height:24px;margin-bottom:6px;padding:0 10px;border-radius:7px;background:#f4a6b0;color:#1d1a17;font:600 13px -apple-system,Helvetica,sans-serif;display:flex;align-items:center}
+.grpline{border-bottom:3px solid #f4a6b0;border-radius:0}
+.url{height:42px;background:#faf7f0;border-bottom:1px solid #ddd5c7;display:flex;align-items:center;padding:0 16px}
+.url span{background:#efe9de;border-radius:16px;padding:6px 16px;font:14px -apple-system,Helvetica,sans-serif;color:#5a5349;width:100%}
+.page{padding:40px 56px;font:16px -apple-system,Helvetica,sans-serif;color:#3a352f}
+.card{background:#fff;border:1px solid #e3dccf;border-radius:10px;padding:18px 22px;margin-bottom:14px}
+/* tui */
+.tui div{white-space:pre}.tui{position:absolute;inset:0;background:#141211;color:#ece6da;font-size:17px;line-height:1.75;padding:22px 30px}
+.d{color:#a39c90}.f{color:#5f5850}.a{color:#f4a6b0}.e{color:#e0797a}.b{font-weight:700}
+.rule{border-top:1px solid #3d3935;margin:10px -30px 12px}
+.pill{position:absolute;padding:3px 10px 3px 8px;border-left:3px solid #f4a6b0;background:#141211;color:#ece6da;font:600 13px -apple-system,Helvetica,sans-serif;border-radius:0 6px 6px 0;box-shadow:0 0 18px #f4a6b080}
+</style></head><body>
+<div id="s1" hidden>
+ <div class="cap">your agents get their own tabs. <i>yours stay yours.</i></div>
+ <div class="sub">each bise agent works in a tab group named after it, in the background.</div>
+ <div class="fig">
+  <div class="tabs"><div class="tab on">Inbox · Mail</div><div class="tab">Q4 planning</div><div class="grp">bise · cookies</div><div class="tab grpline">acme.shop · cart</div><div class="tab grpline">acme.shop · checkout</div><div class="grp">bise · perf</div><div class="tab grpline">PageSpeed</div></div>
+  <div class="url"><span>mail.example.com/inbox</span></div>
+  <div class="page"><div class="card"><b>Lea</b> · lunch on thursday?</div><div class="card"><b>Ops</b> · weekly report</div><div class="card"><b>Sam</b> · the deck, v3</div>
+   <p style="margin-top:26px;color:#8a8174;font-family:Newsreader;font-style:italic;font-size:20px">you keep working in your tab. the agents' tabs stay in the background.</p></div>
+ </div>
+</div>
+<div id="s2" hidden>
+ <div class="cap">every action is one line in bise. <i>:*</i></div>
+ <div class="sub">see what each agent clicked and typed, where. stop it any time.</div>
+ <div class="fig"><div class="tui mono">
+  <div><span class="b">bise</span> <span class="a">:*</span><span class="d" style="float:right">↖ cookies drives Chrome · ∿ 2 working</span></div><div class="rule"></div>
+  <div><span class="a">:*</span> cookies is checking the banner on the real shop.</div><br>
+  <div><span class="a">↖</span> went to acme.shop <span class="d">· acme.shop</span></div>
+  <div><span class="a">↖</span> clicked "Accept cookies" <span class="d">· acme.shop</span></div>
+  <div><span class="a">↖</span> scrolled down <span class="d">· acme.shop</span></div>
+  <div><span class="a">↖</span> clicked "Add to cart" <span class="d">· acme.shop</span></div>
+  <div><span class="a">↖</span> read "Buy now" <span class="d">· acme.shop</span></div>
+  <div><span class="e">✗</span> couldn't click "Buy now": the banner covers it <span class="d">· acme.shop</span></div><br>
+  <div><span class="a">:*</span> found it: on a phone the banner sits on top of the buy button. fixing it.</div>
+  <div class="rule" style="margin-top:22px"></div>
+  <div class="d">you → main</div><div class="f">&nbsp;&nbsp;│ what's on your mind?</div>
+ </div></div>
+</div>
+<div id="s3" hidden>
+ <div class="cap">set it up in a minute: <span class="mono" style="font-size:34px">/computer-use</span></div>
+ <div class="sub">bise checks every step and runs a live test.</div>
+ <div class="fig"><div class="tui mono" style="padding:40px 60px">
+  <div class="b">computer use <span class="d" style="font-weight:400">· agents can drive Chrome</span></div><br>
+  <div><span class="a">✓</span> Chrome              <span class="d">Chrome 154</span></div>
+  <div><span class="a">✓</span> Chrome extension    <span class="d">bise computer use 0.1</span></div>
+  <div><span class="a">✓</span> live test           <span class="d">opened a tab, clicked a button. all set</span></div><br>
+  <div><span class="a">✓</span> Chrome is ready. ask any agent to use it.</div><br><br>
+  <div class="d">what the agents see goes only to their model: Anthropic.</div>
+  <div class="d">in auto, buying, sending and logging in ask you first.</div><br>
+  <div class="f">↑↓ step   esc later</div>
+ </div></div>
+</div>
+<div id="s4" hidden style="position:absolute;inset:0">
+ <img src="icon.png" style="position:absolute;left:40px;top:76px;width:128px">
+ <div style="position:absolute;left:196px;top:86px;font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1">bise <span style="font-family:Caveat;color:#c8264a">:*</span></div>
+ <div style="position:absolute;left:198px;top:140px;font-size:26px;color:#5a5349">computer use</div>
+ <div style="position:absolute;left:40px;top:226px;font-size:18px;color:#8a8174;font-style:italic">your agents, in their own tabs.</div>
+</div>
+<script>const s=location.hash.slice(1)||"s1";document.getElementById(s).hidden=false;if(s==="s4"){document.body.style.width="440px";document.body.style.height="280px"}</script>
+</body></html>
