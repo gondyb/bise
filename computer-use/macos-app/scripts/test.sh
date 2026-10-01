@@ -177,7 +177,7 @@ c act "{$T,\"action\":\"click\",\"locator\":{\"role\":\"button\",\"name\":\"Add 
 "$bin/cu-client" --socket "$SOCK" "{\"id\":900,\"op\":\"simulate_input\",\"args\":{$T}}" --wait-event paused 3 > "$WORK/ev" 2>&1
 grep -q '"event":"paused"' "$WORK/ev" && grep -q '"target":"app:test.bise.cu-testapp"' "$WORK/ev" && ok "takeover: paused event" || ko "takeover: no paused event" "$(cat "$WORK/ev")"
 c act "{$T,\"action\":\"click\",\"locator\":{\"role\":\"button\",\"name\":\"Add one\"}}"
-expect "paused: the next act fails" 'r["error"]["code"] == "paused" and r["error"]["summary"].startswith("you took the wheel")'
+expect "paused: the next act fails" 'r["error"]["code"] == "paused" and r["error"]["summary"] == "paused · you took the wheel in cu test"'
 c act "{$T,\"action\":\"click\",\"locator\":{\"role\":\"button\",\"name\":\"Add one\"}}" other
 expect "another agent is not paused" 'r["ok"]'
 "$bin/cu-client" --socket "$SOCK" '{"resume":"tester"}' --wait-event resumed 3 > "$WORK/ev" 2>&1

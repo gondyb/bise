@@ -251,7 +251,7 @@ final class Engine {
     }
 
     func stoppedError() -> CUError {
-        CUError("stopped", "the user stopped you; ask before you start again", summary: "stopped by you")
+        CUError("stopped", "the user stopped you; ask before you start again", summary: "you stopped it")
     }
 
     // MARK: act
@@ -269,12 +269,12 @@ final class Engine {
         if isStopped(agent) { throw stoppedError() }
         let t: AppTarget
         do { t = try resolve(args["target"] as? String) } catch var e as CUError {
-            e.summary = e.summary ?? (e.code == "refused" ? "couldn't use that app: off limits" : "couldn't \(verb): the app isn't open")
+            e.summary = e.summary ?? (e.code == "refused" ? "couldn't use that app: off limits for agents" : "couldn't \(verb): the app isn't open")
             throw e
         }
         if locked({ paused[agent]?.contains(t.target) ?? false }) {
             throw CUError("paused", "the user is using \(t.name); wait until they give it back",
-                          summary: "you took the wheel in \(t.name)")
+                          summary: "paused · you took the wheel in \(t.name)")
         }
         let act = Act(engine: self, agent: agent, target: t, args: args, action: action, verb: verb)
         locked { driving[agent] = (t.target, t.pid) }

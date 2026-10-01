@@ -312,10 +312,26 @@ public enum Keys {
 // MARK: summaries (C1: the line the TUI shows after ↖)
 
 public enum Summary {
+    /// Keys as the user reads them (designer m_3774): "Meta+A Enter" →
+    /// "cmd+a enter"; mac names cmd, opt, ctrl, shift; never Meta.
+    public static func keys(_ s: String) -> String {
+        s.split(separator: " ").map { chord in
+            chord.split(separator: "+", omittingEmptySubsequences: false).map { part -> String in
+                switch part.lowercased() {
+                case "meta", "command", "cmd", "controlormeta": return "cmd"
+                case "alt", "option": return "opt"
+                case "control", "ctrl": return "ctrl"
+                case "": return "+"
+                default: return part.lowercased()
+                }
+            }.joined(separator: "+").replacingOccurrences(of: "++", with: "+")
+        }.joined(separator: " ")
+    }
+
     /// `"Save"`, else `the text area` style from the role.
     public static func what(name: String?, role: String?) -> String {
         if let n = name?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
-            return "\"" + Snapshot.cut(n, 40) + "\""
+            return "\"" + Snapshot.cut(n, 32) + "\""
         }
         switch role ?? "" {
         case "textbox": return "the text field"

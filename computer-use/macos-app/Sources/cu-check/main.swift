@@ -107,6 +107,10 @@ do { _ = try Keys.parse("NoSuchKey"); expect(false, "bad key") } catch let e as 
 // summaries
 eq(Summary.what(name: "Save", role: "button"), "\"Save\"", "named")
 eq(Summary.what(name: "", role: "searchbox"), "the search box", "unnamed searchbox")
+eq(Summary.what(name: String(repeating: "x", count: 40), role: "button"), "\"" + String(repeating: "x", count: 31) + "…\"", "labels cut at 32")
+eq(Summary.keys("Meta+A"), "cmd+a", "keys: cmd, lowercase")
+eq(Summary.keys("Control+Alt+Shift+ArrowDown Enter"), "ctrl+opt+shift+arrowdown enter", "keys: mac names")
+eq(Summary.keys("Shift++"), "shift++", "keys: the + key")
 
 print(failures == 0 ? "cu-check: \(count) checks ok" : "cu-check: \(failures) of \(count) failed")
 exit(failures == 0 ? 0 : 1)

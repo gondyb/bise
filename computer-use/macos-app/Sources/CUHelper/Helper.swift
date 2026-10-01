@@ -38,6 +38,10 @@ public func helperMain() {
             // the placeholder icon (bundle.sh): the agents' cursor on paper
             if let dir = args.next() { Icon.writeIconset(dir) }
             exit(0)
+        case "--write-cursor":
+            // the overlay's look as a PNG (for designer)
+            if let p = args.next() { Icon.writeCursor(p, agent: args.next() ?? "api-v2") }
+            exit(0)
         case "--diag":
             // who TCC charges for this process when started this way
             let d = try! JSONSerialization.data(withJSONObject: Diag.info(), options: [.sortedKeys])

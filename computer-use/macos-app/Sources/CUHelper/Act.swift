@@ -34,8 +34,8 @@ struct Act {
         case "stale_ref": e.summary = "couldn't \(verb) \(w): the window changed"
         case "needs_front": e.summary = "couldn't \(verb) \(w): \(target.name) needs to be in front"
         case "timeout": e.summary = "couldn't \(verb) \(w): timed out"
-        case "stopped": e.summary = "stopped by you"
-        case "refused": e.summary = "couldn't use \(target.name): off limits"
+        case "stopped": e.summary = "you stopped it"
+        case "refused": e.summary = "couldn't use \(target.name): off limits for agents"
         case "no_permission": e.summary = "couldn't \(verb) \(w): no permission"
         default: e.summary = "couldn't \(verb) \(w)"
         }
@@ -60,16 +60,16 @@ struct Act {
         do {
             switch action {
             case "click": try click(el, node); summary = "clicked \(what(node))"
-            case "fill": try fill(el ?? focused(window), node); summary = "filled \(what(node))"
+            case "fill": try fill(el ?? focused(window), node); summary = "typed in \(what(node))"
             case "type": let n = try type(el ?? focused(window), node); summary = "typed in \(what(n))"
             case "press":
                 let keys = try Keys.parse(args["keys"] as? String ?? args["text"] as? String ?? "")
                 if let el = el { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
                 press(keys)
-                summary = "pressed \(args["keys"] as? String ?? args["text"] as? String ?? "")"
-            case "select": let v = try select(el, node); summary = "selected \"\(Snapshot.cut(v, 40))\" in \(what(node))"
+                summary = "pressed \(Summary.keys(args["keys"] as? String ?? args["text"] as? String ?? ""))"
+            case "select": let v = try select(el, node); summary = "selected \"\(Snapshot.cut(v, 32))\" in \(what(node))"
             case "check": let on = try check(el, node); summary = "\(on ? "checked" : "unchecked") \(what(node))"
-            case "hover": try hover(el); summary = "hovered \(what(node))"
+            case "hover": try hover(el); summary = "pointed at \(what(node))"
             case "scroll": let d = try scroll(el, window); summary = "scrolled \(d)"
             case "close":
                 let title = window.title
@@ -313,7 +313,7 @@ struct Act {
             while true {
                 if engine.isStopped(agent) { throw engine.stoppedError() }
                 let all = Snapshot.readText(engine.walk(target, window, budget: 5000).nodes, limit: 1_000_000)
-                if all.localizedCaseInsensitiveContains(text) { return "waited for \"\(Snapshot.cut(text, 40))\"" }
+                if all.localizedCaseInsensitiveContains(text) { return "waited for \"\(Snapshot.cut(text, 32))\"" }
                 if Date() >= deadline { throw CUError("timeout", "\"\(text)\" did not show in \(Int(timeout * 1000)) ms") }
                 Thread.sleep(forTimeInterval: 0.1)
             }
