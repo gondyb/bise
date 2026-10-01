@@ -19,7 +19,7 @@ ${asleep ? '<path data-ink="blue" d="M150 46 l8 0 l-8 8 l8 0" stroke="#3446a8" s
   document.querySelectorAll("[data-doodle]").forEach((el) => { el.innerHTML = cloud(el.dataset.doodle === "asleep"); });
 
   // the kiss: split ':*' where it's drawn with the pen, so the * sits level with the colon (a mouth)
-  for (const el of document.querySelectorAll(".hero .big .kiss, nav.side .logo .acc, .top b span, .kiss-c"))
+  for (const el of document.querySelectorAll(".hero .big .kiss, nav.side .logo .acc, .top b span, header.top .logo .k, .kiss-c"))
     if (el.textContent.trim() === ":*") { el.classList.add("kiss-c"); el.innerHTML = '<span class="kc">:</span><span class="ks">*</span>'; }
 
   // pen marks draw themselves once their block is on screen

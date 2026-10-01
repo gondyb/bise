@@ -17,7 +17,7 @@
 <meta property="og:image" content="https://bise.dev/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root,[data-theme="dark"]{
   --bg:#141211;--bg2:#1b1816;--text:#ece6da;--dim:#a39c90;--faint:#857d72;--line:#2a2623;--rule:#4a4540;
@@ -156,6 +156,58 @@ figure.ex figcaption{padding:10px 18px 12px;border-top:1px solid var(--t-frame);
   .dd{grid-template-columns:1fr}h1{font-size:28px}
 }
 </style>
+<link rel="stylesheet" href="/book/paper.css">
+<style>
+/* ===== paper: the site around the system is paper (site/book/paper.css); the mocks keep the TUI's palette (--t-*) on a figure card ===== */
+html[data-theme="dark"]{--t-bg:#1f1c19}
+html[data-theme="light"]{--t-bg:#faf7f0}
+body{font-size:17.5px;line-height:1.6}
+header.top{border-bottom:0;background:linear-gradient(var(--bg) 82%,color-mix(in srgb,var(--bg) 0%,transparent));backdrop-filter:none}
+header.top::after{content:"";position:absolute;left:22px;right:22px;bottom:6px;height:1px;background:var(--line)}
+header.top .logo{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:22px;letter-spacing:-.02em}
+header.top .logo .k{border:0;padding:0;font-size:1.05em;margin-left:.15em}
+header.top .logo small{font-style:italic;font-weight:400;font-size:16px;letter-spacing:0}
+header.top nav a{font-style:italic;font-size:16px}
+.search input{font-family:Newsreader,Georgia,serif;font-style:italic;font-size:16px;background:transparent;border-color:var(--rule);border-radius:2px}
+.search input:focus{border-color:var(--pen)}
+.search::before{color:var(--pen);top:5px}
+.search kbd{font-family:"JetBrains Mono",monospace;border-color:var(--rule)}
+.burger{border-color:var(--rule)}
+nav.side{font-size:16.5px;padding-top:28px}
+nav.side .grp{letter-spacing:0;font-size:22px;margin:18px 0 2px}
+nav.side a.on::before{color:var(--pen)}
+aside.toc{font-size:15px}aside.toc .t{font-family:Caveat,cursive;font-size:20px;color:var(--pen);letter-spacing:0}
+aside.toc a{border-left-color:var(--line)}aside.toc a.on{border-left-color:var(--pen)}
+.crumb{font-variant:small-caps;letter-spacing:.12em;font-size:15px;color:var(--kick)}.crumb .src{font-variant:normal;letter-spacing:0;font-style:italic}
+h1{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:clamp(34px,3.6vw,46px);letter-spacing:-.03em;line-height:1.08}
+.lead{font-size:21px;font-style:italic}
+h2{font-size:28px;margin:50px 0 14px;letter-spacing:-.02em}
+h3{font-size:20px}
+p,ul,ol{max-width:68ch}
+ol li::before{font-family:Caveat,cursive;font-weight:700;font-size:1.25em;line-height:1.2;color:var(--pen)}
+i{font-style:italic;color:var(--dim)}
+table{font-size:16px}th{font-variant:small-caps;letter-spacing:.08em;color:var(--kick)}
+.note{background:transparent;border-left:0;position:relative;padding:4px 0 4px 2.4ch}
+.note::before{content:"";position:absolute;left:0;top:.3em;bottom:.3em;width:2px;background:var(--pen);border-radius:2px;filter:url(#wobble)}
+.card{background:transparent;border:0;border-radius:8px}.card:hover b{text-decoration:underline;text-decoration-color:var(--pen)}
+.card b{font-weight:600;font-size:19px}.card span{font-size:15.5px}
+.dd>div{border:0;position:relative;padding-top:16px}
+.dd>div::before{content:"";position:absolute;inset:0;border:1.4px solid var(--rule);border-top:2.2px solid var(--pen);border-radius:8px;filter:url(#wobble);pointer-events:none}
+.dd>.dont::before{border-top-color:var(--err)}
+.dd .h{font-family:Caveat,cursive;font-size:24px;font-weight:700;color:var(--pen)}.dd .dont .h{color:var(--err)}
+.dd ul li{font-size:16px}
+.sw>div{border:0;position:relative;box-shadow:3px 3px 0 var(--drop);background:var(--t-bg)}
+.sw>div::before{content:"";position:absolute;inset:0;border:1.4px solid var(--frame);border-radius:10px;filter:url(#wobble);pointer-events:none}
+.sw .meta{font-size:14.5px}.sw .meta span{font-family:"JetBrains Mono",monospace;font-size:12px}
+.pn{border-top:0;background:linear-gradient(90deg,transparent,var(--line) 10%,var(--line) 90%,transparent) top/100% 1px no-repeat}
+.pn a{border:0;position:relative;font-size:18px}.pn a::before{content:"";position:absolute;inset:0;border:1.4px solid var(--rule);border-radius:8px;filter:url(#wobble);pointer-events:none}
+.pn a span{font-style:italic;font-size:15px;color:var(--kick)}
+figure.ex{position:relative;border:0;overflow:visible;box-shadow:3px 3px 0 var(--drop)}
+figure.ex .tabs,figure.ex figcaption{background:var(--t-bg)}
+figure.ex .tabs{border-radius:10px 10px 0 0}figure.ex figcaption{border-radius:0 0 10px 10px;text-align:left}
+figure.ex .tabs button{font-family:Newsreader,Georgia,serif;font-style:italic;font-size:15px}
+figure.ex .tabs button.on{border-bottom-color:var(--t-acc)}
+</style>
 </head>
 <body>
 <header class="top">
@@ -248,5 +300,6 @@ figure.ex figcaption{padding:10px 18px 12px;border-top:1px solid var(--t-frame);
   addEventListener("keydown", (e) => { if (!(e.altKey && e.shiftKey && e.code === "KeyA")) return; e.preventDefault();
     if (st.getItem(K) === "on") { st.removeItem(K); location.reload(); } else { st.setItem(K, "on"); load(); } });
 })();</script>
+<script src="/book/paper.js"></script>
 </body>
 </html>
