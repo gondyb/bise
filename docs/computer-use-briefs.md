@@ -131,6 +131,17 @@ Namespace `computer` (the built-in plugin). Targets are strings:
   to cart": a popup covers it`, `couldn't find "Email"`. Built by
   whoever acts (extension, helper); the broker passes it through
   (cu-extension m_3630, designer's row shape).
+- **How an error reaches code mode** (cu-sdk m_3802): the MCP server
+  answers a C1 error as a normal result, `isError: false`, body
+  `{"error":{code,message,candidates?,summary?}}`. (bise's runtime ends
+  the whole program on an `isError` tool result,
+  `bend/runtime/main.bend` `exec_program.decide`, so the SDK could not
+  catch it.) The SDK throws an `Error` with `code`, `candidates`,
+  `summary`; uncaught, the program fails with `<code>: <message>` and the
+  candidates in one go. Raw `tools.computer.*` callers get the `{error}`
+  object. The TUI draws the `✗` tool row when the result holds `error`
+  (its `summary`), not from `isError`. `isError: true` stays for
+  transport failures only (broker unreachable, bad JSON).
 
 Settled details (cu-extension m_3613, cu-apps m_3609; the same on web
 and apps):
