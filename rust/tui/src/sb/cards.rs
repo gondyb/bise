@@ -405,7 +405,7 @@ fn confirm_shape(c: &Card) -> Shape {
     let mut options = vec![if rerun { "run it again without the sandbox" } else { "allow" }.to_string()];
     let mut short = vec![if rerun { "run again" } else { "allow" }.to_string()];
     if !always.is_empty() {
-        options.push(format!("always allow {} here", always.join(", ")));
+        options.push(always_option(rerun, &always, &body));
         short.push("always".into());
     }
     options.push("no".into());
@@ -419,6 +419,20 @@ fn confirm_shape(c: &Card) -> Shape {
         s.nums = vec![1, 3];
     }
     s
+}
+
+/// A confirm card's option 2. A sandbox card's saves a "run outside the
+/// sandbox" rule, and says so (designer): `it` when the rule is the
+/// command shown, else the rule.
+fn always_option(rerun: bool, always: &[String], body: &[String]) -> String {
+    let rules = always.join(", ");
+    if !rerun {
+        format!("always allow {rules} here")
+    } else if rules == body.join("\n").trim() {
+        "always run it outside the sandbox here".to_string()
+    } else {
+        format!("always run {rules} outside the sandbox here")
+    }
 }
 
 /// A setup item (BISE-245): its look, written by setup.rs; without one

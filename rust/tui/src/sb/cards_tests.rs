@@ -667,3 +667,18 @@ fn shapes() {
     assert_eq!(s.summary, "the hero image is 4.2 MB. compress it, or lazy-load it?");
     assert_eq!(short_labels(&["map a".into(), "map b".into()]), vec!["map a", "map b"]);
 }
+
+/// A sandbox card (brief 1e): 1 runs it again, 2 says it saves a "run
+/// outside the sandbox" rule (designer): `it` when the rule is the command.
+#[test]
+fn a_sandbox_card_says_outside_the_sandbox() {
+    let text = "wants to run it outside the sandbox\n| echo hi > ~/Desktop/x.txt\nreason: the sandbox stopped a write outside the repo: ~/Desktop/x.txt.\nalways: echo hi > ~/Desktop/x.txt";
+    let s = shape(&card(4, "confirm", "t3", text));
+    assert_eq!(s.options, vec!["run it again without the sandbox", "always run it outside the sandbox here", "no"]);
+    let text = "wants to run it outside the sandbox\n| cp a.txt ~/Desktop/\nreason: the sandbox stopped a write outside the repo: ~/Desktop.\nalways: cp *";
+    let s = shape(&card(5, "confirm", "t3", text));
+    assert_eq!(s.options[1], "always run cp * outside the sandbox here");
+    let text = "wants to run\n| npm run build\nreason: the checker is off, so commands ask first.\nalways: npm run build *";
+    let s = shape(&card(6, "confirm", "t1", text));
+    assert_eq!(s.options[1], "always allow npm run build * here");
+}

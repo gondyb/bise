@@ -8,6 +8,9 @@ its look (no "always" for a hard rule), a no with a note and its fold;
 a checker-off card for a network call (it asks even with the sandbox)
 with "always allow … here", allowed with `1`; a second one, "always":
 `/approvals` lists its rule, backspace asks inline, enter removes it.
+With the sandbox (macOS): a write outside the repo is stopped, its card
+offers "run it again without the sandbox" and "always run it outside the
+sandbox here", `1` runs it outside, its fold says so.
 
 SB_DUMP=<dir>: every screen checked is written there (designer's review).
 
@@ -15,6 +18,8 @@ python3 -u tests/tui_approvals_tmux.py
 """
 import os
 import sys
+import shutil
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,8 +39,11 @@ def open_card(t, who):
 
 def main():
     E = e2e.Env()
-    home, bise = os.path.join(E.tmp, "home"), os.path.join(E.tmp, "bise")
-    os.makedirs(home)
+    # the user's home outside macOS's temp folder (the sandbox lets that
+    # one be written): a write to ~/Desktop is outside the roots
+    home = os.path.realpath(tempfile.mkdtemp(prefix="sbx-home-", dir="/private/tmp"))
+    bise = os.path.join(E.tmp, "bise")
+    os.makedirs(os.path.join(home, "Desktop"))
     os.makedirs(bise)
     with open(os.path.join(bise, "config.toml"), "w") as f:
         f.write('[roles]\nclassify = "off"\n')
@@ -61,6 +69,13 @@ def main():
                 f.write(t.screen(colors=True))
 
     env = "HOME=%s BISE_HOME=%s" % (home, bise)
+    try:
+        session(E, env, home, bise, shot)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def session(E, env, home, bise, shot):
     with tui_session(COLS, ROWS, env=env, E=E) as t:
         t.wait("bise :*")
         sc = t.wait("⇧⇥ yolo")
@@ -157,6 +172,29 @@ def main():
         assert "curl" not in rules and "cargo test *" in rules, rules
         t.keys("Escape")
         t.wait_gone("backspace remove")
+        # the sandbox (brief 1e): a write outside the repo is stopped, then
+        # a card to run it again outside the sandbox
+        if sys.platform != "darwin" or not os.path.exists("/usr/bin/sandbox-exec"):
+            return
+        t.typed("/new t3: {{bash: echo hi > ~/Desktop/x.txt}}")
+        t.keys("Enter")
+        t.wait("t3 wants to run it outside the sandbox", timeout=60)
+        open_card(t, "t3")
+        sc = t.wait("type why not, ⏎ says no")
+        assert "1 run it again without the sandbox" in sc, sc
+        assert "2 always run it outside the sandbox here" in sc, sc
+        assert "the sandbox stopped a write outside the repo: ~/Desktop/x.txt." in sc, sc
+        assert not os.path.exists(os.path.join(home, "Desktop", "x.txt"))
+        shot(t, "card-sandbox", sc)
+        t.keys("1")
+        # the fold says the sandbox was off for it (designer)
+        sc = t.wait("you let t3 run it outside the sandbox: echo hi > ~/Desktop/x.txt")
+        shot(t, "fold-sandbox-rerun", sc)
+        deadline = time.time() + 30
+        out = os.path.join(home, "Desktop", "x.txt")
+        while not os.path.exists(out) and time.time() < deadline:
+            time.sleep(0.2)
+        assert open(out).read() == "hi\n", "run again outside the sandbox"
 
 
 if __name__ == "__main__":

@@ -1075,16 +1075,20 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
             Some("card") => Ev::Gate(crate::wire::Gate::Card),
             _ => Ev::Gate(crate::wire::Gate::Done),
         },
-        // a gate's card answered, folded (§9): `allowed : who : what` or
+        // a gate's card answered, folded (§9): `allowed : who : what`,
+        // `outside : who : what`, `outside-always : who : rules` or
         // `no : who : what : note`
         "approval" => {
             let f: Vec<String> = raw.split(" : ").map(field).collect();
             let get = |i: usize| f.get(i).cloned().unwrap_or_default();
             let (who, what) = (get(1), clip_chars(&get(2), 60));
-            if get(0) == "allowed" {
-                Ev::Approval { ok: true, text: format!("you allowed {}: {}", who, what), note: String::new() }
-            } else {
-                Ev::Approval { ok: false, text: format!("you said no to {}: {}", who, what), note: get(3) }
+            // a sandbox card's fold says the sandbox was off for it (designer)
+            let ok = |text: String| Ev::Approval { ok: true, text, note: String::new() };
+            match get(0).as_str() {
+                "allowed" => ok(format!("you allowed {}: {}", who, what)),
+                "outside" => ok(format!("you let {} run it outside the sandbox: {}", who, what)),
+                "outside-always" => ok(format!("you always let {} run outside the sandbox here", what)),
+                _ => Ev::Approval { ok: false, text: format!("you said no to {}: {}", who, what), note: get(3) },
             }
         }
         "card-closed" => match text.strip_prefix('#').and_then(|t| t.split_once(' ')) {

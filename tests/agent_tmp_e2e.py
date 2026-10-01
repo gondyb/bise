@@ -16,6 +16,7 @@ its REPL's port is in /tmp. Its role names the folder. /drop removes
 import glob
 import os
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,6 +34,8 @@ def ports_in(run):
 
 
 def main():
+    # /tmp keeps old runs' files and ports get reused: only this run's count
+    started = time.time() - 1
     E = Env()
     home = os.path.join(E.tmp, "home")
     os.makedirs(home)
@@ -79,6 +82,7 @@ def main():
         check(ports, "run/ holds the REPL's files: %r" % os.listdir(run))
         for p in ports:
             left = glob.glob("/tmp/bend-*-%s*" % p) + glob.glob("/tmp/bend-*-%s" % p)
+            left = [f for f in set(left) if os.path.getmtime(f) >= started]
             check(not left, "no harness file of port %s in /tmp: %r" % (p, left))
         role = open(os.path.join(E.state, "agents", "tt", "role.md")).read()
         check("Your temp folder is `%s` (`$TMPDIR`)" % tmp in role, "the role names the folder")

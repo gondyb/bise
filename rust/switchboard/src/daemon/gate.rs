@@ -210,15 +210,30 @@ pub(super) fn gate_line(what: &str, n: &str, card: Option<u64>) -> String {
     }
 }
 
+/// How a card was answered, for its fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Fold {
+    Allowed,
+    No,
+    /// a sandbox card's 1: it ran again outside the sandbox
+    Outside,
+    /// a sandbox card's 2: its rules run outside the sandbox from now on
+    OutsideAlways,
+}
+
 /// The folded card (design §9): `sb approval : allowed : <agent> :
-/// <summary>` or `no : <agent> : <summary> : <note>` (fields escaped).
-pub(super) fn fold_line(allowed: bool, agents: &[String], summary: &str, note: &str) -> String {
+/// <summary>`, `no : <agent> : <summary> : <note>`, a sandbox card's
+/// `outside : <agent> : <summary>` or `outside-always : <agent> :
+/// <rules>` (designer: the fold says the sandbox was off for it; fields
+/// escaped).
+pub(super) fn fold_line(how: Fold, agents: &[String], summary: &str, note: &str) -> String {
     let esc = |s: &str| crate::util::one_line(s).replace(" : ", " \\: ");
     let who = agents.join(", ");
-    if allowed {
-        format!("sb approval : allowed : {} : {}", esc(&who), esc(summary))
-    } else {
-        format!("sb approval : no : {} : {} : {}", esc(&who), esc(summary), esc(note))
+    match how {
+        Fold::Allowed => format!("sb approval : allowed : {} : {}", esc(&who), esc(summary)),
+        Fold::Outside => format!("sb approval : outside : {} : {}", esc(&who), esc(summary)),
+        Fold::OutsideAlways => format!("sb approval : outside-always : {} : {}", esc(&who), esc(summary)),
+        Fold::No => format!("sb approval : no : {} : {} : {}", esc(&who), esc(summary), esc(note)),
     }
 }
 
@@ -235,8 +250,12 @@ pub(super) fn answer_of(text: &str) -> Answer {
     let low = t.to_lowercase();
     match low.as_str() {
         "1" | "allow" | "allow once" | "y" | "yes" | "ok" | "oui" => Answer::Allow,
+        // a sandbox card's 1: the TUI sends the option's words
+        sandbox::CARD_YES | "run again" => Answer::Allow,
         "2" | "always" | "always allow" | "always here" => Answer::Always,
         l if l.starts_with("always allow ") => Answer::Always,
+        // a sandbox card's 2 (`always run it outside the sandbox here`)
+        l if l.starts_with("always run ") && l.ends_with(" outside the sandbox here") => Answer::Always,
         "3" | "no" | "n" | "deny" | "non" => Answer::No(String::new()),
         _ => {
             let note = ["no:", "deny:", "no -", "no,"]
@@ -798,7 +817,15 @@ impl Shell {
         for d in &c.dirs {
             self.resolve(d, allow, &why);
         }
-        let fold = fold_line(allow, &names, &c.summary, &note);
+        let fold = match (&answer, c.rerun.is_some()) {
+            (Answer::No(_), _) => fold_line(Fold::No, &names, &c.summary, &note),
+            (Answer::Always, true) => {
+                let rules: Vec<String> = c.always.iter().flatten().cloned().collect();
+                fold_line(Fold::OutsideAlways, &names, &rules.join(", "), "")
+            }
+            (_, true) => fold_line(Fold::Outside, &names, &c.summary, ""),
+            (_, false) => fold_line(Fold::Allowed, &names, &c.summary, ""),
+        };
         let mut feeds: Vec<String> = names.clone();
         if !feeds.iter().any(|n| n == MAIN) {
             feeds.push(MAIN.to_string());
@@ -1037,7 +1064,7 @@ mod tests {
         assert_eq!(verdict_line("7", "x1", false, "the user\nsaid no."), "7 x1 deny the user said no.\n");
         assert_eq!(gate_line("card", "7", Some(12)), "sb gate : card 7 12");
         assert_eq!(
-            fold_line(false, &["api-v2".into()], "git push : x", "use a branch"),
+            fold_line(Fold::No, &["api-v2".into()], "git push : x", "use a branch"),
             "sb approval : no : api-v2 : git push \\: x : use a branch"
         );
     }
@@ -1045,6 +1072,10 @@ mod tests {
     #[test]
     fn what_the_answer_says() {
         assert_eq!(answer_of("allow"), Answer::Allow);
+        assert_eq!(answer_of(sandbox::CARD_YES), Answer::Allow);
+        assert_eq!(answer_of("run again"), Answer::Allow);
+        assert_eq!(answer_of("always run it outside the sandbox here"), Answer::Always);
+        assert_eq!(answer_of("always run cp * outside the sandbox here"), Answer::Always);
         assert_eq!(answer_of("2"), Answer::Always);
         assert_eq!(answer_of("always allow npm run build * here"), Answer::Always);
         assert_eq!(answer_of("deny: not now"), Answer::No("not now".into()));
