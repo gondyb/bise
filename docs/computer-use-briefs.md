@@ -52,6 +52,19 @@ Costs (agent-days): cu-broker 2, cu-extension 2, cu-sdk 1.5, cu-setup
   spike), a temp `HOME` for the native host manifests, and for apps
   only TextEdit / Calculator / a test app you build. Never the live hub.
   A window that pops up during a test closes at the end of it.
+- **Never steal focus, in tests too** (the user, m_3672; it is also the
+  product's rule). Tests run Chrome with `--headless=new` unless the
+  test needs a visible window: headless Chrome 154 loads the extension
+  with `Extensions.loadUnpacked`, makes tab groups, runs
+  `chrome.debugger` and native messaging, and shows the same 5 s
+  hidden-tab trap (checked: the spike runs headless now, the frontmost
+  app never changed). When a headed window is really needed: `open -g
+  -n -a 'Google Chrome' --args --user-data-dir=<throwaway> --no-first-run
+  --no-default-browser-check` (optionally `--window-position` far
+  off-screen); never `osascript … activate`, never a focus call. Every
+  app the helper or a test launches: `open -g`. Close your throwaway
+  Chromes when the test ends (also on failure); never kill a Chrome that
+  isn't yours (match on your `--user-data-dir`).
 - Never print env or keys.
 - `tests/gate.sh` (quick) per commit, `gate.sh full` once at the end, in
   the foreground; `gate.sh done <name>` at the very end.

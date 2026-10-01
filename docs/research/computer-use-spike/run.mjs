@@ -1,6 +1,6 @@
 // Spike driver: a throwaway Chrome profile, the spike extension loaded
 // Run: node docs/research/computer-use-spike/run.mjs (macOS, Chrome installed).
-// It opens a separate Chrome window on a temp profile for ~15 s, then quits it.
+// It runs a headless Chrome on a temp profile for ~15 s, then quits it.
 // Results go to $TMPDIR/spike-result.json (see result.json here for one run).
 // through CDP (Extensions.loadUnpacked, pipe only), then the extension
 // opens a background tab group and acts in it with chrome.debugger.
@@ -32,6 +32,9 @@ const chrome = spawn(CHROME, [
   "--enable-unsafe-extension-debugging",
   "--no-first-run", "--no-default-browser-check", "--disable-sync",
   "--window-size=900,600",
+  // Headless by default: a headed Chrome spawned here comes to the front
+  // and disturbs the user. HEADED=1 only to watch it, never in tests.
+  ...(process.env.HEADED === "1" ? [] : ["--headless=new"]),
   page("user page"),
 ], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
 
