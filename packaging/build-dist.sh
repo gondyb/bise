@@ -189,7 +189,8 @@ done
 # ... and the helper is whole: signature, macOS target
 if [ -n "$helper" ]; then
   codesign --verify --strict "$helper" || { say "INCOMPLETE: $helper: bad signature"; exit 1; }
-  "$REPO/scripts/bins.sh" minos "$helper/Contents/MacOS/bise-computer-use" >&2 \\n    || { say "the computer-use helper needs a newer macOS than the target"; exit 1; }
+  "$REPO/scripts/bins.sh" minos "$helper/Contents/MacOS/bise-computer-use" >&2 \
+    || { say "the computer-use helper needs a newer macOS than the target"; exit 1; }
 fi
 
 # 7. pack
