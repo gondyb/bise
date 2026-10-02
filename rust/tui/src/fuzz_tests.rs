@@ -340,7 +340,7 @@ fn history_browse_is_total() {
 /// A composer hit on a zero-size area: the row clamp never inverts.
 #[test]
 fn composer_hit_on_an_empty_area_is_total() {
-    let area = ComposerArea { x: 0, y: 0, w: 0, h: 0, top: 0 };
+    let area = ComposerArea::default();
     assert_eq!(area.hit("", 0, 0, true), Some(0));
     assert!(area.hit("abc\ndef", 9, 9, true).is_some());
 }

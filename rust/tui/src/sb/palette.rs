@@ -302,7 +302,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, l
     // the query is the pane's last text row; the list above it, 1 blank row between
     let list_h = text_h.saturating_sub(2) as usize;
     let query_y = text_y + text_h.saturating_sub(1);
-    app.composer = ComposerArea { x: area.x + lead, y: query_y, w: inner.max(1), h: 1, top: 0 };
+    app.composer = ComposerArea { x: area.x + lead, y: query_y, w: inner.max(1), h: 1, ..Default::default() };
     let bar = Span::styled(format!("│{}", " ".repeat(lead.saturating_sub(1) as usize)), Style::default().fg(accent()));
     // the list: (row, the entry it opens)
     let mut list: Vec<(Line<'static>, Option<usize>)> = Vec::new();

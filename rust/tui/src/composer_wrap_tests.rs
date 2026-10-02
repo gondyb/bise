@@ -456,10 +456,11 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert!(small_boxed[1].starts_with("│      ╭─ attached"), "{small_boxed:#?}");
     assert!(small_boxed[4].starts_with("│  │    ▣ 1  hi"), "{small_boxed:#?}");
     assert!(small_boxed[5].starts_with("│      ctrl+v paste image   @ file"), "{small_boxed:#?}");
-    // long text: 12 text rows at most, the pads still there
+    // long text: 12 text rows at most, the pads still there, the top
+    // one says what is scrolled out (the cursor at the end)
     let long = pane_rows(120, 40, 0, &"word ".repeat(400));
     assert_eq!(long.len(), 1 + 1 + 12 + 1 + 2, "{long:#?}");
-    assert_eq!(long[1], bar);
+    assert_eq!(long[1], "│  │   ↑ 15 lines above");
     assert!(long[2].starts_with("│  │   word"), "{long:#?}");
     assert!(long[13].starts_with("│  │   word"), "{long:#?}");
     assert_eq!(long[14], bar);
@@ -521,5 +522,138 @@ fn the_padding_goes_under_60_columns_and_clicks_follow_the_text() {
         assert_eq!(a.hit(&app.ed.text, a.x + 2, a.y, false), Some(2), "{width}");
         assert_eq!(a.hit(&app.ed.text, a.x - 1, a.y, false), Some(0), "{width}");
         assert_eq!(a.hit(&app.ed.text, a.x + a.w as u16, a.y, false), None, "{width}");
+    }
+}
+
+// ---- a text taller than the composer: the view, the hints, the wheel ----
+
+fn wheel(app: &mut App, down: bool, x: u16, y: u16) {
+    use crossterm::event::{MouseEvent, MouseEventKind};
+    let kind = if down { MouseEventKind::ScrollDown } else { MouseEventKind::ScrollUp };
+    input::on_mouse(app, &MouseEvent { kind, column: x, row: y, modifiers: KeyModifiers::NONE }, 40);
+}
+
+fn twenty_lines() -> String {
+    (1..=20).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")
+}
+
+#[test]
+fn a_tall_text_follows_the_cursor_and_says_what_is_hidden() {
+    let mut app = sb::bench::test_app();
+    let text = twenty_lines();
+    app.ed.set(&text, text.chars().count());
+    let buf = draw(&mut app, 150, 40);
+    let a = app.composer;
+    assert_eq!((a.h, a.total, a.top), (12, 20, 8));
+    assert_eq!(screen_row(&buf, a.x, a.y, a.w), "line 9");
+    assert_eq!(screen_row(&buf, a.x, a.y + 11, a.w), "line 20");
+    // the hint in the blank bar row above, dim; none under
+    assert_eq!(screen_row(&buf, a.x, a.y - 1, a.w), "↑ 8 lines above");
+    assert_eq!(buf[(a.x, a.y - 1)].fg, theme::dim());
+    assert_eq!(screen_row(&buf, a.x, a.y + 12, a.w), "");
+    // the cursor to the first line: the view to the top
+    app.ed.move_cursor(editor::Motion::TextStart, false);
+    let buf = draw(&mut app, 150, 40);
+    assert_eq!(app.composer.top, 0);
+    assert_eq!(screen_row(&buf, a.x, a.y, a.w), "line 1");
+    assert_eq!(screen_row(&buf, a.x, a.y - 1, a.w), "");
+    assert_eq!(screen_row(&buf, a.x, a.y + 12, a.w), "↓ 8 lines below");
+    // ↓ to row 12: the view moves by one row only
+    for _ in 0..12 {
+        input::composer_key(&mut app, &crossterm::event::KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    let buf = draw(&mut app, 150, 40);
+    assert_eq!(app.composer.top, 1);
+    assert_eq!(screen_row(&buf, a.x, a.y - 1, a.w), "↑ 1 line above");
+    assert_eq!(screen_row(&buf, a.x, a.y + 12, a.w), "↓ 7 lines below");
+}
+
+#[test]
+fn the_wheel_over_the_composer_scrolls_its_text_not_the_history() {
+    let mut app = sb::bench::test_app();
+    let text = twenty_lines();
+    app.ed.set(&text, 0);
+    draw(&mut app, 150, 40);
+    let a = app.composer;
+    assert_eq!(a.top, 0);
+    for _ in 0..3 {
+        wheel(&mut app, true, a.x + 2, a.y + 2);
+    }
+    // on the bar and the blank bar rows too
+    wheel(&mut app, true, a.x - 3, a.y - 1);
+    let buf = draw(&mut app, 150, 40);
+    assert_eq!((app.composer.top, app.ed.cursor), (4, 0), "the cursor stays");
+    assert!(app.follow, "the history did not move");
+    assert_eq!(screen_row(&buf, a.x, a.y, a.w), "line 5");
+    assert_eq!(screen_row(&buf, a.x, a.y - 1, a.w), "↑ 4 lines above");
+    assert_eq!(screen_row(&buf, a.x, a.y + 12, a.w), "↓ 4 lines below");
+    // never past the end
+    for _ in 0..30 {
+        wheel(&mut app, true, a.x + 2, a.y + 2);
+    }
+    draw(&mut app, 150, 40);
+    assert_eq!(app.composer.top, 8);
+    // a click on the hint above: a screenful up
+    input::on_mouse(
+        &mut app,
+        &crossterm::event::MouseEvent { kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left), column: a.x + 3, row: a.y - 1, modifiers: KeyModifiers::NONE },
+        40,
+    );
+    draw(&mut app, 150, 40);
+    assert_eq!((app.composer.top, app.ed.cursor), (0, 0));
+    // typing brings the view back to the cursor
+    for _ in 0..30 {
+        wheel(&mut app, true, a.x + 2, a.y + 2);
+    }
+    app.ed.insert("x");
+    draw(&mut app, 150, 40);
+    assert_eq!(app.composer.top, 0);
+    // over the history the wheel scrolls the history
+    wheel(&mut app, false, a.x + 2, 4);
+    assert!(!app.follow);
+    assert_eq!(app.composer.top, 0);
+    // a text that fits: the wheel over it scrolls the history
+    let mut app = sb::bench::test_app();
+    app.ed.set("one\ntwo", 0);
+    draw(&mut app, 150, 40);
+    let a = app.composer;
+    wheel(&mut app, false, a.x + 1, a.y);
+    assert!(!app.follow);
+}
+
+#[test]
+fn without_blank_bar_rows_the_hints_are_arrows_in_the_margin() {
+    // 18 rows: no blank bar rows; 80 columns has a right margin, 50 has
+    // none: the text wraps 1 column earlier while it overflows
+    for (width, narrower) in [(80u16, 0usize), (50, 1)] {
+        let mut app = sb::bench::test_app();
+        let text = twenty_lines();
+        app.ed.set(&text, 0);
+        draw(&mut app, width, 18);
+        // to the middle
+        for _ in 0..12 {
+            input::composer_key(&mut app, &crossterm::event::KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+            draw(&mut app, width, 18);
+        }
+        for _ in 0..6 {
+            input::composer_key(&mut app, &crossterm::event::KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        }
+        let buf = draw(&mut app, width, 18);
+        let a = app.composer;
+        assert!(a.top > 0 && a.top + a.h < a.total, "{width}: {a:?}");
+        let x = a.x + a.w as u16;
+        assert_eq!(buf[(x, a.y)].symbol(), "↑", "{width}");
+        assert_eq!(buf[(x, a.y + a.h as u16 - 1)].symbol(), "↓", "{width}");
+        assert_eq!(buf[(x, a.y)].fg, theme::dim(), "{width}");
+        assert!(x < width, "{width}");
+        // the text width: one column less under 60 while it overflows
+        let lead = crate::ui::composer_pad(width).0;
+        let cols = crate::layout::cols(width, 18);
+        assert_eq!(a.w, cols.col_w.min(cols.pane_w) as usize - lead as usize - crate::ui::composer_pad(width).1 as usize - narrower, "{width}");
+        // a short text: the full width back, no arrow
+        app.ed.set("short", 5);
+        let buf = draw(&mut app, width, 18);
+        assert_eq!(app.composer.w, a.w + narrower, "{width}");
+        assert_ne!(buf[(app.composer.x + app.composer.w as u16, app.composer.y)].symbol(), "↑");
     }
 }

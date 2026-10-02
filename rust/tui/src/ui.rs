@@ -54,6 +54,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
+    // a text taller than the composer with no blank bar row for the
+    // scroll hint has its ↑ / ↓ in the right margin: under 60 columns
+    // (no margin) it wraps 1 column earlier meanwhile (designer)
+    let margin_hint = rows.pad_top == 0 || attach::strip_height(app) > 0;
+    let text_w = if right == 0 && margin_hint && composer_rows > text_rows && inner_w > 1 { inner_w - 1 } else { text_w };
     // the agent palette (BISE-265): its list grows the pane upward, past
     // the composer's cap, the history keeps its 3 rows
     let text_rows = if sb::palette::is_open(app) { sb::palette::rows_wanted(app).min(left(0).max(1)) } else { text_rows };
@@ -319,7 +324,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             }
         }
     } else {
-        draw_composer(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
+        draw_composer(app, frame, composer, text_w, lead, pad_top.min(composer_h), rows.pad_bottom);
     }
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     // zen (BISE-121) keeps the composer's text, the divider's label and
@@ -669,9 +674,15 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     let cursor = app.ed.cursor;
     let selection = app.ed.selection();
     let (cur_row, _) = editor::row_col(&rows, cursor);
-    // taller than the box: scroll so the cursor row stays visible
-    let top = (cur_row + 1).saturating_sub(text_rows);
+    // taller than the box: the view scrolls the least that keeps the
+    // cursor row visible when the cursor or the text changed, else stays
+    // where the wheel left it
+    let now = (cursor, app.ed.text.len(), inner);
+    let follow = app.composer.seen != now;
+    let top = editor::view_top(app.composer.top, drawn, text_rows, cur_row, follow);
     app.composer.top = top;
+    app.composer.seen = now;
+    app.composer.total = drawn;
     let text_style = Style::default().fg(theme::text());
     let voice_look = voice_look(app, app.frame_at);
     let voice_form = voice::chip::Form::now();
@@ -794,7 +805,15 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
     let text_y = area.y + pad_top.min(area.height.saturating_sub(1));
     let text_rows = (area.height.saturating_sub(pad_top + pad_bottom) as usize).max(1);
     let text_w = inner.max(1);
-    app.composer = ComposerArea { x: area.x + lead, y: text_y, w: text_w, h: text_rows, top: 0 };
+    // the scroll and what it followed carry over from the last frame
+    app.composer = ComposerArea {
+        x: area.x + lead,
+        y: text_y,
+        w: text_w,
+        h: text_rows,
+        pane: (area.x, area.y, area.width, area.height),
+        ..app.composer
+    };
     // BISE-272: the text cursor where a click places yours (`ComposerArea::hit`)
     let typed = Rect { x: app.composer.x.saturating_sub(1), y: text_y, width: text_w as u16 + 1, height: text_rows as u16 };
     crate::pointer::region(typed.intersection(frame.area()), crate::pointer::Shape::Text);
@@ -832,9 +851,21 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
     };
     let bar_st = Style::default().fg(composer_bar_color(app));
     let bar = Span::styled(format!("│{}", " ".repeat(lead.saturating_sub(1) as usize)), bar_st);
+    // a text taller than the box (designer): `↑ 4 lines above` /
+    // `↓ 2 lines below`, dim, in the blank bar rows; without them (under
+    // 20 rows) a dim ↑ / ↓ right of the first / last text row
+    let (above, below) = if empty { (0, 0) } else { app.composer.more() };
+    let hint_st = Style::default().fg(dim());
+    let pad_line = |n: usize, up: bool| {
+        let mut spans = vec![bar.clone()];
+        if n > 0 {
+            spans.push(Span::styled(composer_more(n, up), hint_st));
+        }
+        Line::from(spans)
+    };
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    for _ in 0..pad_top.min(area.height) {
-        lines.push(Line::from(bar.clone()));
+    for i in 0..pad_top.min(area.height) {
+        lines.push(pad_line(if i + 1 == pad_top { above } else { 0 }, true));
     }
     let mut body = rows.into_iter();
     for _ in 0..text_rows {
@@ -844,10 +875,28 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
         }
         lines.push(Line::from(spans));
     }
+    let mut first_pad_bottom = true;
     while lines.len() < area.height as usize {
-        lines.push(Line::from(bar.clone()));
+        lines.push(pad_line(if first_pad_bottom && pad_bottom > 0 { below } else { 0 }, false));
+        first_pad_bottom = false;
     }
     frame.render_widget(Paragraph::new(lines), area);
+    // no blank row for the words: the arrow in the right margin
+    // (`draw_bise` keeps a column for it under 60 columns)
+    let x = area.x + lead + text_w as u16;
+    let fa = frame.area();
+    let last = text_y + text_rows as u16 - 1;
+    for (n, pad, y, g) in [(above, pad_top, text_y, "↑"), (below, pad_bottom, last, "↓")] {
+        if n > 0 && pad == 0 && x < fa.right() && y < fa.bottom() {
+            frame.buffer_mut().set_string(x, y, g, hint_st);
+        }
+    }
+}
+
+/// The composer's scroll hint: `↑ 4 lines above`, `↓ 1 line below`.
+pub(crate) fn composer_more(n: usize, up: bool) -> String {
+    let (g, way) = if up { ("↑", "above") } else { ("↓", "below") };
+    format!("{} {} {} {}", g, n, if n == 1 { "line" } else { "lines" }, way)
 }
 
 /// The find box (BISE-237, BISE-297; designer): 3 rows over the

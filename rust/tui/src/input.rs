@@ -355,6 +355,10 @@ fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16)
         return;
     }
     match m.kind {
+        // over a composer taller than its box: its text scrolls, a row
+        // per event (a trackpad sends many), the cursor stays put
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+            if app.composer.wheel(m.column, m.row, if m.kind == MouseEventKind::ScrollUp { -1 } else { 1 }) => {}
         MouseEventKind::ScrollUp => {
             app.follow = false;
             app.scroll -= 3;
@@ -372,6 +376,8 @@ fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16)
         // release copies the selection
         // the copy icon of a code block (codeblock.rs)
         MouseEventKind::Down(MouseButton::Left) if crate::codeblock::click(app, m.column, m.row) => {}
+        // the composer's scroll hints: a screenful that way
+        MouseEventKind::Down(MouseButton::Left) if app.composer.hint_click(m.column, m.row) => {}
         MouseEventKind::Down(MouseButton::Left)
             if app.composer.hit(&app.ed.text, m.column, m.row, false).is_some() =>
         {

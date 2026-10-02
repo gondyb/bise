@@ -336,6 +336,25 @@ pub(crate) fn drawn_rows(rows: &[Vec<InputCell>], cursor: usize) -> usize {
     }
 }
 
+/// The first row the composer shows of `total` drawn rows in a box of
+/// `h` rows: `top` as it was (the wheel may have moved it), never past
+/// the last screenful; with `follow` (the cursor or the text changed
+/// since the last frame) moved the least that shows the cursor row,
+/// like a web text field.
+pub(crate) fn view_top(top: usize, total: usize, h: usize, cur_row: usize, follow: bool) -> usize {
+    let h = h.max(1);
+    let top = top.min(total.saturating_sub(h));
+    if !follow {
+        top
+    } else if cur_row < top {
+        cur_row
+    } else if cur_row >= top + h {
+        cur_row + 1 - h
+    } else {
+        top
+    }
+}
+
 /// (row, column) of the char index `ci` in the layout.
 pub(crate) fn row_col(rows: &[Vec<InputCell>], ci: usize) -> (usize, usize) {
     let mut last = (0, 0);
@@ -454,6 +473,10 @@ pub(crate) struct Editor {
     scratch: std::collections::HashMap<usize, String>,
     /// a dead key waiting for its letter (its spacing accent)
     dead: Option<char>,
+    /// ↑/↓'s column (the goal column of a web text field): kept while
+    /// the cursor is where the last row move left it, so going through a
+    /// short line comes back to the column you started from
+    goal: Option<(usize, usize)>,
 }
 
 impl Editor {
@@ -685,6 +708,7 @@ impl Editor {
             None => to,
         };
         self.cursor = to;
+        self.goal = None;
         self.break_undo();
     }
 
@@ -723,25 +747,33 @@ impl Editor {
     /// caller recalls the history); the cursor then goes to the text
     /// start when there is no history to show.
     pub(crate) fn row_up(&mut self, width: usize, select: bool) -> bool {
-        let rows = layout_input(&self.text, width);
-        let (r, col) = row_col(&rows, self.cursor);
-        if r == 0 {
-            return false;
-        }
-        let to = ci_at(&rows, r - 1, col);
-        self.move_to(to, select);
-        true
+        self.row_move(width, false, select)
     }
 
     /// Down one visual row. False on the last row.
     pub(crate) fn row_down(&mut self, width: usize, select: bool) -> bool {
+        self.row_move(width, true, select)
+    }
+
+    /// One row up or down at the goal column (the cursor's column when
+    /// the last move was not a row move); the selection grows or shrinks
+    /// from its anchor. False on the first / last row.
+    fn row_move(&mut self, width: usize, down: bool, select: bool) -> bool {
         let rows = layout_input(&self.text, width);
         let (r, col) = row_col(&rows, self.cursor);
-        if r + 1 >= rows.len() {
-            return false;
-        }
-        let to = ci_at(&rows, r + 1, col);
+        let row = match (down, r) {
+            (false, 0) => return false,
+            (false, r) => r - 1,
+            (true, r) if r + 1 >= rows.len() => return false,
+            (true, r) => r + 1,
+        };
+        let col = match self.goal {
+            Some((c, at)) if at == self.cursor => c,
+            _ => col,
+        };
+        let to = ci_at(&rows, row, col);
         self.move_to(to, select);
+        self.goal = Some((col, self.cursor));
         true
     }
 
@@ -1371,6 +1403,87 @@ mod tests {
         assert_eq!(e.cursor, 8);
         assert!(e.row_up(40, false));
         assert_eq!(e.cursor, 2);
+    }
+
+    #[test]
+    fn shift_rows_grow_and_shrink_the_selection_from_its_anchor() {
+        // 5 lines of 3 chars + newline: line i starts at 4 * i
+        let text = "aaa\nbbb\nccc\nddd\neee";
+        let mut e = ed(text, 18); // "ee|e", the last line, column 2
+        for _ in 0..3 {
+            assert!(e.row_up(40, true));
+        }
+        // from the anchor (18) up to "bb|b" (6), the anchor kept
+        assert_eq!((e.anchor, e.cursor), (Some(18), 6));
+        assert_eq!(e.selected_text().as_deref(), Some("b\nccc\nddd\nee"));
+        // shift+↓ shrinks it back by one row
+        assert!(e.row_down(40, true));
+        assert_eq!(e.selection(), Some((10, 18)));
+        // back to the anchor: nothing selected, then past it the other way
+        assert!(e.row_down(40, true));
+        assert!(e.row_down(40, true));
+        assert_eq!((e.cursor, e.selection()), (18, None));
+        e.move_cursor(Motion::LineStart, true);
+        assert_eq!(e.selection(), Some((16, 18)));
+        // shift+← / shift+→ / shift+home extend the same selection
+        e.move_cursor(Motion::Right, true);
+        assert_eq!(e.selection(), Some((17, 18)));
+        assert!(e.row_up(40, true));
+        assert_eq!(e.selection(), Some((13, 18)));
+        // cmd+shift+↑: to the text's start, still from the anchor
+        e.move_cursor(Motion::TextStart, true);
+        assert_eq!(e.selection(), Some((0, 18)));
+        // a plain arrow collapses it
+        e.move_cursor(Motion::Left, false);
+        assert_eq!((e.cursor, e.selection(), e.anchor), (0, None, None));
+        // a plain ↑/↓ too
+        e.select_range(4, 10);
+        assert!(e.row_down(40, false));
+        assert_eq!((e.cursor, e.selection()), (14, None));
+    }
+
+    #[test]
+    fn rows_keep_their_goal_column_through_short_lines() {
+        let mut e = ed("abcdef\nx\nabcdef", 5);
+        assert!(e.row_down(40, false));
+        assert_eq!(e.cursor, 8); // the end of "x"
+        assert!(e.row_down(40, false));
+        assert_eq!(e.cursor, 14); // column 5 again
+        assert!(e.row_up(40, true));
+        assert!(e.row_up(40, true));
+        assert_eq!(e.selection(), Some((5, 14)));
+        // any other move sets a new column: "abc|" → "x|" → "abc|"
+        e.move_cursor(Motion::Left, false);
+        e.move_cursor(Motion::Left, false);
+        e.move_cursor(Motion::Left, false);
+        assert_eq!(e.cursor, 3);
+        assert!(e.row_down(40, false));
+        assert_eq!(e.cursor, 8);
+        assert!(e.row_down(40, false));
+        assert_eq!(e.cursor, 12);
+        // typing forgets it too
+        let mut e = ed("abcdef\nx\nabcdef", 5);
+        assert!(e.row_down(40, false));
+        e.insert("y");
+        assert!(e.row_down(40, false));
+        assert_eq!(e.cursor, 12); // column 2, under "xy|"
+    }
+
+    #[test]
+    fn the_view_follows_the_cursor_and_keeps_a_wheel_scroll() {
+        // 20 rows in a box of 5
+        assert_eq!(view_top(0, 20, 5, 0, true), 0);
+        assert_eq!(view_top(0, 20, 5, 19, true), 15);
+        // the cursor row already in view: no move
+        assert_eq!(view_top(15, 20, 5, 17, true), 15);
+        // above / under the view: the least move that shows it
+        assert_eq!(view_top(15, 20, 5, 3, true), 3);
+        assert_eq!(view_top(3, 20, 5, 9, true), 5);
+        // the wheel moved it (no follow): kept, even without the cursor
+        assert_eq!(view_top(8, 20, 5, 19, false), 8);
+        // never past the last screenful (the text shrank)
+        assert_eq!(view_top(15, 6, 5, 0, false), 1);
+        assert_eq!(view_top(15, 3, 5, 2, true), 0);
     }
 
     #[test]

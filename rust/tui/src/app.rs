@@ -169,6 +169,15 @@ pub(crate) struct ComposerArea {
     pub(crate) w: usize,
     pub(crate) h: usize,
     pub(crate) top: usize,
+    /// what the view last followed: (cursor, text bytes, width); the
+    /// next frame scrolls to the cursor only when it changed, so a wheel
+    /// scroll stays until you type or move
+    pub(crate) seen: (usize, usize, usize),
+    /// the layout rows the frame drew (all of them, shown or not)
+    pub(crate) total: usize,
+    /// the whole composer box (its bar and pad rows): the wheel over it
+    /// scrolls the text (x, y, width, height)
+    pub(crate) pane: (u16, u16, u16, u16),
 }
 
 /// What a left press started: a selection in the composer (or none),
@@ -217,6 +226,42 @@ impl ComposerArea {
         let row = (self.top as isize + dy).clamp(0, last) as usize;
         let col = x.saturating_sub(self.x) as usize;
         Some(editor::ci_at(&rows, row, col))
+    }
+
+    /// The rows hidden above and under the view.
+    pub(crate) fn more(&self) -> (usize, usize) {
+        (self.top, self.total.saturating_sub(self.top + self.h))
+    }
+
+    /// The wheel at (x, y): over the composer box with a text taller
+    /// than it, scrolls the text `dy` rows (the cursor stays where it
+    /// is) and says true; else false (the history scrolls).
+    pub(crate) fn wheel(&mut self, x: u16, y: u16, dy: isize) -> bool {
+        let (px, py, pw, ph) = self.pane;
+        let over = x >= px && x < px.saturating_add(pw) && y >= py && y < py.saturating_add(ph);
+        if !over || self.total <= self.h {
+            return false;
+        }
+        let max = self.total - self.h;
+        self.top = (self.top as isize + dy).clamp(0, max as isize) as usize;
+        true
+    }
+
+    /// A click on a scroll hint (`↑ 4 lines above` in the blank bar row,
+    /// or the ↑ / ↓ in the right margin): a screenful that way.
+    pub(crate) fn hint_click(&mut self, x: u16, y: u16) -> bool {
+        let (above, below) = self.more();
+        let (x, y) = (x as usize, y as usize);
+        let (tx, ty, py) = (self.x as usize, self.y as usize, self.pane.1 as usize);
+        let margin = x == tx + self.w;
+        let up = above > 0 && ((y + 1 == ty && ty > py && x >= tx) || (margin && y == ty));
+        let down = below > 0 && ((y == ty + self.h && x >= tx) || (margin && y + 1 == ty + self.h));
+        let page = self.h as isize;
+        match (up, down) {
+            (true, _) => self.wheel(x as u16, y as u16, -page),
+            (_, true) => self.wheel(x as u16, y as u16, page),
+            _ => false,
+        }
     }
 }
 
