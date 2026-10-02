@@ -968,14 +968,22 @@ pub(crate) fn toggle_at(events: &mut [Ev], cache: &mut [Option<EventRows>], i: u
     // ending in `▾`) folds it; its other rows stay for reading (BISE-239).
     // Its long pastes' rows under it too (BISE-240: `▤ 1 “…” · 240
     // lines` opens it, the open text closes it)
-    if let (Some(Ev::You(t, _, open)), Some(Some(c))) = (events.get(i), cache.get(i)) {
-        let sizes = usize::from(crate::attach::sizes_line(t).is_some());
-        let pastes = crate::render::you_paste_rows(t, *open, usize::from(c.width));
-        if row + 1 + sizes + pastes < c.rows.len() || row + sizes >= c.rows.len() {
-            return false;
-        }
+    if you_row_stays(events, cache, i, row) {
+        return false;
     }
     toggle_event(events, cache, i)
+}
+
+/// Row `row` of event `i` is a row of your message a click leaves alone:
+/// its text, or the sizes of its images under it (one row per image
+/// list that fits, several when a few screenshots wrap). Only its hint
+/// row (`▸ n more lines` / `▾`) and its long pastes' rows toggle.
+fn you_row_stays(events: &[Ev], cache: &[Option<EventRows>], i: usize, row: usize) -> bool {
+    let (Some(Ev::You(t, _, open)), Some(Some(c))) = (events.get(i), cache.get(i)) else { return false };
+    let width = usize::from(c.width);
+    let sizes = crate::render::you_sizes_rows(t, width);
+    let pastes = crate::render::you_paste_rows(t, *open, width);
+    row + 1 + sizes + pastes < c.rows.len() || row + sizes >= c.rows.len()
 }
 
 /// A click on row `row` of event `i` opens or closes something
@@ -991,12 +999,8 @@ pub(crate) fn toggles_at(events: &[Ev], cache: &[Option<EventRows>], i: usize, r
     if events.get(i).is_some_and(|e| is_l3(e) && fold_open(e)) && folded_run(events, i, false) == Some(i) && row > fold_row() {
         return own_toggles(&events[i]);
     }
-    if let (Some(Ev::You(t, _, open)), Some(Some(c))) = (events.get(i), cache.get(i)) {
-        let sizes = usize::from(crate::attach::sizes_line(t).is_some());
-        let pastes = crate::render::you_paste_rows(t, *open, usize::from(c.width));
-        if row + 1 + sizes + pastes < c.rows.len() || row + sizes >= c.rows.len() {
-            return false;
-        }
+    if you_row_stays(events, cache, i, row) {
+        return false;
     }
     if tool_fold(events, i, false).is_some_and(|f| f.carrier == i) {
         return true;

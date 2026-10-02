@@ -950,10 +950,26 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
     // its long pastes, one dim row each (the full text when open)
     rows.extend(paste_rows(&pastes, open, width));
     // the sizes of its images, dim, under it (still behind the bar)
-    if let Some(sizes) = crate::attach::sizes_line(msg) {
-        rows.extend(hung_rows(&bar, &bar, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));
-    }
+    rows.extend(sizes_rows(msg, width));
     rows
+}
+
+/// The rows of the sizes of your message's images (`▣ a.png 1284×322 ·
+/// ▣ b.png …`), dim behind its bar; several when they wrap. `msg`: its
+/// text with the long pastes folded to their chips.
+fn sizes_rows(msg: &str, width: usize) -> Vec<Line<'static>> {
+    let Some(sizes) = crate::attach::sizes_line(msg) else { return vec![] };
+    let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
+    hung_rows(&bar, &bar, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width)
+}
+
+/// How many rows the sizes of `msg`'s images take under it at `width`
+/// (feed::toggle_at: a click there does nothing; a few screenshots wrap
+/// to several rows, which hid the `▸ n more lines` row from the click).
+pub(crate) fn you_sizes_rows(msg: &str, width: usize) -> usize {
+    let (_, body) = crate::quote::split(msg);
+    let (folded, _) = crate::pasted::fold(body);
+    sizes_rows(&folded, width).len()
 }
 
 // ---- an answer to an inbox item (BISE-307, designer) ----

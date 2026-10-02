@@ -1845,6 +1845,39 @@ fn a_click_on_the_hint_row_opens_just_that_message() {
     assert!(matches!(events[1], Ev::You(_, _, false)));
 }
 
+/// A long message of yours with a few screenshots: the sizes of its
+/// images wrap to several rows under the hint row; a click on the hint
+/// still opens it (the click took the sizes for one row and missed it),
+/// the sizes rows stay inert, the `▾` row folds it again.
+#[test]
+fn a_click_on_the_hint_opens_a_message_whose_image_sizes_wrap() {
+    let shot = |n: u32| format!("<image name=\"[Image #{n}]\" path=\"/shots/Screenshot 2026-10-02 at 11.3{n}.59.png\" mime=\"image/png\" b64=\"/nowhere/{n}.b64\">");
+    let long = (1..=24).map(|n| format!("{n}. {} line {n}", shot(n % 6))).collect::<Vec<_>>().join("\n");
+    let (mut events, mut cache) = arrive(vec![Ev::You(long, Mark::Read, false)]);
+    let rows = cached_text(&events, &mut cache, 60);
+    let n = cache[0].as_ref().unwrap().rows.len();
+    let hint = rows.iter().position(|r| r.contains("▸") && r.contains("more lines")).expect("a hint row");
+    let sizes = rows.len() - 1 - hint;
+    assert!(sizes >= 3, "the sizes wrap: {rows:#?}");
+    assert!(rows[hint + 1..].iter().all(|r| r.starts_with("│  ") && r.contains("Screenshot")), "{rows:#?}");
+    let hint = hint - (rows.len() - n);
+    // the sizes rows and the text rows: nothing; the hint row: opens
+    for r in (hint + 1..n).chain([hint - 1]) {
+        assert!(!crate::feed::toggles_at(&events, &cache, 0, r) && !toggle_at(&mut events, &mut cache, 0, r), "row {r}");
+    }
+    assert!(matches!(events[0], Ev::You(_, _, false)));
+    assert!(crate::feed::toggles_at(&events, &cache, 0, hint));
+    assert!(toggle_at(&mut events, &mut cache, 0, hint));
+    assert!(matches!(events[0], Ev::You(_, _, true)));
+    // open: the `▾` row (its last line, above the sizes) folds it again
+    let rows = cached_text(&events, &mut cache, 60);
+    let n = cache[0].as_ref().unwrap().rows.len();
+    let open = rows.iter().position(|r| r.contains("line 24") && r.contains('▾')).expect("the ▾ row") - (rows.len() - n);
+    assert!(!toggle_at(&mut events, &mut cache, 0, n - 1));
+    assert!(toggle_at(&mut events, &mut cache, 0, open));
+    assert!(matches!(events[0], Ev::You(_, _, false)));
+}
+
 /// BISE-240: a long paste in your message is its chip in the line and
 /// one dim row under it; a click on that row (or ctrl+o) opens the
 /// message and shows the full text there, never by default.
