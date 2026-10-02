@@ -7,6 +7,8 @@ description = "Ratatui terminal UI for the Bend Unified Harness (Rust port of re
 
 [dependencies]
 bise-home = { path = "../home" }
+# /log (logview.rs): the agent's session log, read-only
+bise-session = { path = "../session" }
 bise-catalog = { path = "../catalog" }
 bend-plugins = { path = "../plugins" }
 bend-images = { path = "../images" }

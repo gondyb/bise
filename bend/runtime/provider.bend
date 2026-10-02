@@ -65,6 +65,19 @@ def dump_wire.skip(empty: Bool, +path: String, +body: String) -> IO(Unit):
 def dump_wire(+path: String, +body: String) -> IO(Unit):
   dump_wire.skip(String.is_empty(path), path, body)
 
+# BEND_WIRE_DUMP ending in "/" (a folder: the hub's BISE_DEBUG_REQUESTS):
+# one file per attempt, <call ms>-<try>.json, all kept (the TUI's /log
+# shows them as what the model got); else the path itself (the last one)
+def dump_path.pick(dir: Bool, +path: String, +call: Nat, +tries: Nat) -> String:
+  match dir:
+    case True{}:
+      String.concat([path, Nat.show(call), "-", Nat.show(tries), ".json"])
+    case False{}:
+      path
+
+def dump_path(+path: String, +call: Nat, +tries: Nat) -> String:
+  dump_path.pick(String.ends_with(path, "/"), path, call, tries)
+
 # the family's headers (core/api.bend), set in their order
 def headers_of(hs: List<&2, Api.Hdr>, m: Map<&2, List<&2, String>>)
     -> Map<&2, List<&2, String>>:
@@ -606,7 +619,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             +filled : String <- img_body(json)
             +body : String <- IO.pure(String, Enc.utf8.encode(filled))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
-            dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
+            dump_dbg : Unit <- dump_wire(dump_path(P.env_or(dr, ""), call, tries), body)
             hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
               headers_of(Api.with_cache_header(Pvp.cache_header(names), ckey,
                 Api.headers(st, Api.facts_betas(facts), key)), Http.empty()))

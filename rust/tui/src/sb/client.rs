@@ -147,6 +147,7 @@ pub fn run_switchboard(
     debug: bool,
 ) -> io::Result<()> {
     let reader = stream.try_clone()?;
+    crate::logview::set_hub_dir(&socket);
     let (tx, rx) = mpsc::channel::<String>();
     let writer = std::sync::Arc::new(std::sync::Mutex::new(stream));
     {

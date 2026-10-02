@@ -14,17 +14,23 @@ pub(crate) const DEV_COMMANDS: &[Cmd] = &[Cmd {
     name: "/release-bise",
     desc: "release bise: tag HEAD, CI builds it, publish (asks first): /release-bise [dry-run]",
     args: &[Arg::Words(&[("dry-run", "say what it would do, push and publish nothing")])],
-}];
+}, crate::logview::COMMAND];
+
+/// `/log` alone: `BISE_DEV=1` outside the dev build (logview.rs).
+const LOG_ONLY: &[Cmd] = &[crate::logview::COMMAND];
 
 /// The dev build: the hub said its workspace is bise's source tree.
 pub(crate) fn dev(app: &App) -> bool {
     app.sb.versions_dev == Some(true)
 }
 
-/// The dev commands when this is the dev build, else none.
+/// The dev commands when this is the dev build, else none (`/log`
+/// with `BISE_DEV=1`, or once shipped).
 pub(crate) fn dev_commands(app: &App) -> &'static [Cmd] {
     if dev(app) {
         DEV_COMMANDS
+    } else if crate::logview::enabled(app) {
+        LOG_ONLY
     } else {
         &[]
     }

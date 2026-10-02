@@ -113,6 +113,7 @@ dependencies = [
  "bend-plugins",
  "bise-catalog",
  "bise-home",
+ "bise-session",
  "cpal",
  "crossterm",
  "ignore",

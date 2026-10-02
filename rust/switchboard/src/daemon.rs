@@ -1412,6 +1412,19 @@ impl Shell {
             .env_remove("SB_CORE_BIN")
             // nor its app root: a harness an agent runs finds its own
             .env_remove("BISE_APP_ROOT");
+        // dev: the exact body of every model request, one file each in
+        // agents/<a>/requests/ (the TUI's /log shows them), when the hub
+        // runs with BISE_DEBUG_REQUESTS=1 or <hub>/debug-requests exists
+        // (read at each REPL start: no hub restart). Bodies only, no
+        // headers: the keys go in headers.
+        if debug_requests(&self.opts.paths.state) {
+            let req_dir = adir.join("requests");
+            if std::fs::create_dir_all(&req_dir).is_ok() {
+                cmd.env("BEND_WIRE_DUMP", format!("{}/", req_dir.display()));
+            }
+        } else {
+            cmd.env_remove("BEND_WIRE_DUMP");
+        }
         for (k, v) in crate::tools_env::temp_env(&tmp, &run) {
             cmd.env(k, v);
         }
@@ -2578,6 +2591,12 @@ fn skills_fingerprint(roots: &[PathBuf]) -> u64 {
         }
     }
     h.finish()
+}
+
+/// Dev: log every model request's body (`BISE_DEBUG_REQUESTS=1` in the
+/// hub's environment, or a `debug-requests` file in its state folder).
+fn debug_requests(state: &std::path::Path) -> bool {
+    std::env::var("BISE_DEBUG_REQUESTS").is_ok_and(|v| !v.is_empty() && v != "0") || state.join("debug-requests").exists()
 }
 
 fn hash_keys(keys: &[(String, Option<String>)]) -> u64 {

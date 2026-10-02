@@ -14,6 +14,8 @@ pub(crate) struct App {
     pub(crate) help: Option<help::Overlay>,
     // the /approvals screen, when open
     pub(crate) approvals: Option<approvals_screen::Screen>,
+    /// `/log`, the raw session of the agent in view, when open (dev only)
+    pub(crate) logview: Option<crate::logview::View>,
     // the /computer-use screen, when open (computer_use.rs)
     pub(crate) computer_use: Option<computer_use::Screen>,
     pub(crate) debug: bool,
@@ -280,6 +282,7 @@ impl App {
             term: crate::term::Term::default(),
             help: None,
             approvals: None,
+            logview: None,
             computer_use: None,
             debug,
             follow: true,

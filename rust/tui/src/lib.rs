@@ -87,6 +87,7 @@ pub mod timing;
 mod crash;
 mod help;
 mod approvals_screen;
+mod logview;
 mod computer_use;
 mod keybar;
 mod keycheck;
