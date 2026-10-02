@@ -26,6 +26,7 @@ import ./persist.bend as P
 import ./tools.bend as X
 import ./tools-pure.bend as Xp
 import ../vendor/http/http.bend as Http
+import ../vendor/http/encoding/encoding.bend as Enc
 # request bodies are built with J; every PARSE goes through Jv, which keeps
 # numbers as text: Bend's Nat is 48-bit, and the connector bootstrap
 # carries 2^53-1 JSON-schema maximums that would fail to parse otherwise
@@ -347,8 +348,15 @@ def init_body() -> String:
 def notif_body() -> String:
   "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"
 
-def call_body(+tool: String, +args: String) -> String:
+def call_json(+tool: String, +args: String) -> String:
   J.stringify(J.obj(Con{J.kv("jsonrpc", J.str("2.0")), Con{J.kv("id", J.num(2n)), Con{J.kv("method", J.str("tools/call")), Con{J.kv("params", J.obj(Con{J.kv("name", J.str(tool)), Con{J.kv("arguments", J.raw(args)), Nil{}}})), Nil{}}}}}))
+
+# the body goes out as UTF-8 bytes (Http counts Content-Length in the
+# string's units: a raw "·" in the arguments made it short by one byte per
+# non-ASCII char, the server read a cut JSON and answered 400, "mcp call
+# failed: non-200 http status"; provider.bend encodes its body the same way)
+def call_body(+tool: String, +args: String) -> String:
+  Enc.utf8.encode(call_json(tool, args))
 
 # a plugin tool's cid is already its loopback URL (the plugins bridge);
 # the Mistral key never goes there
