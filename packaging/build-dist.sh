@@ -164,7 +164,8 @@ if [ "$os" = darwin ] && git cat-file -e "$commit:computer-use/macos-app/Package
     hsrc="$(mktemp -d /tmp/bise-cu-helper.XXXXXX)"
     git archive "$commit" computer-use/macos-app | tar -x -C "$hsrc"
     rm -rf "$hcache.tmp" && mkdir -p "$hcache.tmp"
-    "$hsrc/computer-use/macos-app/scripts/bundle.sh" --out "$hcache.tmp" >/dev/null \\n      || { rm -rf "$hsrc" "$hcache.tmp"; say "the computer-use helper did not build"; exit 1; }
+    "$hsrc/computer-use/macos-app/scripts/bundle.sh" --out "$hcache.tmp" >/dev/null \
+      || { rm -rf "$hsrc" "$hcache.tmp"; say "the computer-use helper did not build"; exit 1; }
     rm -rf "$hsrc" "$hcache" && mv "$hcache.tmp" "$hcache"
   fi
   helper="$app/bise Computer Use.app"
