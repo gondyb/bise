@@ -17,6 +17,8 @@ const MAX_TABS = 5;
 const GROUP_PREFIX = "bise · ";
 const CODES = new Set(["not_set_up", "no_browser", "no_helper", "no_permission", "not_found", "ambiguous", "stale_ref", "stopped", "paused", "refused", "timeout", "needs_front", "bad_args"]);
 const ACTIONS = new Set(["click", "fill", "type", "press", "select", "check", "hover", "scroll", "goto", "close", "wait", "read"]);
+// C1's locator keys; anything else is bad_args
+const LOCATOR_KEYS = new Set(["role", "name", "name_re", "text", "text_re", "label", "exact", "nth"]);
 
 class CuError extends Error {
   constructor(code, message, extra = {}) {
@@ -292,7 +294,22 @@ function serial(t, fn) {
 
 // ---------------------------------------------------------------- CDP
 
-const cdp = (tabId, method, params = {}) => chrome.debugger.sendCommand({ tabId }, method, params);
+// Chrome can let go of a tab without telling onDetach to this worker (a
+// worker that restarted, a renderer swap): our `attached` says yes, the
+// command fails "Debugger is not attached" and a click came back
+// `refused` (launch #1). Attach again once and retry; a stopped agent or
+// a page we can't drive still fails as before (attach refuses).
+async function cdp(tabId, method, params = {}) {
+  try {
+    return await chrome.debugger.sendCommand({ tabId }, method, params);
+  } catch (e) {
+    const t = tabs.get(tabId);
+    if (!t || !/Debugger is not attached/i.test(String(e?.message || e))) throw e;
+    t.attached = false;
+    await attach(tabId, t);
+    return chrome.debugger.sendCommand({ tabId }, method, params);
+  }
+}
 
 // The stop message (C1 `stopped`), the same for every path that meets it.
 const STOPPED = ["the user stopped you in the browser; ask before you start again", { summary: "you stopped it" }];
@@ -311,10 +328,12 @@ async function attach(tabId, t) {
   }
   t.attached = true;
   // Without it the first mouse event in a hidden tab waits 5 s for a frame (spike, design §3).
-  await cdp(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true });
-  await cdp(tabId, "Page.enable");
-  await cdp(tabId, "DOM.enable");
-  await cdp(tabId, "Accessibility.enable");
+  // raw sends: cdp() calls attach() on "not attached", never the reverse
+  const send = (method, params = {}) => chrome.debugger.sendCommand({ tabId }, method, params);
+  await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await send("Page.enable");
+  await send("DOM.enable");
+  await send("Accessibility.enable");
 }
 
 async function detach(tabId, t) {
@@ -504,7 +523,12 @@ async function pointOf(tabId, backendNodeId) {
   let quads;
   try {
     ({ quads } = await cdp(tabId, "DOM.getContentQuads", { backendNodeId }));
-  } catch {
+  } catch (e) {
+    // a node the page replaced since the snapshot (a region re-rendered
+    // every 30 ms) is not "invisible" (launch #2): say what happened
+    const gone = /No node|not found|does not belong|Could not find/i.test(String(e?.message || e)) ||
+      (await callOn(tabId, backendNodeId, function () { return !this.isConnected; }).catch(() => true));
+    if (gone) return { ok: false, reason: "the page keeps replacing it (it re-renders faster than bise can act); try a stable element near it" };
     return { ok: false, reason: "it isn't visible" };
   }
   const q = quads.find((x) => quadArea(x) > 1);
@@ -554,6 +578,10 @@ async function resolve(tabId, t, args, deadline, { visible = true, enabled = fal
   const loc = args.locator;
   if (args.ref && loc) fail("bad_args", "give a ref or a locator, not both");
   if (loc && typeof loc !== "object") fail("bad_args", "locator must be an object like {role, name}");
+  // an unknown key was ignored: {css: ".stage"} matched every element and
+  // came back ambiguous (launch #5)
+  const unknown = loc ? Object.keys(loc).filter((k) => !LOCATOR_KEYS.has(k)) : [];
+  if (unknown.length) fail("bad_args", `unknown locator key${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}: use ${[...LOCATOR_KEYS].join(", ")} (no CSS selectors: find the element in a snapshot)`, { reason: `${unknown[0]} isn't a locator key` });
   const desc = args.ref ? args.ref : describeLocator(loc);
   for (;;) {
     const snap = await takeSnapshot(tabId, t);
@@ -733,7 +761,11 @@ async function settle(tabId, t, deadline) {
     await sleep(100);
   }
   let prev = await takeSnapshot(tabId, t);
-  for (let i = 0; i < 8; i++) {
+  // a page that never stops changing (a clock, a region re-rendered every
+  // 30 ms) never settles: 8 more snapshots of a big tree took a click to
+  // 15 s (launch's hero-cine). At most ~1.5 s here; the diff says the rest.
+  const until = Date.now() + 1500;
+  for (let i = 0; i < 8 && Date.now() < until; i++) {
     await sleep(100);
     const next = await takeSnapshot(tabId, t);
     if (next.navs === prev.navs && next.lines.join("\n") === prev.lines.join("\n")) return next;
