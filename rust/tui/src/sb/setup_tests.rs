@@ -155,7 +155,7 @@ fn fake(ctx: tune::Ctx, tx: mpsc::Sender<Msg>) {
     let f = Found {
         checks: vec![
             c(tune::Mark::Fine, "ghostty 1.3.1"),
-            c(tune::Mark::Offer, "ghostty keeps cmd+v, cmd+f, cmd+k and cmd+a for itself"),
+            c(tune::Mark::Offer, "ghostty keeps cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ for itself"),
             c(tune::Mark::Offer, "no AGENTS.md in this repo"),
             c(tune::Mark::Offer, "no MISTRAL_API_KEY: the connectors are off"),
             c(tune::Mark::Note, "gh isn't logged in · gh auth login"),
@@ -192,7 +192,7 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     assert_eq!(
         setup_cards(&app),
         vec![
-            "let cmd+v, cmd+f, cmd+k and cmd+a reach bise",
+            "let cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ reach bise",
             "turn on web search and the other connectors",
             "write a starter AGENTS.md",
         ]
@@ -200,7 +200,7 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     // the strip: each row, its faint end when it fits in the reading
     // column (not the Ghostty one's), the key's action
     let keys = strip_row(&mut app, 160, 40, "? main · let cmd+v");
-    assert!(keys.contains(" 1 ? main · let cmd+v, cmd+f, cmd+k and cmd+a reach bise"), "{keys}");
+    assert!(keys.contains(" 1 ? main · let cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ reach bise"), "{keys}");
     let rows = draw(&mut app, 160, 40);
     let agents = rows.iter().find(|r| r.contains("? main · write a starter")).unwrap();
     assert!(agents.contains("? main · write a starter AGENTS.md new file · 3 lines"), "{agents}");
@@ -219,13 +219,15 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(rows.contains("+keybind = performable:super+v=paste_from_clipboard") && rows.contains("config.bise-backup"), "{rows}");
     for s in [
-        "? let cmd+v, cmd+f, cmd+k and cmd+a reach bise",
-        "Ghostty config · +4 lines",
+        // the long title is cut before the meta (`reach bi…`)
+        "? let cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ reach",
+        "Ghostty config · +8 lines",
         "Ghostty keys",
         "AGENTS.md",
         "connectors",
         "right now Ghostty keeps these keys for itself.",
-        "i'd add 4 lines to ~/ghostty/config:",
+        "i'd add 8 lines to ~/ghostty/config:",
+        "cmd+↑↓ jump to your message's start or end (with shift, they select to there).",
         "i copy the file to config.bise-backup first.",
         "1 yes, add them   2 no",
     ] {
@@ -237,10 +239,10 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     assert_eq!(bar, "⏎ yes, add them   ←→ choose   ↑↓ other items   ctrl+o full screen   esc back to your message");
     assert_eq!(std::fs::read_to_string(h.join("ghostty/config")).unwrap(), "font-size = 14\n");
     press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
-    assert!(std::fs::read_to_string(h.join("ghostty/config")).unwrap().ends_with("keybind = super+a=unbind\n"));
+    assert!(std::fs::read_to_string(h.join("ghostty/config")).unwrap().ends_with("keybind = super+shift+arrow_down=unbind\n"));
     assert_eq!(std::fs::read_to_string(h.join("ghostty/config.bise-backup")).unwrap(), "font-size = 14\n");
     let last = infos(&app).pop().unwrap();
-    assert_eq!(last, "✓ Ghostty config · 4 lines added, the old one in ~/ghostty/config.bise-backup · reload Ghostty (cmd+shift+,) to use them");
+    assert_eq!(last, "✓ Ghostty config · 8 lines added, the old one in ~/ghostty/config.bise-backup · reload Ghostty (cmd+shift+,) to use them");
     // the view moved on to the key card: typed text is masked, never
     // in the history, saved in auth.json
     let key_id = ids[1];

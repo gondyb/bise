@@ -50,10 +50,15 @@ fn ghostty_gets_an_offer_for_the_lines_it_misses() {
     std::fs::create_dir_all(xdg.parent().unwrap()).unwrap();
     std::fs::write(&xdg, "font-size = 14\nkeybind = super+f = unbind\n").unwrap();
     let (chk, o) = check_cmd_keys(&c);
-    assert_eq!(chk.text, "ghostty keeps cmd+v, cmd+k and cmd+a for itself");
-    assert_eq!(o, Some(Offer::Keys { terminal: "ghostty".into(), file: xdg.clone(), add: vec![GHOSTTY_LINES[0].to_string(), GHOSTTY_LINES[2].to_string(), GHOSTTY_LINES[3].to_string()] }));
+    // the four arrow lines are one key, cmd+↑↓
+    assert_eq!(chk.text, "ghostty keeps cmd+v, cmd+k, cmd+a and cmd+↑↓ for itself");
+    let rest: Vec<String> = GHOSTTY_LINES.iter().enumerate().filter(|(i, _)| *i != 1).map(|(_, l)| l.to_string()).collect();
+    assert_eq!(o, Some(Offer::Keys { terminal: "ghostty".into(), file: xdg.clone(), add: rest }));
+    // only the shift ones missing: still cmd+↑↓
+    std::fs::write(&xdg, GHOSTTY_LINES[..6].join("\n")).unwrap();
+    assert_eq!(check_cmd_keys(&c).0.text, "ghostty keeps cmd+↑↓ for itself");
     std::fs::write(&xdg, GHOSTTY_LINES.join("\n")).unwrap();
-    assert_eq!(check_cmd_keys(&c), (Check { mark: Mark::Fine, text: "cmd+v, cmd+f, cmd+k and cmd+a reach me".into() }, None));
+    assert_eq!(check_cmd_keys(&c), (Check { mark: Mark::Fine, text: "cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ reach me".into() }, None));
     // the others: a note, no file touched; a cmd key seen: fine
     let (chk, o) = check_cmd_keys(&ctx(&h, &h, &[("TERM_PROGRAM", "Apple_Terminal")]));
     assert_eq!((chk.mark, o), (Mark::Note, None));

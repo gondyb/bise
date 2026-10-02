@@ -176,10 +176,11 @@ fn lines_word(n: usize) -> String {
 
 /// Why each Ghostty line helps (the keys it lets through).
 fn keys_why(add: &[String]) -> String {
-    let why: Vec<&str> = add
-        .iter()
-        .map(|l| {
-            if l.contains("super+v") {
+    let mut why: Vec<&str> = Vec::new();
+    let each = add.iter().map(|l| {
+            if l.contains("arrow_") {
+                "cmd+↑↓ jump to your message's start or end (with shift, they select to there)"
+            } else if l.contains("super+v") {
                 "cmd+v can paste a screenshot into your message (text still pastes as usual)"
             } else if l.contains("super+k") {
                 "cmd+k finds an agent by name"
@@ -188,8 +189,13 @@ fn keys_why(add: &[String]) -> String {
             } else {
                 "cmd+f searches your history"
             }
-        })
-        .collect();
+        });
+    // the four arrow lines are one reason
+    for w in each {
+        if !why.contains(&w) {
+            why.push(w);
+        }
+    }
     match why.split_last() {
         Some((last, rest)) if !rest.is_empty() => format!("{}, and {}", rest.join(", "), last),
         _ => why.join(""),
@@ -208,8 +214,14 @@ fn offer_look(v: &Vars, w: &What) -> Look {
             let keys = tune::keys_of(add);
             let path = shown(v, file);
             let size = format!("{term} config · +{}", lines_word(add.len()));
-            let (these_keys, these_lines, them) =
-                if one { ("this key", "this line", "it") } else if add.len() == 2 { ("these two keys", "these lines", "them") } else { ("these keys", "these lines", "them") };
+            // the keys, not the lines: the four arrow lines are one key
+            let n_keys = add.iter().filter_map(|l| tune::key_of(l)).collect::<std::collections::HashSet<_>>().len();
+            let these_keys = match n_keys {
+                1 => "this key",
+                2 => "these two keys",
+                _ => "these keys",
+            };
+            let (these_lines, them) = if one { ("this line", "it") } else { ("these lines", "them") };
             let what = if old.is_some() {
                 format!("i'd add {} to {path}:", lines_word(add.len()))
             } else {

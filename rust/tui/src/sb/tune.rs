@@ -236,13 +236,27 @@ pub(crate) fn ghostty_config(ctx: &Ctx) -> PathBuf {
 
 /// The Ghostty lines (book §16): cmd+v on an image-only clipboard
 /// (BISE-221), cmd+f (BISE-241), cmd+k (BISE-265), cmd+a selects the
-/// composer's text, not Ghostty's screen (BISE-267).
-pub(crate) const GHOSTTY_LINES: [&str; 4] = [
+/// composer's text, not Ghostty's screen (BISE-267), cmd+↑↓ (with shift:
+/// select) go to the composer text's start or end, not to the shell's
+/// previous or next prompt (Ghostty's `jump_to_prompt`, always performed:
+/// `performable:` would not let them through).
+pub(crate) const GHOSTTY_LINES: [&str; 8] = [
     "keybind = performable:super+v=paste_from_clipboard",
     "keybind = super+f=unbind",
     "keybind = super+k=unbind",
     "keybind = super+a=unbind",
+    "keybind = super+arrow_up=unbind",
+    "keybind = super+arrow_down=unbind",
+    "keybind = super+shift+arrow_up=unbind",
+    "keybind = super+shift+arrow_down=unbind",
 ];
+
+/// The key a Ghostty line lets through, as the app names it: `cmd+f`;
+/// the four arrow lines are one key, `cmd+↑↓` (shift selects).
+pub(crate) fn key_of(line: &str) -> Option<String> {
+    let k = line.split("super+").nth(1)?.split(['=', ' ']).next()?;
+    Some(if k.contains("arrow_") { "cmd+↑↓".to_string() } else { format!("cmd+{k}") })
+}
 
 /// The Ghostty lines missing from `text` (spaces around `=` ignored).
 pub(crate) fn ghostty_missing(text: &str) -> Vec<String> {
@@ -259,7 +273,8 @@ fn check_cmd_keys(ctx: &Ctx) -> (Check, Option<Offer>) {
         let file = ghostty_config(ctx);
         let add = ghostty_missing(&std::fs::read_to_string(&file).unwrap_or_default());
         if add.is_empty() {
-            return fine("cmd+v, cmd+f, cmd+k and cmd+a reach me");
+            let all: Vec<String> = GHOSTTY_LINES.map(String::from).to_vec();
+            return fine(&format!("{} reach me", keys_of(&all)));
         }
         let text = format!("{} keeps {} for itself", term_name(&term), keys_of(&add));
         return (Check { mark: Mark::Offer, text }, Some(Offer::Keys { terminal: term_name(&term), file, add }));
@@ -277,12 +292,15 @@ fn check_cmd_keys(ctx: &Ctx) -> (Check, Option<Offer>) {
     }
 }
 
-/// `cmd+v, cmd+f, cmd+k and cmd+a`, `cmd+f`: what the missing lines give.
+/// `cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓`, `cmd+f`: what the missing
+/// lines give (each key once).
 pub(crate) fn keys_of(add: &[String]) -> String {
-    let keys: Vec<String> = add
-        .iter()
-        .filter_map(|l| l.split("super+").nth(1)?.split(['=', ' ']).next().map(|k| format!("cmd+{k}")))
-        .collect();
+    let mut keys: Vec<String> = Vec::new();
+    for k in add.iter().filter_map(|l| key_of(l)) {
+        if !keys.contains(&k) {
+            keys.push(k);
+        }
+    }
     match keys.split_last() {
         None => String::new(),
         Some((last, [])) => last.clone(),
@@ -692,11 +710,11 @@ pub fn setup_main(args: &[String]) -> i32 {
     let usage = "bise setup: get this Mac ready for bise
 
   bise setup scan               what this Mac has for bise
-  bise setup ghostty [--dry-run]  Ghostty's lines for cmd+v/f/k/a
+  bise setup ghostty [--dry-run]  Ghostty's lines for cmd+v/f/k/a/↑↓
 
   scan: what this machine has for bise (keys' places, Claude Code's and
   Codex's model, instructions, skills, MCP servers, repos), never a key.
-  ghostty: add the lines that give cmd+v, cmd+f, cmd+k and cmd+a to bise in Ghostty's
+  ghostty: add the lines that give cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ to bise in Ghostty's
   config (the same lines /setup offers); a copy of the file goes to
   <config>.bise-backup first. --dry-run shows the change and writes nothing.";
     let (what, dry) = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {

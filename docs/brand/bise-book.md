@@ -1093,18 +1093,22 @@ one in accent.
      would help. it waits in your inbox with the exact change. yes or no,
      whenever you want.`; none: `all good here. nothing to change.`).
    - **the fixes**, one item each, in the inbox, not opened, three at most:
-     - `let cmd+v, cmd+f, cmd+k and cmd+a reach bise` · faint `Ghostty config · +4
+     - `let cmd+v, cmd+f, cmd+k, cmd+a and cmd+↑↓ reach bise` · faint `Ghostty config · +8
        lines`: `right now Ghostty keeps these keys for itself. with these
        lines, cmd+v can paste a screenshot into your message (text still
        pastes as usual), cmd+f searches your history, cmd+k finds an
-       agent by name, and cmd+a selects all your message.` (two lines: `these two keys`, the two reasons joined
-       by `, and`) / `i'd add 4 lines
-       to {path}:` (a new file: `i'd create {path} with 4 lines:`), the diff
+       agent by name, cmd+a selects all your message, and cmd+↑↓ jump to
+       your message's start or end (with shift, they select to there).`
+       (two keys: `these two keys`, the two reasons joined by `, and`; the
+       four arrow lines count as one key, cmd+↑↓, and one reason) / `i'd add 8 lines
+       to {path}:` (a new file: `i'd create {path} with 8 lines:`), the diff
        (`keybind = performable:super+v=paste_from_clipboard`, `keybind =
        super+f=unbind`, `keybind = super+k=unbind` (BISE-265), `keybind =
-       super+a=unbind` (BISE-267), only the
-       missing ones; the title names only their keys; in the strip the four-key title is cut with `…` before the options), dim `i copy the file to
-       config.bise-backup first. to undo: delete the 4 lines. Ghostty uses
+       super+a=unbind` (BISE-267), `keybind = super+arrow_up=unbind`,
+       `super+arrow_down`, `super+shift+arrow_up`, `super+shift+arrow_down`
+       (the same `=unbind`), only the
+       missing ones; the title names only their keys; in the strip the long title is cut with `…` before the options), dim `i copy the file to
+       config.bise-backup first. to undo: delete the 8 lines. Ghostty uses
        them after a reload (cmd+shift+,) or in a new window.` Options `yes,
        add them` (one line: `yes, add it`) / `no`.
      - `write a starter AGENTS.md` · faint `new file · 14 lines`, titled
@@ -1174,6 +1178,7 @@ replays it (**⚠** proposed command).
 | `alt+↓` / `alt+↑` | select next / previous agent | `ctrl+k` / `ctrl+j` removed (BISE-302) |
 | `cmd+k`, `ctrl+s`, `/switch [name]` | find an agent by name and open it (see "Switch agents" below) | new (BISE-265) |
 | `cmd+a` | select the whole composer text; typing or a paste replaces it, backspace clears it. Only the composer: in the help, find or the agent palette it does nothing (no `a` typed), in the terminal panel it goes nowhere. Ghostty keeps cmd+a (its screen's select all) unless `keybind = super+a=unbind`, which the setup offers with the cmd+v, cmd+f and cmd+k lines | reaches the composer (BISE-267, user: « j'aimerais bien que Command A dans le composer, ça sélectionne tout le texte du composer. Actuellement, ça ne fait rien du tout. ») |
+| `cmd+↑` / `cmd+↓` (and `ctrl+home` / `ctrl+end`) | the very start / end of the composer text, multi-line included, wherever the cursor is (no history recall at the edge); with shift, select from the cursor to there (typing replaces it). Ghostty keeps all four by default (`jump_to_prompt`, the shell's previous or next prompt; always performed, so `performable:` does not help) unless `keybind = super+arrow_up=unbind`, `super+arrow_down`, `super+shift+arrow_up`, `super+shift+arrow_down` (the same `=unbind`), which the setup offers with the cmd+v, cmd+f, cmd+k and cmd+a lines (the shell then loses Ghostty's cmd+↑↓ prompt jumps). kitty passes them; WezTerm and iTerm2 only when they speak the kitty keyboard protocol and have no binding of their own on them (not checked); Terminal.app and tmux never send cmd keys: ctrl+home / ctrl+end, or ↑ / ↓ row by row | reaches the composer (user: « si je fais commande + flèche du haut et commande + flèche du bas, mon curseur devrait aller tout au début ou tout à la fin du texte. Et si je fais shift en même temps, ça devrait sélectionner jusqu'au tout début ou tout à la fin du texte. ») |
 | `⏎` on a selected agent | enter it | — |
 | `space` | preview the selected agent; in the feed, toggle the selected item | feed toggle new |
 | `D` | drop the selected agent (asks first) | — |
