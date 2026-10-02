@@ -383,3 +383,36 @@ fn blockquotes_are_prose() {
     check(msg, &sp);
     assert_eq!(says(msg)[0], "the user said: ship it Ok.");
 }
+
+/// main's answer the user heard lose its paragraphs' last words
+/// (tts-lastword): short French paragraphs, inline code, a list, bold.
+const PARAGRAPHS_FR: &str = "Oui, je comprends : quand tu coupes ton micro, seul ton côté, l'écoute, doit passer en gris. La tête de main doit continuer à s'animer normalement : le sourire au repos, l'étoile quand il réfléchit, les anneaux quand il parle, les mots qui s'allument et le bisou de fin de tour.
+
+J'ai lancé `voice-mute` pour corriger ça. Il trouve l'endroit où le mode muet grise toute la tête, et limite le gris à ta partie. Designer valide les captures, dont une avec le micro coupé pendant que main parle. Je pousse dès qu'il m'envoie le SHA
+
+- **Avec ctrl enfoncé :** « ctrl+r talk » n'apparaît que si la dictée est activée.
+- **L'écran `/voice` :** il n'affiche aucun raccourci
+
+En parallèle, `voice-keys` ajoute les raccourcis du voice mode dans `/voice`, dans l'aide et dans les astuces quand tu tiens ctrl.
+";
+
+#[test]
+fn every_paragraphs_last_word_is_said_and_lights_itself() {
+    let msg = PARAGRAPHS_FR;
+    let sp = speakable(msg, Some("fr"));
+    check(msg, &sp);
+    // each block's last word, with or without its period
+    for (ctx, last) in [("fin de tour", "tour"), ("le SHA", "SHA"), ("est activée", "activée"), ("aucun raccourci", "raccourci"), ("tiens ctrl", "ctrl")] {
+        let at = msg.find(ctx).unwrap() + ctx.len() - last.len();
+        let word = sp.sentences.iter().flat_map(|s| s.words.iter().map(move |w| (s, w))).find(|(_, w)| w.src.as_ref().is_some_and(|r| r.start == at));
+        let (s, w) = word.unwrap_or_else(|| panic!("{last:?} is not said: {:#?}", says_fr(msg)));
+        assert!(s.say[w.say.clone()].starts_with(if last == "ctrl" { "contrôle" } else { last }), "{last:?} in {:?}", s.say);
+        // the paragraph's last word is its sentence's last: said, then the stop
+        assert_eq!(s.words.last(), Some(w), "{last:?} ends {:?}", s.say);
+        assert!(s.say.ends_with('.'), "{:?}", s.say);
+    }
+    let said = says_fr(msg);
+    assert!(said.contains(&"La tête de main doit continuer à s'animer normalement: le sourire au repos, l'étoile quand il réfléchit, les anneaux quand il parle, les mots qui s'allument et le bisou de fin de tour.".to_string()), "{said:#?}");
+    assert!(said.contains(&"Je pousse dès qu'il m'envoie le SHA.".to_string()), "{said:#?}");
+    assert_eq!(said.last().unwrap(), "En parallèle, voice-keys ajoute les raccourcis du voice mode dans voice, dans l'aide et dans les astuces quand tu tiens contrôle.");
+}

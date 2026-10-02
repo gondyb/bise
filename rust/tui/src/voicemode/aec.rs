@@ -152,6 +152,18 @@ pub fn fill(play: &Mutex<Playback>, out: &mut [f32]) {
     }
 }
 
+/// The speaker callback's buffer: exactly `frames` samples of the queue
+/// (the frame count is what the unit plays; its buffer may be bigger),
+/// the rest silent. Taking the whole buffer would drop the samples past
+/// `frames` from the queue unheard (tts-lastword: the end of a sentence
+/// skipped, the next one started at once).
+pub fn speaker_out(play: &Mutex<Playback>, out: &mut [f32], frames: usize) {
+    let n = frames.min(out.len());
+    let (played, rest) = out.split_at_mut(n);
+    fill(play, played);
+    rest.fill(0.0);
+}
+
 /// `BISE_VOICE_AEC=0` (or off/false/no): the plain devices, no echo
 /// cancelling (if the voice unit misbehaves on some Mac).
 pub fn wanted(env: Option<&str>) -> bool {
@@ -178,7 +190,7 @@ mod mac {
     //! scope gives us the cancelled mic), element 0 the speaker (its
     //! input scope takes our voice).
 
-    use super::{check, deliver, fill, fourcc, Ducking, MicPath, MicSink, StreamFormat, DUCKING_MIN, RATE};
+    use super::{check, deliver, fourcc, speaker_out, Ducking, MicPath, MicSink, StreamFormat, DUCKING_MIN, RATE};
     use crate::voicemode::audio::{Playback, QueueSpeaker, SharedLevel};
     use crate::voicemode::{Mic, MicBlock, MicStream};
     use std::ffi::c_void;
@@ -362,7 +374,7 @@ mod mac {
         0
     }
 
-    extern "C" fn on_speaker(ref_con: *mut c_void, _flags: *mut u32, _time: *const c_void, _bus: u32, _frames: u32, data: *mut AudioBufferList) -> i32 {
+    extern "C" fn on_speaker(ref_con: *mut c_void, _flags: *mut u32, _time: *const c_void, _bus: u32, frames: u32, data: *mut AudioBufferList) -> i32 {
         // SAFETY: `ref_con` is the Playback given with the callback (it
         // lives until the dispose); `data` is the unit's list of
         // `count` buffers (declared with one, read up to `count`)
@@ -380,7 +392,7 @@ mod mac {
                 }
                 let out = std::slice::from_raw_parts_mut(b.data as *mut f32, b.byte_size as usize / 4);
                 if i == 0 {
-                    fill(play, out);
+                    speaker_out(play, out, frames as usize);
                 } else {
                     out.fill(0.0);
                 }
@@ -557,6 +569,29 @@ mod tests {
         .join();
         let mut out = [9.0f32; 16];
         fill(&play, &mut out);
+        assert!(out.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn the_speaker_takes_only_the_frames_the_unit_plays() {
+        // a 480-sample buffer for 240 frames: 240 come off the queue,
+        // the next 240 stay for the next call (none skipped unheard)
+        let play = Mutex::new(Playback::new(RATE));
+        let pcm: Vec<f32> = (0..600).map(|i| i as f32 / 1000.0).collect();
+        play.lock().unwrap().push(1, &pcm);
+        play.lock().unwrap().end(1);
+        let mut heard = Vec::new();
+        for _ in 0..3 {
+            let mut out = [9.0f32; 480];
+            speaker_out(&play, &mut out, 240);
+            assert!(out[240..].iter().all(|&x| x == 0.0));
+            heard.extend_from_slice(&out[..240]);
+        }
+        assert_eq!(&heard[..600], &pcm[..]);
+        assert!(play.lock().unwrap().done(1));
+        // a frame count over the buffer: the buffer, no more
+        let mut out = [9.0f32; 16];
+        speaker_out(&play, &mut out, 64);
         assert!(out.iter().all(|&x| x == 0.0));
     }
 

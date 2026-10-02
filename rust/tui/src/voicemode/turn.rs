@@ -145,6 +145,10 @@ struct Speech {
     samples: Vec<usize>,
     complete: Vec<bool>,
     said: Vec<usize>,
+    /// per sentence, for the debug log: when the speaker started it, and
+    /// its "played" line written
+    playing_since: Vec<Option<Instant>>,
+    logged: Vec<bool>,
     cut: bool,
     over: bool,
 }
@@ -161,6 +165,8 @@ impl Speech {
             samples: vec![0; n],
             complete: vec![false; n],
             said: vec![0; n],
+            playing_since: vec![None; n],
+            logged: vec![false; n],
             cut: false,
             over: n == 0,
         }
@@ -254,6 +260,20 @@ impl MicWhileSpeaking {
 fn head(text: &str) -> String {
     let w: Vec<&str> = text.split_whitespace().take(12).collect();
     w.join(" ")
+}
+
+/// The debug log's line for sentence `i` once it played: the audio it
+/// got (`samples` at [`TTS_RATE`]) against the time the speaker took
+/// (`took`, None when its clock never showed it); a speaker done more
+/// than 150 ms early skipped audio past the queue.
+fn played_line(i: usize, samples: usize, took: Option<Duration>, say: &str) -> String {
+    let audio = samples as f64 / TTS_RATE as f64;
+    let Some(took) = took else {
+        return format!("sentence {} played · {:.2} s of audio · never on the clock · \"{}\"", i + 1, audio, head(say));
+    };
+    let took = took.as_secs_f64();
+    let skipped = if audio - took > 0.15 { format!(" · SKIPPED {:.2} s", audio - took) } else { String::new() };
+    format!("sentence {} played · {:.2} s of audio in {:.2} s{} · \"{}\"", i + 1, audio, took, skipped, head(say))
 }
 
 pub struct VoiceMode {
@@ -873,6 +893,9 @@ impl VoiceMode {
         if let Some((utt, played)) = self.speaker.clock() {
             if utt >= sp.first && utt <= sp.last_utt() {
                 let i = (utt - sp.first) as usize;
+                if sp.playing_since[i].is_none() && played > Duration::ZERO {
+                    sp.playing_since[i] = Some(Instant::now().checked_sub(played).unwrap_or_else(Instant::now));
+                }
                 for k in 0..i {
                     sp.said[k] = sp.spoken.sentences[k].words.len();
                 }
@@ -887,6 +910,12 @@ impl VoiceMode {
         for i in 0..sp.spoken.sentences.len() {
             if sp.complete[i] && self.speaker.done(sp.first + i as UttId) {
                 sp.said[i] = sp.spoken.sentences[i].words.len();
+                if !sp.logged[i] {
+                    sp.logged[i] = true;
+                    // tts-lastword: a sentence played in less time than its
+                    // audio lasts was skipped somewhere past the queue
+                    debug::log(|| played_line(i, sp.samples[i], sp.playing_since[i].map(|t| t.elapsed()), &sp.spoken.sentences[i].say));
+                }
             }
         }
         if sp.next == sp.spoken.sentences.len() && sp.synth.is_none() && self.speaker.done(sp.last_utt()) {

@@ -815,3 +815,42 @@ fn noise_brings_the_last_question_back() {
     r.tick();
     assert_eq!(r.vm.view(r.now()).question.as_deref(), Some("check the build"));
 }
+
+
+/// tts-lastword: a French answer in paragraphs, as speakable says it:
+/// every sentence goes to the voice whole, and once its audio played
+/// its last word lights, the paragraph's last word too.
+#[test]
+fn every_paragraphs_last_word_goes_to_the_voice_and_lights() {
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" ça marche");
+    let msg = "J'ai lancé `voice-mute` pour corriger ça. Je pousse dès qu'il m'envoie le SHA\n\nEn parallèle, `voice-keys` ajoute les raccourcis dans l'aide.\n";
+    let sp = super::super::speak::speakable(msg, Some("fr"));
+    let n = sp.sentences.len();
+    assert_eq!(n, 3);
+    r.vm.on_message("main", msg, sp);
+    for i in 0..n {
+        r.tick();
+        let text = r.f.synth.lock().unwrap()[i].text.clone();
+        let last = ["ça", "SHA", "l'aide"][i];
+        assert!(text.ends_with(&format!("{last}.")), "sentence {i} sent as {text:?}");
+        r.synth_all(i, 24_000);
+        r.clock(1 + i as UttId, 999);
+        r.tick();
+        r.done(1 + i as UttId);
+        r.tick();
+        let lit = r.vm.lit().unwrap();
+        let said: Vec<&str> = lit.spans.iter().filter(|(_, s)| *s == LitState::Said).map(|(rg, _)| &msg[rg.clone()]).collect();
+        assert_eq!(said.last().copied(), Some(last), "after sentence {i}: {said:?}");
+    }
+    assert!(r.vm.lit().unwrap().spans.iter().all(|(_, s)| *s == LitState::Said));
+}
+
+#[test]
+fn the_debug_line_says_when_the_speaker_skipped_audio() {
+    let whole = played_line(0, 24_000, Some(MS(1_020)), "Je pousse dès qu'il m'envoie le SHA.");
+    assert_eq!(whole, "sentence 1 played · 1.00 s of audio in 1.02 s · \"Je pousse dès qu'il m'envoie le SHA.\"");
+    let skipped = played_line(2, 57_600, Some(MS(1_760)), "Le bug venait du découpage des phrases.");
+    assert!(skipped.contains("2.40 s of audio in 1.76 s · SKIPPED 0.64 s"), "{skipped}");
+    assert!(played_line(0, 100, None, "x.").contains("never on the clock"));
+}
