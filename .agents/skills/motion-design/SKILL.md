@@ -90,10 +90,15 @@ when a new review teaches you something.
    back ease), fading in 0.8 s.
 9. **The film can exaggerate the UI to make the point readable** (e.g. in zen mode the film also dims the
    history; the real UI doesn't). Say so in the notes.
-10. **Illustrations: simple or none.** Detailed SVG drawings (agents, envelopes, bubbles) were judged ugly
-    and complex. What worked: one ASCII figure on a character grid that morphs from one concept to the next
-    (letter → `?` → `✓` → progress bar → branch), with a left-to-right wipe and a noise character
-    (`%#*+=-:`) at the switch. No words inside illustrations: nobody should have to read fast.
+10. **Illustrations: simple, and in the site's hand-drawn language.** Detailed SVG drawings (agents,
+    envelopes, bubbles) were judged ugly and complex, and so were big ASCII-art figures. When unsure, build
+    4–5 styles side by side in isolation (one HTML page, each concept looping) and let Gabriel pick. His
+    pick for "I manage": **boiling doodle stickers**, meaning thick ink outlines, a warm paper fill, the flat
+    offset shadow of the screens, pen-red accents (a heart seal, a red ✓ disc), a back-ease pop, and a line
+    "boil" (3 turbulence seeds swapped 8 times a second, keyed to film time so every frame is reproducible).
+    One small story per concept, played once and held ~0.5 s: an envelope seals and flies off, then a ✓; a
+    `?` sticker flips to a ✓; task cards get stamped in order; a twig drops its branch. No words inside
+    illustrations: nobody should have to read fast.
 11. **Each moment needs a clear reading.** A fixed head ("I manage") with the changing word entering the
     same way as the head. Big text cards for features ("computer use", "voice mode") before their demo.
 12. **Content facts.** Agent names and prompts stay consistent across all films (one world, `~/acme`:
