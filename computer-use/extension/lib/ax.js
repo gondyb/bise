@@ -72,6 +72,21 @@ export function walk(nodes, opts = {}) {
       for (const k of kids) visit(k, depth, parent, parentName);
       return;
     }
+    // Runs of text under one parent are one line: a page that wraps each
+    // character in its own span (example.com's script, animated titles)
+    // gave one `- text "T"` per letter (launch #3). Spaces between the
+    // pieces are kept; the merged line keeps the first piece's ref.
+    if (role === "text") {
+      const last = entries[entries.length - 1];
+      const joins = last && last.role === "text" && last.parent === parent && last.depth === depth && last.raw !== undefined;
+      const raw = String(node.name?.value ?? "");
+      if (joins && raw !== "" && (!name || name !== parentName)) {
+        last.raw += raw;
+        last.name = oneLine(last.raw);
+        last.line = line(last);
+        return;
+      }
+    }
     // A text that repeats its parent's name (the label of a button) adds nothing.
     if (role === "text" && (!name || name === parentName)) return;
     const backendId = node.backendDOMNodeId;
@@ -93,6 +108,7 @@ export function walk(nodes, opts = {}) {
       parent,
     };
     if (passwords.has(backendId)) e.password = true;
+    if (role === "text") e.raw = String(node.name?.value ?? "");
     e.line = line(e);
     const index = entries.length;
     entries.push(e);

@@ -58,6 +58,14 @@ test("walk + render: the C2 text", () => {
   assert.ok(!r.text.includes("hunter2"));
 });
 
+test("a paragraph split in one span per character is one text line (launch #3)", () => {
+  id = 0;
+  const chars = [..."This is"].map((c) => N("generic", "", {}, [N("StaticText", c, {}, [N("InlineTextBox", c)])]));
+  const nodes = flat(N("RootWebArea", "Example", {}, [N("paragraph", "", {}, chars), N("link", "Learn more")]));
+  const lines = entriesOf(nodes).map((e) => e.line);
+  assert.deepEqual(lines.map((l) => l.replace(/ \[e\d+\]/, "")), ['- paragraph', '- text "This is"', '- link "Learn more"']);
+});
+
 test("render cuts at max_nodes and says so", () => {
   const r = render(entriesOf(tree()), { title: "Shop", host: "x", maxNodes: 2 });
   assert.equal(r.truncated, true);
