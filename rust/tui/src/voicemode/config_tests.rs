@@ -112,18 +112,6 @@ fn the_say_job_takes_the_voice_and_the_speed() {
 }
 
 #[test]
-fn the_ack_job_is_the_small_jobs_model() {
-    let j = with("small_model = \"mistral/mistral-small-latest\"\n", ack_job_of).unwrap();
-    assert_eq!(j.api.name, "mistral/mistral-small-latest");
-    assert!(!j.family.is_empty());
-    // no key: the line says which
-    let setup = Setup::from_text(Some("small_model = \"mistral/mistral-small-latest\"\n"), &none);
-    let store = Store::default();
-    let keys = Keys { env: &none, store: &store, files: &[] };
-    assert!(ack_job_of(&setup, &keys).unwrap_err().contains("MISTRAL_API_KEY"));
-}
-
-#[test]
 fn the_speech_to_text_model_is_written_in_voice_and_the_default_unwritten() {
     let default = Setup::from_text(Some(""), &none).catalog.default_voice_model;
     let t = "[voice]\nlanguage = \"fr\"\n";

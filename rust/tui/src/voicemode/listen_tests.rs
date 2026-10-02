@@ -182,3 +182,47 @@ fn live_transcribe_3_hears_a_spoken_sentence() {
     let lower = text.to_lowercase();
     assert!(lower.contains("clippy") && lower.contains("tests") && lower.contains("fix"), "{}", text);
 }
+
+// ---- the language guard (voice-echo3: two quick French words came back
+// as "Да, наверное.") ----
+
+#[test]
+fn a_transcript_in_a_script_you_never_use_is_redone_in_your_language() {
+    let job = VoiceJob { language: None, ..crate::voice::fakes::job() };
+    let (audio, rx) = mpsc::channel();
+    let (tx, heard) = mpsc::channel();
+    let cancel = AtomicBool::new(false);
+    let langs_sent = std::sync::Mutex::new(Vec::<bool>::new());
+    let send = |req: &http::Request| {
+        // the second request carries the language: French words back
+        let body = String::from_utf8_lossy(&req.body).to_string();
+        let with_fr = body.contains("name=\"language\"") && body.contains("\r\n\r\nfr\r\n");
+        langs_sent.lock().unwrap().push(with_fr);
+        let text = if with_fr { "Oui, sans doute." } else { "Да, наверное." };
+        Ok(http::Response { status: 200, body: format!(r#"{{"text":"{}"}}"#, text).into_bytes() })
+    };
+    audio.send(ListenMsg::Audio(vec![3000; MIC_RATE as usize])).unwrap();
+    audio.send(ListenMsg::Flush).unwrap();
+    drop(audio);
+    let mut langs = Langs::new(vec!["fr-FR".into(), "en-FR".into()]);
+    run_batch(&job, &rx, &tx, &cancel, &mut langs, &send);
+    assert_eq!(heard.try_recv().unwrap(), Heard::Text(" Oui, sans doute.".into()));
+    assert_eq!(*langs_sent.lock().unwrap(), [false, true], "auto first, then French");
+}
+
+#[test]
+fn your_languages_keep_their_words_and_the_last_spoken_leads() {
+    let mut l = Langs::new(vec!["fr-FR".into(), "en-FR".into(), "en_US.UTF-8".into()]);
+    assert_eq!(l.redo("Да, наверное."), Some("fr".into()));
+    assert_eq!(l.redo("yes, probably"), None, "Latin: one of yours");
+    assert_eq!(l.redo("..."), None, "no letters");
+    l.heard("yes, please run the tests now");
+    assert_eq!(l.redo("Да, наверное."), Some("en".into()), "the last you spoke");
+    // a Russian speaker's Russian stays
+    assert_eq!(Langs::new(vec!["ru-RU".into()]).redo("Да, наверное."), None);
+    // nothing known: kept
+    assert_eq!(Langs::new(Vec::new()).redo("Да, наверное."), None);
+    assert_eq!(script_of_text("Да, наверное."), Some(Script::Cyrillic));
+    assert_eq!(script_of_text("Oui, ça marche."), Some(Script::Latin));
+    assert_eq!(parse_apple_languages("(\n    \"fr-FR\",\n    \"en-FR\"\n)\n"), ["fr-FR", "en-FR"]);
+}

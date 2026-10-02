@@ -5,10 +5,12 @@
 //! ([`PaneView`]). Pure over its ports: the tests use the fakes.
 
 use super::config::{ListenMode, ReadAloud, VoiceModeConfig};
+use super::debug;
+use super::sounds::{self, Sound};
 use super::{
-    AckJob, Acker, Heard, ListenJob, ListenMsg, Listener, Lit, LitState, Mic, MicBlock, MicStream, PaneView, Phase,
-    Route, SayJob, Sentence, Speaker, Spoken, Synth, Synthesizer, UttId, Who, Word, WordState, ACK_DEADLINE,
-    BACKCHANNELS, BARGE_IN, BARGE_IN_ANYWAY, END_OF_TURN, MIC_RATE, PAUSE, TTS_RATE, WAVE_LEN, WAVE_STEP,
+    Heard, ListenJob, ListenMsg, Listener, Lit, LitState, Mic, MicBlock, MicStream, PaneView, Phase, Route, SayJob,
+    Sentence, Speaker, Spoken, Synth, Synthesizer, UttId, Who, Word, WordState, BACKCHANNELS, BARGE_IN, BARGE_IN_ANYWAY,
+    END_OF_TURN, MIC_RATE, PAUSE, TTS_RATE, WAVE_LEN, WAVE_STEP,
 };
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -71,11 +73,13 @@ pub struct Ports {
     pub speaker: Box<dyn Speaker>,
     pub listener: Box<dyn Listener>,
     pub synth: Box<dyn Synthesizer>,
-    pub acker: Box<dyn Acker>,
     pub route: Route,
-    /// the speaker's echo is cancelled in the mic (VoiceProcessingIO):
-    /// barge-in works on speakers too
-    pub aec: bool,
+    /// your voice may cut the agent off on speakers too: the speaker's
+    /// echo is cancelled in the mic (VoiceProcessingIO) AND that was
+    /// asked for (`BISE_VOICE_BARGE=1`; voice-echo3: the unit's
+    /// cancelling was never proven on a real Mac, and a leak made the
+    /// agent answer itself, so on speakers the mic waits by default)
+    pub cut_in_by_voice: bool,
 }
 
 /// Round 2: speech with no words yet (the batch listener has none until
@@ -84,8 +88,17 @@ const BARGE_IN_NO_WORDS: Duration = Duration::from_millis(800);
 /// Without echo cancelling, the mic stays shut this long after the
 /// agent's voice ends (the speaker's buffer and the room's tail).
 const ECHO_TAIL: Duration = Duration::from_millis(500);
-/// What is heard this long after the agent spoke is checked for its echo.
+/// A sound's tail in the room (they are soft and short).
+const SOUND_TAIL: Duration = Duration::from_millis(150);
+/// Speech that starts (captured) this long after the agent spoke is
+/// checked for its echo, however late its words come back (voice-echo3:
+/// the batch listener answers 2-4 s after the turn ends).
 const ECHO_WINDOW: Duration = Duration::from_secs(3);
+/// The sounds' utterance ids start here (the speeches count from 1).
+pub const SOUND_UTTS: UttId = 1 << 62;
+/// The echo check keeps this much of what the agent said since your
+/// last turn (bytes, the end kept).
+const ECHO_SAID_MAX: usize = 4000;
 
 /// Lowercase letters and digits of each word (the echo check).
 fn norm_words(text: &str) -> Vec<String> {
@@ -111,17 +124,16 @@ pub fn is_echo(heard: &str, said: &str) -> bool {
     hits * 10 >= h.len() * 6
 }
 
-/// The calls voice mode makes; a missing voice or small-jobs model
-/// leaves voice mode working, silent (its reason shown once).
+/// The calls voice mode makes; a missing voice leaves voice mode
+/// working, silent (its reason shown once).
 pub struct Jobs {
     pub listen: ListenJob,
     pub say: Result<SayJob, String>,
-    pub ack: Option<AckJob>,
 }
 
-/// The agent's message being said (or the "on it" line: `src` None).
+/// The agent's message being said.
 struct Speech {
-    /// (agent, message text) for the thread's lighting; None: the ack
+    /// (agent, message text) for the thread's lighting
     src: Option<(String, String)>,
     spoken: Spoken,
     /// sentence i plays as utt `first + i`
@@ -189,29 +201,6 @@ impl Speech {
     }
 }
 
-/// A line said as is (the "on it"): every word added, none from the thread.
-pub fn plain_spoken(text: &str) -> Spoken {
-    let mut words = Vec::new();
-    let mut start = None;
-    for (i, c) in text.char_indices() {
-        match (c.is_whitespace(), start) {
-            (false, None) => start = Some(i),
-            (true, Some(s)) => {
-                words.push(Word { say: s..i, src: None });
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    if let Some(s) = start {
-        words.push(Word { say: s..text.len(), src: None });
-    }
-    if words.is_empty() {
-        return Spoken::default();
-    }
-    Spoken { sentences: vec![Sentence { say: text.to_string(), words }], more: false }
-}
-
 /// The next sentence of `sp` goes to the synthesizer (one at a time).
 fn start_next(synth: &dyn Synthesizer, sp: &mut Speech, job: &SayJob) {
     if sp.synth.is_some() || sp.next >= sp.spoken.sentences.len() {
@@ -235,12 +224,36 @@ pub fn only_backchannels(text: &str) -> bool {
     text.split_whitespace().all(is_backchannel)
 }
 
-struct Ack {
-    rx: Receiver<String>,
-    cancel: Arc<AtomicBool>,
-    deadline: Instant,
-    /// the language you spoke (the canned line follows it)
-    lang: Option<&'static str>,
+/// How loud the mic was while the agent talked (the debug log: what
+/// leaks through the echo cancelling, or the room).
+#[derive(Default)]
+struct MicWhileSpeaking {
+    blocks: u32,
+    /// louder than -45 dBFS (speech level in a quiet room)
+    loud: u32,
+    peak: f32,
+}
+
+impl MicWhileSpeaking {
+    fn add(&mut self, pcm: &[i16]) {
+        let p = crate::voice::peak(pcm);
+        self.blocks += 1;
+        if p > 0.0056 {
+            self.loud += 1;
+        }
+        self.peak = self.peak.max(p);
+    }
+
+    fn line(&self) -> String {
+        let db = if self.peak > 0.0 { 20.0 * self.peak.log10() } else { -120.0 };
+        format!("{} blocks, {} over -45 dBFS, peak {:.0} dBFS", self.blocks, self.loud, db)
+    }
+}
+
+/// The first words of `text`, for the log.
+fn head(text: &str) -> String {
+    let w: Vec<&str> = text.split_whitespace().take(12).collect();
+    w.join(" ")
 }
 
 pub struct VoiceMode {
@@ -279,10 +292,12 @@ pub struct VoiceMode {
     speaker: Box<dyn Speaker>,
     synth: Box<dyn Synthesizer>,
     say_job: Option<SayJob>,
-    acker: Box<dyn Acker>,
-    ack_job: Option<AckJob>,
-    ack: Option<Ack>,
-    acks: u64,
+    /// the two sounds, synthesized once (None: the sounds row is off)
+    sounds: Option<(Vec<f32>, Vec<f32>)>,
+    /// a sound plays until then (the mic waits for it on speakers)
+    sound_until: Option<Instant>,
+    /// the sounds played (their utt ids: SOUND_UTTS + n)
+    sound_utt: UttId,
     /// sent, the agent's messages until the next turn are said
     awaiting: bool,
     turn_running: bool,
@@ -307,11 +322,22 @@ pub struct VoiceMode {
     wave_at: Instant,
     /// the agent's work this turn, minified for the pane's right side
     work: Vec<super::Work>,
-    /// the speaker's echo is cancelled in the mic
-    aec: bool,
-    /// what the agent said lately (the echo check) and when its voice ended
+    /// your voice may cut the agent off on speakers (Ports::cut_in_by_voice)
+    cut_in_by_voice: bool,
+    /// what the agent said since your last turn (the echo check) and
+    /// when its voice ended (played out, or cut)
     echo_said: String,
     speech_end: Option<Instant>,
+    /// this turn's speech started (captured) while the agent talked or
+    /// within ECHO_WINDOW of its end: its words get the echo check
+    near_voice: bool,
+    /// the agent's last speech played out whole (not cut) then: the
+    /// kiss's end-of-turn animation (PaneView::kiss_ms), the `back` sound
+    said_whole_at: Option<Instant>,
+    /// the debug log: the mic was open at the last block, and how loud
+    /// it was while the agent talked
+    mic_was_live: bool,
+    mic_while: MicWhileSpeaking,
 }
 
 impl VoiceMode {
@@ -332,14 +358,33 @@ impl VoiceMode {
             Ok(j) => (Some(j), None),
             Err(e) => (None, Some((e, now))),
         };
+        debug::log(|| {
+            format!(
+                "start · agent {} · route {:?} · cut in by voice on speakers {} · listen {:?} · sounds {} · voice {}",
+                agent,
+                ports.route,
+                ports.cut_in_by_voice,
+                cfg.listen,
+                cfg.sounds,
+                say_job.as_ref().map_or("none".to_string(), |j| j.api.name.clone())
+            )
+        });
+        let sounds = cfg.sounds.then(|| (sounds::pcm(Sound::Gone), sounds::pcm(Sound::Back)));
         let mut vm = VoiceMode {
             agent: agent.to_string(),
             started: now,
             cfg,
             route: ports.route,
-            aec: ports.aec,
+            cut_in_by_voice: ports.cut_in_by_voice,
             echo_said: String::new(),
             speech_end: None,
+            near_voice: false,
+            said_whole_at: None,
+            mic_was_live: true,
+            mic_while: MicWhileSpeaking::default(),
+            sounds,
+            sound_until: None,
+            sound_utt: 0,
             releases,
             _mic_stream: mic_stream,
             mic_rx,
@@ -363,10 +408,6 @@ impl VoiceMode {
             speaker: ports.speaker,
             synth: ports.synth,
             say_job,
-            acker: ports.acker,
-            ack_job: jobs.ack,
-            ack: None,
-            acks: 0,
             awaiting: false,
             turn_running: false,
             queue: VecDeque::new(),
@@ -471,6 +512,7 @@ impl VoiceMode {
     /// Space went down: the floor is yours. Over the agent's voice, that
     /// is a cut (hold-to-talk on speakers is deliberate).
     fn take_floor(&mut self) {
+        self.said_whole_at = None;
         if self.speaking() {
             self.cut_in(Instant::now(), true);
         }
@@ -479,6 +521,7 @@ impl VoiceMode {
     /// m: the mic off or on again.
     pub fn toggle_mute(&mut self) {
         self.muted = !self.muted;
+        self.said_whole_at = None;
         if self.muted {
             self.reset_turn();
             self.listen(ListenMsg::Clear);
@@ -488,6 +531,7 @@ impl VoiceMode {
     /// tab: you type (the mic waits) or back to talking.
     pub fn set_typing(&mut self, on: bool) {
         self.typing = on;
+        self.said_whole_at = None;
         if on {
             self.holding = false;
             self.reset_turn();
@@ -530,10 +574,6 @@ impl VoiceMode {
         if !say || spoken.sentences.is_empty() {
             return;
         }
-        // the agent answered: no "on it" any more
-        if let Some(a) = self.ack.take() {
-            a.cancel.store(true, Ordering::SeqCst);
-        }
         let first = self.next_utt;
         self.next_utt += spoken.sentences.len() as UttId;
         self.answers += 1;
@@ -545,7 +585,6 @@ impl VoiceMode {
     pub fn tick(&mut self, now: Instant) -> Vec<Act> {
         self.pump_mic(now);
         self.pump_heard(now);
-        self.pump_ack(now);
         self.pump_speech(now);
         self.turn_taking(now);
         self.wave(now);
@@ -579,11 +618,13 @@ impl VoiceMode {
         self.speech.as_ref().is_some_and(|s| !s.over) || !self.queue.is_empty()
     }
 
-    /// Your voice may cut the agent off: the echo is cancelled, or the
-    /// voice is in headphones. Never on bare speakers, hands-free or not
-    /// (round 2: it heard itself and answered itself).
+    /// Your voice may cut the agent off: the voice is in headphones, or
+    /// the echo is cancelled and cutting in by voice on speakers was
+    /// asked for. Else the mic waits while the agent talks, hands-free or
+    /// not (round 2 and voice-echo3: it heard itself and answered itself);
+    /// space cuts in.
     fn barge_ok(&self) -> bool {
-        self.cfg.listen != ListenMode::Hold && (self.aec || self.route == Route::Headphones)
+        self.cfg.listen != ListenMode::Hold && (self.cut_in_by_voice || self.route == Route::Headphones)
     }
 
     /// The mic's words go to the listener now.
@@ -601,17 +642,31 @@ impl VoiceMode {
         if self.speaking() && !self.barge_ok() {
             return self.holding;
         }
-        // the voice just ended: its tail is still in the room
-        if !self.barge_ok() && !self.holding && self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_TAIL) {
-            return false;
+        // the voice just ended: its tail is still in the room (`now`: the
+        // block's capture time, so a block pumped late is judged by when
+        // it was heard); a sound plays, or its tail
+        if !self.barge_ok() && !self.holding {
+            if self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_TAIL) {
+                return false;
+            }
+            if self.sound_until.is_some_and(|t| now < t) {
+                return false;
+            }
         }
         true
     }
 
     /// `heard` is the agent's own voice (while it talks or just after).
     fn echo(&self, heard: &str, now: Instant) -> bool {
-        let recent = self.speaking() || self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_WINDOW);
+        let recent = self.near_voice
+            || self.speaking()
+            || self.speech_end.is_some_and(|t| now.saturating_duration_since(t) < ECHO_WINDOW);
         recent && is_echo(heard, &self.echo_said)
+    }
+
+    /// Speech captured at `at` is close to the agent's voice.
+    fn near_voice_at(&self, at: Instant) -> bool {
+        self.speaking() || self.speech_end.is_some_and(|t| at.saturating_duration_since(t) < ECHO_WINDOW)
     }
 
     /// The agent's work this turn (live.rs builds it from the feed).
@@ -621,7 +676,19 @@ impl VoiceMode {
 
     fn pump_mic(&mut self, now: Instant) {
         while let Ok(b) = self.mic_rx.try_recv() {
-            if !self.mic_live_at(now) || self.flushing.is_some() {
+            let speaking = self.speaking();
+            if speaking {
+                self.mic_while.add(&b.pcm);
+            }
+            // judged at the block's capture time (never later than now)
+            let live = self.mic_live_at(b.at.min(now));
+            if live != self.mic_was_live {
+                self.mic_was_live = live;
+                debug::log(|| {
+                    format!("mic {} · agent speaking {} · holding {}", if live { "open" } else { "shut" }, speaking, self.holding)
+                });
+            }
+            if !live || self.flushing.is_some() {
                 continue;
             }
             let voiced = self.vad.feed(&b.pcm);
@@ -629,8 +696,15 @@ impl VoiceMode {
             if voiced {
                 if self.speech_start.is_none() || self.last_voice.is_some_and(|t| b.at.duration_since(t) > PAUSE) {
                     self.speech_start = Some(b.at);
+                    if self.near_voice_at(b.at) {
+                        self.near_voice = true;
+                    }
+                    debug::log(|| {
+                        format!("speech starts · agent speaking {} · near its voice {}", speaking, self.near_voice)
+                    });
                 }
                 self.last_voice = Some(end);
+                self.said_whole_at = None;
                 self.spoke = true;
                 self.captions_you = true;
             }
@@ -675,43 +749,43 @@ impl VoiceMode {
         }
     }
 
-    fn pump_ack(&mut self, now: Instant) {
-        let Some(a) = &self.ack else { return };
-        let line = match a.rx.try_recv() {
-            Ok(l) if !l.trim().is_empty() => Some(l),
-            _ if now >= a.deadline => Some(super::ack::canned_in(self.acks, a.lang).to_string()),
-            _ => None,
-        };
-        if let Some(line) = line {
-            if let Some(a) = self.ack.take() {
-                a.cancel.store(true, Ordering::SeqCst);
-            }
-            self.acks += 1;
-            if self.speaking() {
-                return;
-            }
-            let spoken = plain_spoken(line.trim());
-            let first = self.next_utt;
-            self.next_utt += spoken.sentences.len() as UttId;
-            self.queue.push_front(Speech::new(None, spoken, first));
-        }
-    }
-
     /// The speech: the next one starts, its synth streams to the speaker
     /// sentence by sentence, the speaker's clock lights its words.
     fn pump_speech(&mut self, now: Instant) {
         let was_talking = self.speaking();
         self.pump_speech_step();
-        // the echo check: what is said, and when the voice stopped
-        if let Some(sp) = self.speech.as_ref().filter(|s| !s.over) {
-            let said: String = sp.spoken.sentences.iter().map(|s| s.say.as_str()).collect::<Vec<_>>().join(" ");
-            if !self.echo_said.ends_with(&said) {
-                self.echo_said = said;
-            }
-        }
+        // its voice ended on its own (a cut sets speech_end in cut_in)
         if was_talking && !self.speaking() {
             self.speech_end = Some(now);
+            // said aloud to the end: not cut, and a voice played it (not only shown)
+            let whole = self.speech.as_ref().is_some_and(|s| s.over && !s.cut && s.samples.iter().any(|n| *n > 0));
+            debug::log(|| format!("agent voice ends · whole {} · mic while it spoke: {}", whole, self.mic_while.line()));
+            self.mic_while = MicWhileSpeaking::default();
+            if whole {
+                self.said_whole_at = Some(now);
+                // the mic is yours again; never over your own voice
+                let you_talk = self.holding || self.last_voice.is_some_and(|t| now.saturating_duration_since(t) < PAUSE);
+                if !self.muted && !self.typing && !you_talk {
+                    self.play(Sound::Back, now);
+                }
+            }
         }
+    }
+
+    /// A sound on the voice's speaker (none when the sounds row is off).
+    fn play(&mut self, sound: Sound, now: Instant) {
+        let Some((gone, back)) = &self.sounds else { return };
+        let pcm = match sound {
+            Sound::Gone => gone,
+            Sound::Back => back,
+        };
+        // its own ids, apart from the speeches' (their clocks never see it)
+        self.sound_utt += 1;
+        let utt = SOUND_UTTS + self.sound_utt;
+        self.speaker.push(utt, pcm);
+        self.speaker.end(utt);
+        self.sound_until = Some(now + sound.length() + SOUND_TAIL);
+        debug::log(|| format!("sound {}", sound.name()));
     }
 
     fn pump_speech_step(&mut self) {
@@ -722,6 +796,20 @@ impl VoiceMode {
                         self.last = Some(old);
                     }
                 }
+                // the echo check: everything said since your last turn
+                for s in &next.spoken.sentences {
+                    self.echo_said.push(' ');
+                    self.echo_said.push_str(&s.say);
+                }
+                if self.echo_said.len() > ECHO_SAID_MAX {
+                    let mut cut = self.echo_said.len() - ECHO_SAID_MAX;
+                    while !self.echo_said.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    self.echo_said.drain(..cut);
+                }
+                debug::log(|| format!("agent voice starts · {} sentences · \"{}\"", next.spoken.sentences.len(), head(next.spoken.sentences.first().map_or("", |s| s.say.as_str()))));
+                self.said_whole_at = None;
                 self.speech = Some(next);
                 self.captions_you = false;
             }
@@ -864,6 +952,12 @@ impl VoiceMode {
 
     fn flush(&mut self, now: Instant) {
         self.flushing = Some(now);
+        self.said_whole_at = None;
+        debug::log(|| "turn taken · waiting for its words".to_string());
+        // your turn is taken: `gone` (never over the agent's voice)
+        if !self.speaking() {
+            self.play(Sound::Gone, now);
+        }
         self.listen(ListenMsg::Flush);
         // no listener to answer (it failed): what was heard goes now
         if self.listen_tx.is_none() {
@@ -875,27 +969,34 @@ impl VoiceMode {
     fn finish_turn(&mut self, now: Instant) {
         self.flushing = None;
         let text = self.heard.trim().to_string();
+        // the agent's own voice through the mic: never a turn (checked
+        // when the speech started near its voice, however late the
+        // words came back)
+        let echo = !text.is_empty() && self.echo(&text, now);
+        debug::log(|| {
+            format!(
+                "turn ends · near its voice {} · {} · \"{}\"",
+                self.near_voice,
+                if text.is_empty() { "nothing heard" } else if echo { "DROPPED as its echo" } else { "sent" },
+                text
+            )
+        });
         self.reset_turn();
-        // the agent's own voice through the mic: never a turn
-        if text.is_empty() || self.echo(&text, now) {
+        if text.is_empty() || echo {
             return;
         }
         self.turns += 1;
         self.acts.push(Act::Send { agent: self.agent.clone(), text: text.clone() });
         self.after_send();
-        if let Some(job) = self.ack_job.clone() {
-            let (tx, rx) = mpsc::channel();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let lang = super::speak::language(&text);
-            self.acker.start(job, text, tx, cancel.clone());
-            self.ack = Some(Ack { rx, cancel, deadline: now + ACK_DEADLINE, lang });
-        }
     }
 
     fn after_send(&mut self) {
         self.awaiting = true;
         self.last = None;
         self.captions_you = true;
+        self.said_whole_at = None;
+        // a new exchange: the echo check starts over
+        self.echo_said.clear();
     }
 
     fn reset_turn(&mut self) {
@@ -903,12 +1004,20 @@ impl VoiceMode {
         self.spoke = false;
         self.speech_start = None;
         self.last_voice = None;
+        self.near_voice = false;
     }
 
     /// You cut in: the voice stops, the unsaid words are cut, the agent's
     /// running turn is interrupted (not for a space tap: a skip).
     fn cut_in(&mut self, now: Instant, by_key: bool) {
+        debug::log(|| format!("cut in · by {}", if by_key { "space" } else { "voice" }));
+        if self.speaking() {
+            // its voice ends here: the echo window and the tail count from now
+            self.speech_end = Some(now);
+            self.mic_while = MicWhileSpeaking::default();
+        }
         self.stop_talking(true);
+        self.said_whole_at = None;
         self.cut_at = Some(now);
         self.captions_you = true;
         if self.turn_running && !by_key {
@@ -918,9 +1027,7 @@ impl VoiceMode {
 
     fn stop_talking(&mut self, cut: bool) {
         self.speaker.stop();
-        if let Some(a) = self.ack.take() {
-            a.cancel.store(true, Ordering::SeqCst);
-        }
+        self.sound_until = None;
         self.queue.clear();
         if let Some(mut sp) = self.speech.take() {
             sp.stop_synth();
@@ -1027,6 +1134,7 @@ impl VoiceMode {
             route: self.route,
             heard_answer: self.heard_answer.as_ref().map(|(l, _)| l.clone()),
             work: self.work.clone(),
+            kiss_ms: self.said_whole_at.map(|t| now.saturating_duration_since(t).as_millis() as u64),
         }
     }
 
@@ -1060,9 +1168,6 @@ impl Drop for VoiceMode {
         self.listen_cancel.store(true, Ordering::SeqCst);
         if let Some(sp) = self.speech.as_mut() {
             sp.stop_synth();
-        }
-        if let Some(a) = self.ack.take() {
-            a.cancel.store(true, Ordering::SeqCst);
         }
         self.speaker.stop();
     }

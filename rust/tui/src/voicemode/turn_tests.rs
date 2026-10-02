@@ -19,13 +19,13 @@ struct Rig {
 
 impl Rig {
     fn new(route: Route) -> Rig {
-        Rig::with(route, VoiceModeConfig::default(), true, true, false)
+        Rig::with(route, VoiceModeConfig::default(), true, true)
     }
 
-    fn with(route: Route, cfg: VoiceModeConfig, releases: bool, voice: bool, ack: bool) -> Rig {
+    fn with(route: Route, cfg: VoiceModeConfig, releases: bool, voice: bool) -> Rig {
         let f = Fakes::new();
         let t0 = Instant::now();
-        let vm = VoiceMode::start("main", f.ports(route), f.jobs(voice, ack), cfg, releases, t0).unwrap();
+        let vm = VoiceMode::start("main", f.ports(route), f.jobs(voice), cfg, releases, t0).unwrap();
         Rig { f, vm, t0, at: 0 }
     }
 
@@ -238,7 +238,7 @@ fn a_space_tap_sends_at_once_and_a_hold_keeps_the_floor() {
 
 #[test]
 fn without_release_events_a_lone_press_is_a_tap_and_repeats_are_a_hold() {
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), false, true, false);
+    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), false, true);
     r.talk(500);
     r.hear(" hello");
     // repeats every 50 ms: a hold
@@ -373,41 +373,8 @@ fn on_speakers_the_mic_waits_while_the_agent_talks_and_space_cuts_in() {
 }
 
 #[test]
-fn the_on_it_line_comes_from_the_small_model_else_a_canned_one_and_never_after_the_answer() {
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
-    r.turn(" fix the tests");
-    assert_eq!(r.f.acker.lock().unwrap()[0].heard, "fix the tests");
-    r.f.acker.lock().unwrap()[0].events.send("on it, checking.".into()).unwrap();
-    r.tick();
-    assert_eq!(r.f.synth.lock().unwrap()[0].text, "on it, checking.");
-    assert!(r.vm.lit().is_none(), "the ack is not in the thread");
-
-    // the small model is late: a canned line at the deadline
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
-    r.turn(" fix the tests");
-    r.quiet(800);
-    assert_eq!(r.f.synth.lock().unwrap()[0].text, super::super::ack::canned_in(0, Some("en")));
-
-    // you spoke French: the canned line is French
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
-    r.turn(" corrige les tests qui échouent dans le module de voix");
-    r.quiet(800);
-    assert_eq!(r.f.synth.lock().unwrap()[0].text, super::super::ack::canned_in(0, Some("fr")));
-    assert_ne!(super::super::ack::canned_in(0, Some("fr")), super::super::ack::canned_in(0, Some("en")));
-
-    // the answer came first: no ack
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, true, true);
-    r.turn(" fix the tests");
-    r.message("Done.");
-    r.quiet(800);
-    let s = r.f.synth.lock().unwrap();
-    assert_eq!(s.len(), 1);
-    assert_eq!(s[0].text, "Done.");
-}
-
-#[test]
 fn without_a_voice_the_words_show_all_said_and_nothing_plays() {
-    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, false, false);
+    let mut r = Rig::with(Route::Headphones, VoiceModeConfig::default(), true, false);
     assert!(matches!(r.phase(), Phase::Failed(_)));
     r.turn(" hi");
     r.message("Hello there.");
@@ -434,7 +401,7 @@ fn messages_before_any_turn_are_not_said_unless_read_aloud_is_all() {
     r.tick();
     assert!(r.f.synth.lock().unwrap().is_empty());
     let cfg = VoiceModeConfig { read_aloud: super::super::config::ReadAloud::All, ..VoiceModeConfig::default() };
-    let mut r = Rig::with(Route::Headphones, cfg, true, true, false);
+    let mut r = Rig::with(Route::Headphones, cfg, true, true);
     r.message("Unasked news.");
     r.tick();
     assert_eq!(r.f.synth.lock().unwrap().len(), 1);
@@ -443,7 +410,7 @@ fn messages_before_any_turn_are_not_said_unless_read_aloud_is_all() {
 #[test]
 fn hold_mode_listens_only_while_space_is_held_and_the_release_sends() {
     let cfg = VoiceModeConfig { listen: ListenMode::Hold, ..VoiceModeConfig::default() };
-    let mut r = Rig::with(Route::Headphones, cfg, true, true, false);
+    let mut r = Rig::with(Route::Headphones, cfg, true, true);
     assert_eq!(r.phase(), Phase::HoldToTalk);
     r.talk(500);
     assert!(r.sent().is_empty());
@@ -546,7 +513,7 @@ fn its_own_words_through_the_mic_are_never_a_turn() {
 #[test]
 fn hands_free_on_bare_speakers_never_lets_its_voice_cut_itself() {
     let cfg = VoiceModeConfig { listen: ListenMode::HandsFree, ..VoiceModeConfig::default() };
-    let mut r = Rig::with(Route::Speakers, cfg, true, true, false);
+    let mut r = Rig::with(Route::Speakers, cfg, true, true);
     r.turn(" go");
     r.sent();
     r.message("Running the tests now.");
@@ -560,9 +527,9 @@ fn hands_free_on_bare_speakers_never_lets_its_voice_cut_itself() {
 fn with_echo_cancelling_speakers_cut_in_by_voice() {
     let f = Fakes::new();
     let mut p = f.ports(Route::Speakers);
-    p.aec = true;
+    p.cut_in_by_voice = true;
     let t0 = Instant::now();
-    let vm = VoiceMode::start("main", p, f.jobs(true, false), VoiceModeConfig::default(), true, t0).unwrap();
+    let vm = VoiceMode::start("main", p, f.jobs(true), VoiceModeConfig::default(), true, t0).unwrap();
     let mut r = Rig { f, vm, t0, at: 0 };
     r.turn(" go");
     r.message("Running the tests now.");
@@ -603,6 +570,170 @@ fn a_mic_that_cannot_open_keeps_voice_mode_closed() {
     let f = Fakes::new();
     let mut p = f.ports(Route::Headphones);
     p.mic = Box::new(super::super::fakes::BrokenMic);
-    let e = VoiceMode::start("main", p, f.jobs(true, false), VoiceModeConfig::default(), true, Instant::now());
+    let e = VoiceMode::start("main", p, f.jobs(true), VoiceModeConfig::default(), true, Instant::now());
     assert_eq!(e.err().as_deref(), Some("no microphone"));
+}
+
+// ---- voice-echo3: the echo again, the sounds, the end-of-turn kiss ----
+
+/// A rig whose voice may cut in on speakers (echo cancelled, asked for).
+fn rig_cut_in_by_voice() -> Rig {
+    let f = Fakes::new();
+    let mut p = f.ports(Route::Speakers);
+    p.cut_in_by_voice = true;
+    let t0 = Instant::now();
+    let vm = VoiceMode::start("main", p, f.jobs(true), VoiceModeConfig::default(), true, t0).unwrap();
+    Rig { f, vm, t0, at: 0 }
+}
+
+/// The sounds pushed to the speaker, by length.
+fn sounds_played(r: &Rig) -> Vec<usize> {
+    r.f.speaker.lock().unwrap().pushed.iter().filter(|(u, _)| *u >= SOUND_UTTS).map(|(_, n)| *n).collect()
+}
+
+#[test]
+fn its_echo_is_dropped_however_late_its_words_come_back() {
+    // the batch listener answers seconds after the turn ends: the echo
+    // check follows when the speech was heard, not when its words came
+    let mut r = Rig::new(Route::Speakers);
+    r.turn(" go");
+    r.message("Running the tests now, it takes a minute.");
+    r.tick();
+    r.synth_all(0, 24_000);
+    r.done(1);
+    r.tick();
+    r.quiet(600);
+    r.talk(800);
+    r.hear(" running the tests now it takes a minute");
+    r.quiet(1600);
+    r.at += 3_000;
+    r.flushed();
+    assert!(sends(&r.tick()).is_empty(), "its echo is dropped");
+}
+
+#[test]
+fn a_cut_by_its_own_echo_never_becomes_a_turn() {
+    // the loop on 66eb802: the leaked echo cut the agent off (no words
+    // needed), the cut never ended its voice for the echo check, and its
+    // own words went back to it as yours
+    let mut r = rig_cut_in_by_voice();
+    r.turn(" go");
+    r.vm.on_turn("main", true);
+    r.message("Running the tests now. It takes a minute.");
+    r.tick();
+    r.synth_all(0, 48_000);
+    r.clock(1, 300);
+    r.tick();
+    r.talk(900);
+    assert_eq!(r.f.speaker.lock().unwrap().stops, 1, "cut by voice");
+    r.hear(" running the tests now it takes");
+    r.quiet(1600);
+    r.at += 3_000;
+    r.flushed();
+    assert!(sends(&r.tick()).is_empty(), "its echo is never a turn");
+    // your own words after it still go
+    r.at += 4_000;
+    assert_eq!(sends(&r.turn(" use the other branch")), ["use the other branch"]);
+}
+
+#[test]
+fn what_it_said_before_your_last_turn_is_not_its_echo_any_more() {
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" go");
+    r.message("Running the tests now.");
+    r.tick();
+    r.synth_all(0, 2_400);
+    r.done(1);
+    r.tick();
+    r.at += 4_000;
+    assert_eq!(sends(&r.turn(" ok thanks")), ["ok thanks"]);
+    r.message("Sure.");
+    r.tick();
+    r.synth_all(1, 2_400);
+    r.done(2);
+    r.tick();
+    // right after "Sure.", words of its message before your turn: yours
+    assert_eq!(sends(&r.turn(" are the tests running now")), ["are the tests running now"]);
+}
+
+#[test]
+fn gone_when_your_turn_is_taken_back_when_it_finished_and_never_after_a_cut() {
+    let gone = sounds::pcm(Sound::Gone).len();
+    let back = sounds::pcm(Sound::Back).len();
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" go");
+    assert_eq!(sounds_played(&r), [gone], "your turn is taken");
+    assert!(r.f.synth.lock().unwrap().is_empty(), "no spoken 'on it' any more");
+    r.message("Done.");
+    r.tick();
+    assert_eq!(sounds_played(&r), [gone], "nothing before its voice");
+    r.synth_all(0, 2_400);
+    r.done(1);
+    r.tick();
+    assert_eq!(sounds_played(&r), [gone, back], "it finished: the mic is yours");
+    assert_eq!(r.vm.view(r.now()).kiss_ms, Some(0));
+    r.at += 500;
+    assert_eq!(r.vm.view(r.now()).kiss_ms, Some(500));
+    // you talk: the kiss is over
+    r.talk(200);
+    assert_eq!(r.vm.view(r.now()).kiss_ms, None);
+    r.quiet(1600);
+    r.flushed();
+    r.tick();
+    assert_eq!(sounds_played(&r), [gone, back, gone]);
+    // cut with space: no back, no kiss
+    r.message("Running the tests now.");
+    r.tick();
+    r.synth_all(1, 48_000);
+    r.tick();
+    r.vm.space(SpaceKey::Press, r.now());
+    r.vm.space(SpaceKey::Release, r.now() + MS(100));
+    r.tick();
+    assert_eq!(r.f.speaker.lock().unwrap().stops, 1);
+    assert_eq!(sounds_played(&r), [gone, back, gone]);
+    assert_eq!(r.vm.view(r.now()).kiss_ms, None);
+}
+
+#[test]
+fn with_the_sounds_row_off_nothing_plays_but_the_voice() {
+    let cfg = VoiceModeConfig { sounds: false, ..VoiceModeConfig::default() };
+    let mut r = Rig::with(Route::Headphones, cfg, true, true);
+    r.turn(" go");
+    r.message("Done.");
+    r.tick();
+    r.synth_all(0, 2_400);
+    r.done(1);
+    r.tick();
+    assert!(sounds_played(&r).is_empty());
+    assert_eq!(r.vm.view(r.now()).kiss_ms, Some(0), "the kiss still ends the turn");
+}
+
+#[test]
+fn on_speakers_the_mic_waits_for_its_own_sound() {
+    let mut r = Rig::new(Route::Speakers);
+    r.turn(" go");
+    r.sent();
+    // `gone` started at the flush (2.0 s), plays 260 ms, its tail 150 ms
+    r.talk(200);
+    assert!(!r.sent().contains(&"audio".to_string()), "the sound never reaches the listener");
+    r.talk(400);
+    assert!(r.sent().contains(&"audio".to_string()));
+}
+
+#[test]
+fn a_block_heard_in_the_voice_tail_is_dropped_even_when_pumped_late() {
+    let mut r = Rig::with(Route::Speakers, VoiceModeConfig { sounds: false, ..VoiceModeConfig::default() }, true, true);
+    r.turn(" go");
+    r.message("Done.");
+    r.tick();
+    r.synth_all(0, 2_400);
+    r.done(1);
+    r.tick();
+    r.sent();
+    // captured 100 ms after its voice ended, pumped 700 ms later
+    let tx = r.f.mic.lock().unwrap().blocks.clone().unwrap();
+    tx.send(MicBlock { pcm: vec![5000; 1600], at: r.now() + MS(100) }).unwrap();
+    r.at += 800;
+    r.tick();
+    assert!(!r.sent().contains(&"audio".to_string()));
 }

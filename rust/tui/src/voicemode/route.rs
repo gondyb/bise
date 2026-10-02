@@ -93,6 +93,23 @@ pub fn output_route() -> Route {
     }
 }
 
+/// The default output device in one line, for the debug log
+/// (`"MacBook Pro Speakers" · bltn · ispk`).
+pub fn output_line() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let code = |c: u32| String::from_utf8_lossy(&c.to_be_bytes()).into_owned();
+        match mac::default_output() {
+            Some(d) => format!("\"{}\" · {} · {}", d.name, code(d.transport), d.source.map_or("-".into(), code)),
+            None => "no default output".into(),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "unknown".into()
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod mac {
     //! The few CoreAudio calls the route needs (the frameworks are

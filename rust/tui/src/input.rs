@@ -164,7 +164,7 @@ pub(crate) fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time
 /// The voice chip's end: `transcript` replaces it in place (one undo
 /// step, the cursor at its end), else it goes and the text around it
 /// stays. Nothing when there is no chip.
-fn end_chip(app: &mut App, transcript: Option<&str>) {
+pub(crate) fn end_chip(app: &mut App, transcript: Option<&str>) {
     app.voice_text.clear();
     let label = voice::chip::LABEL;
     let t = transcript.map(str::trim).unwrap_or("");

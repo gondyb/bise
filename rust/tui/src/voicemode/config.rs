@@ -4,7 +4,7 @@
 //! keys) the pieces call, with the chat keys' resolution (env > auth.json
 //! > the old .env files), as `voice::resolve_job` does.
 
-use super::{AckJob, Endpoint, ListenJob, SayJob};
+use super::{Endpoint, ListenJob, SayJob};
 use bise_catalog::auth::{EnvFile, Keys, Store};
 use bise_catalog::roles::{with_table_key, without_key};
 use bise_catalog::voice::{ModeCall, VoiceModeKeys};
@@ -209,16 +209,6 @@ pub fn say_job_of(setup: &Setup, keys: &Keys, cfg: &VoiceModeConfig) -> Result<S
     let mode = cfg.keys(setup);
     let api = setup.tts_call(&mode, keys).map(endpoint)?;
     Ok(SayJob { api, voice: cfg.voice.clone(), speed: cfg.speed.clamp(SPEED_MIN, SPEED_MAX) })
-}
-
-pub fn ack_job() -> Result<AckJob, String> {
-    with_keys(ack_job_of)
-}
-
-/// The small-jobs model (titles, summaries: `[roles] small`).
-pub fn ack_job_of(setup: &Setup, keys: &Keys) -> Result<AckJob, String> {
-    let (call, family) = setup.small_call(keys)?;
-    Ok(AckJob { api: endpoint(call), family })
 }
 
 #[cfg(test)]

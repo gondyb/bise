@@ -17,7 +17,7 @@ use std::time::Instant;
 pub static RELEASES: AtomicBool = AtomicBool::new(false);
 
 /// The real ports: the default mic and speaker, the listener of the
-/// voice role, Voxtral TTS, the small-jobs "on it".
+/// voice role, Voxtral TTS.
 fn live_ports(listen: &super::ListenJob) -> Result<Ports, String> {
     // round 2: the mic and the speaker together, the echo cancelled when
     // the platform can; no output device: the words show, nothing plays
@@ -25,16 +25,33 @@ fn live_ports(listen: &super::ListenJob) -> Result<Ports, String> {
         Ok(io) => (io.mic, io.speaker, io.aec),
         Err(_) => (Box::new(super::audio::CpalMic), Box::new(super::audio::NoSpeaker), false),
     };
+    let route = super::route::output_route();
+    let cut_in_by_voice = aec && barge_wanted(std::env::var("BISE_VOICE_BARGE").ok().as_deref());
+    super::debug::log(|| {
+        format!(
+            "output {} · route {:?} · echo cancelling {} · cut in by voice on speakers {}",
+            super::route::output_line(),
+            route,
+            if aec { "on" } else { "off" },
+            cut_in_by_voice
+        )
+    });
     Ok(Ports {
         mic,
         vad: Box::new(super::vad::Vad::new()),
         speaker,
         listener: super::listen::listener_for(listen),
         synth: Box::new(super::tts::VoxtralTts),
-        acker: Box::new(super::ack::SmallAck),
-        route: super::route::output_route(),
-        aec,
+        route,
+        cut_in_by_voice,
     })
+}
+
+/// `BISE_VOICE_BARGE=1`: with the echo cancelled, your voice may cut the
+/// agent off on speakers too (voice-echo3: off by default until the
+/// unit's cancelling is proven on a real Mac; space always cuts in).
+pub fn barge_wanted(env: Option<&str>) -> bool {
+    matches!(env.map(|v| v.trim().to_ascii_lowercase()).as_deref(), Some("1" | "on" | "true" | "yes"))
 }
 
 // ---- BISE_VOICE_FAKE: voice mode with no mic, no sound, no network ----
@@ -103,9 +120,8 @@ fn fake_ports(wav: &str) -> Result<(Ports, Jobs), String> {
         speaker: super::audio::silent_speaker(),
         listener: Box::new(FakeListener(heard.unwrap_or_else(|| FAKE_HEARD.into()))),
         synth: Box::new(FakeSynth),
-        acker: Box::new(super::ack::SmallAck),
         route: super::Route::Headphones,
-        aec: false,
+        cut_in_by_voice: false,
     };
     let fake = |name: &str| super::Endpoint {
         name: name.into(),
@@ -129,11 +145,11 @@ fn fake_ports(wav: &str) -> Result<(Ports, Jobs), String> {
         },
     });
     let say = super::SayJob { api: fake("fake-tts"), voice: "fake".into(), speed: 1.0 };
-    Ok((ports, Jobs { listen, say: Ok(say), ack: None }))
+    Ok((ports, Jobs { listen, say: Ok(say) }))
 }
 
 fn live_jobs(cfg: &VoiceModeConfig) -> Result<Jobs, String> {
-    Ok(Jobs { listen: config::listen_job()?, say: config::say_job(cfg), ack: config::ack_job().ok() })
+    Ok(Jobs { listen: config::listen_job()?, say: config::say_job(cfg) })
 }
 
 /// A faint line in the thread in view.
@@ -147,6 +163,8 @@ pub(crate) fn enter(app: &mut App) {
     if app.voice_mode.is_some() {
         return;
     }
+    // one listener at a time: a composer dictation goes, unwritten
+    drop_dictation(app);
     let cfg = config::load();
     let now = Instant::now();
     let fake = std::env::var("BISE_VOICE_FAKE").ok().filter(|v| !v.is_empty());
@@ -192,6 +210,18 @@ pub(crate) fn leave(app: &mut App) {
     if let Some(mut vm) = app.voice_mode.take() {
         let acts = vm.leave(Instant::now());
         apply(app, acts);
+    }
+    // leaving never writes into the composer
+    drop_dictation(app);
+}
+
+/// The composer's dictation (one ctrl+r) stops, its recording and its
+/// chip dropped, nothing written (voice-echo3: one ctrl+r in voice mode
+/// recorded the whole session, both voices, into the composer).
+fn drop_dictation(app: &mut App) {
+    if app.voice.active() {
+        app.voice.cancel();
+        crate::input::end_chip(app, None);
     }
 }
 
@@ -258,6 +288,10 @@ pub(crate) fn pump(app: &mut App) {
         app.voice_setup_at = None;
         crate::input::open_voice_setup(app, true);
     }
+    if app.voice_mode.is_none() {
+        return;
+    }
+    drop_dictation(app);
     let Some(vm) = app.voice_mode.as_mut() else { return };
     if vm.agent() != app.sb.focus {
         vm.set_agent(&app.sb.focus.clone());
@@ -355,6 +389,11 @@ pub(crate) fn key(app: &mut App, k: &KeyEvent) -> bool {
         leave(app);
         return true;
     }
+    // voice-echo3: ctrl+r never starts the composer's dictation under
+    // the pane (a second listener, on all session long)
+    if k.code == KeyCode::Char('r') && k.modifiers == KeyModifiers::CONTROL {
+        return true;
+    }
     let plain = (k.modifiers - KeyModifiers::SHIFT).is_empty();
     if vm.typing() {
         match k.code {
@@ -429,6 +468,41 @@ mod tests {
         assert!(shown.iter().any(|t| t.starts_with("· voice mode · ")), "{shown:?}");
         crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(app.voice_mode.is_none());
+    }
+
+    /// voice-echo3: ctrl+r in voice mode never starts the composer's
+    /// dictation; a dictation running when voice mode opens goes, and
+    /// leaving writes nothing into the composer.
+    #[test]
+    fn voice_mode_has_one_listener_and_leaving_writes_nothing() {
+        let wav = concat!(env!("CARGO_MANIFEST_DIR"), "/src/voicemode/testdata/sentence.wav");
+        std::env::set_var("BISE_VOICE_FAKE", wav);
+        let mut app = crate::sb::bench::test_app_drained();
+        app.voice.enabled = true;
+        let r = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        crate::input::on_key(&mut app, &r);
+        crate::input::on_key(&mut app, &r);
+        assert!(app.voice_mode.is_some());
+        assert!(!app.voice.active(), "the first ctrl+r's dictation went");
+        // one ctrl+r later, alone, in voice mode: no dictation
+        app.ctrl_r_at = None;
+        crate::input::on_key(&mut app, &r);
+        assert!(!app.voice.active(), "ctrl+r in voice mode starts no dictation");
+        assert!(app.ed.mark_at(crate::voice::chip::LABEL).is_none());
+        // a dictation running anyway (an older path): pump drops it
+        let job = crate::voice::fakes::job();
+        app.voice.start(Ok(job.clone()), Instant::now()).unwrap();
+        crate::attach::insert_live_chip(&mut app.ed);
+        pump(&mut app);
+        assert!(!app.voice.active(), "one listener at a time");
+        // leaving writes nothing into the composer
+        app.voice.start(Ok(job), Instant::now()).unwrap();
+        crate::attach::insert_live_chip(&mut app.ed);
+        crate::input::on_key(&mut app, &esc);
+        assert!(app.voice_mode.is_none());
+        assert!(!app.voice.active());
+        assert_eq!(app.ed.text.trim(), "", "nothing written: {:?}", app.ed.text);
     }
 
     /// One ctrl+r (dictation off), then frames and a key: nothing hangs.

@@ -414,12 +414,24 @@ pub mod aec;
 /// error) or `BISE_VOICE_AEC=0`, the plain devices, `aec: false`.
 /// Never opened by a test.
 pub fn open_voice_io() -> Result<super::VoiceIo, String> {
-    if aec::wanted(std::env::var("BISE_VOICE_AEC").ok().as_deref()) {
-        if let Ok((mic, speaker)) = aec::open() {
-            return Ok(super::VoiceIo { mic, speaker, aec: true });
+    let env = std::env::var("BISE_VOICE_AEC").ok();
+    if aec::wanted(env.as_deref()) {
+        match aec::open() {
+            Ok((mic, speaker)) => {
+                super::debug::log(|| "echo cancelling on · the voice-processing unit opened and started".into());
+                return Ok(super::VoiceIo { mic, speaker, aec: true });
+            }
+            // voice-echo3: the reason was dropped; the debug log says it
+            Err(e) => super::debug::log(|| format!("echo cancelling off · {} · plain mic and speaker", e)),
         }
+    } else {
+        super::debug::log(|| format!("echo cancelling off · BISE_VOICE_AEC={} · plain mic and speaker", env.unwrap_or_default()));
     }
-    Ok(super::VoiceIo { mic: Box::new(CpalMic), speaker: open_speaker()?, aec: false })
+    let speaker = open_speaker();
+    if let Err(e) = &speaker {
+        super::debug::log(|| format!("no speaker · {}", e));
+    }
+    Ok(super::VoiceIo { mic: Box::new(CpalMic), speaker: speaker?, aec: false })
 }
 
 /// The default output device (cpal), f32 resampled from TTS_RATE. Never

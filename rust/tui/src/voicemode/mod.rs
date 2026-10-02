@@ -22,10 +22,10 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub mod ack; // voice-tts
 pub mod answers; // voice-settings
 pub mod audio; // voice-audio
 pub mod config; // voice-settings
+pub mod debug; // voice-echo3: BISE_VOICE_DEBUG
 pub mod kiss; // voice-tui
 pub mod listen; // voice-stt
 pub mod live; // voice-mode (lead): the app's side
@@ -33,6 +33,7 @@ pub mod pane; // voice-tui
 pub mod route; // voice-audio
 pub mod sample; // voice-sample: ▸ hear it, one at a time
 pub mod settings; // voice-settings
+pub mod sounds; // voice-echo3: the two wind sounds
 pub mod speak; // voice-tts
 pub mod timing; // voice-tts
 pub mod tts; // voice-tts
@@ -61,9 +62,6 @@ pub const BARGE_IN_ANYWAY: Duration = Duration::from_millis(1200);
 pub const DOUBLE_CTRL_R: Duration = Duration::from_millis(400);
 /// The playback stops this fast after a cut (Speaker::stop).
 pub const STOP_WITHIN: Duration = Duration::from_millis(50);
-/// The "on it" line waits this long for the small-jobs model, else a
-/// canned one is said.
-pub const ACK_DEADLINE: Duration = Duration::from_millis(700);
 
 /// The lanes' waves: one level per step, this many kept.
 pub const WAVE_STEP: Duration = Duration::from_millis(100);
@@ -238,20 +236,6 @@ pub trait Synthesizer {
     fn start(&self, job: SayJob, text: String, events: Sender<Synth>, cancel: Arc<AtomicBool>);
 }
 
-/// The small-jobs model, for the spoken "on it" while the agent starts.
-#[derive(Clone, Debug)]
-pub struct AckJob {
-    pub api: Endpoint,
-    /// its chat wire family (bise_catalog: "openai", "anthropic", …)
-    pub family: String,
-}
-
-pub trait Acker {
-    /// Sends at most one short line (≤ 5 words) for what you said; may
-    /// send nothing (the controller says a canned one at [`ACK_DEADLINE`]).
-    fn start(&self, job: AckJob, heard: String, events: Sender<String>, cancel: Arc<AtomicBool>);
-}
-
 // ---- the pane and the thread (voice-tui reads, the controller writes) ----
 
 /// What the turn is at: the kiss, the status row and the keys follow it.
@@ -330,6 +314,10 @@ pub struct PaneView {
     /// thread above keeps them whole). Oldest first; the pane keeps the
     /// last ones that fit.
     pub work: Vec<Work>,
+    /// ms since the agent's last speech played out whole on its own (not
+    /// cut, voice mode not muted); None once you talk or a new speech or
+    /// turn starts (voice-kiss: the end-of-turn kiss)
+    pub kiss_ms: Option<u64>,
 }
 
 /// One line of the agent's work this turn, for the pane's right side.

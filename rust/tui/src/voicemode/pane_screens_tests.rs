@@ -25,7 +25,7 @@ fn app_in_voice_mode() -> (App, Fakes) {
     let f = Fakes::new();
     let agent = app.sb.focus_name().to_string();
     let now = Instant::now();
-    let vm = VoiceMode::start(&agent, f.ports(Route::Headphones), f.jobs(true, false), VoiceModeConfig::default(), true, now).unwrap();
+    let vm = VoiceMode::start(&agent, f.ports(Route::Headphones), f.jobs(true), VoiceModeConfig::default(), true, now).unwrap();
     for ev in [
         Ev::You("morning. anything left from yesterday?".into(), Mark::Read, false),
         Ev::Assistant("the safari login. **auth-fix** finished it, it waits on your review: PR #412.".into()),
@@ -164,6 +164,7 @@ fn sample(phase: Phase) -> PaneView {
         route: Route::Headphones,
         heard_answer: None,
         work: sample_work(),
+        kiss_ms: None,
     }
 }
 

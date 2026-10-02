@@ -41,6 +41,7 @@ fn view(phase: Phase) -> PaneView {
         route: Route::Headphones,
         heard_answer: None,
         work: Vec::new(),
+        kiss_ms: None,
     }
 }
 

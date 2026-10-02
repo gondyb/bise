@@ -266,6 +266,36 @@ as the log has its end). New contracts in `mod.rs`: `PaneView.work: Vec<Work>` (
 Tool|Thinking|Message, text, state: Running|Done|Failed }`), `VoiceIo { mic, speaker, aec }` and
 `audio::open_voice_io()` (a stub with `aec: false` until voice-echo lands).
 
+### 8.0 Round 3: voice-echo3 (the user on 66eb802)
+
+- **It still answered itself, sometimes** (MacBook speakers, hands-free). `open_voice_io()` is the
+  live path, but whether the voice unit opened was never logged (its error was dropped). The loop
+  the code allows: with `aec: true` the mic stayed open while the agent talked; 0.8 s of leaked echo
+  is a cut by voice (no words needed: the batch listener has none before the turn ends); the cut
+  never set the end of the agent's voice, and the echo check only looked 3 s after that end, when
+  the words came back (2-4 s after the turn ended, Transcribe 3 is per turn). Its own words went
+  back to it as yours. Fixed: the echo check follows when the speech was *heard* (started while the
+  agent talked or within 3 s of its end: `near_voice`), against everything said since your last
+  turn; a cut ends the voice for the check; blocks are judged by their capture time. On speakers
+  the mic waits while the agent talks even with the unit (space cuts in); `BISE_VOICE_BARGE=1`
+  opts back into cutting in by voice when the echo is cancelled (`Ports.cut_in_by_voice`).
+- **`BISE_VOICE_DEBUG=1`** writes `~/.bise/logs/voice-debug.log` (`voicemode/debug.rs`): the output
+  device and route, echo cancelling on/off and why, the mic opening and shutting, how loud the mic
+  was while the agent talked (what leaks), each turn sent or dropped as its echo, the cuts, the sounds,
+  the language guard.
+- **No spoken "on it"** (the user: any automatic text each time he stops is unpleasant). `ack.rs`,
+  `Acker`, `AckJob` are gone. Two wind sounds instead (`voicemode/sounds.rs`, designer's recipe,
+  synthesized): `gone` when your turn is taken, `back` when the agent finished talking on its own
+  (never after a cut). Played on the voice's speaker; the mic waits for them on speakers; the /voice
+  "sounds" row turns them off. `PaneView.kiss_ms` (voice-kiss): ms since the agent's speech played
+  out whole.
+- **A dictation under the pane**: one ctrl+r in voice mode started the composer's dictation, which
+  recorded the whole session (both voices) and landed in the composer after esc. Voice mode now
+  swallows ctrl+r, and entering, leaving and each tick drop any dictation unwritten.
+- **Russian for French** (Transcribe 3, language auto): a turn in a script none of your languages
+  write (the ones you spoke this session, then the Mac's `AppleLanguages`) is transcribed again with
+  your language (`listen.rs` `Langs`).
+
 ### 8.1 Briefs, round 2 (main spawns them as written)
 
 Common: read §8 and the files you own first; same rules as §3; tell `voice-mode` and main your SHAs.

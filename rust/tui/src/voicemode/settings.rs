@@ -174,7 +174,7 @@ impl Row {
             Row::Listen => "auto: hands-free with headphones. on speakers you hold space, or it would hear itself.",
             Row::Speed => "how fast it talks, 0.8× to 1.6×.",
             Row::ReadAloud => "what the agent's messages say aloud; the whole message is always on screen.",
-            Row::Sounds => "a soft click when it starts listening and when it sends.",
+            Row::Sounds => "a soft wind when your turn is sent and when it is done talking.",
             Row::Who => "the companies that hear you, and what is kept.",
         }
     }

@@ -4,7 +4,7 @@
 
 use super::turn::{Jobs, Ports, Voicing};
 use super::{
-    AckJob, Acker, Endpoint, Heard, ListenJob, ListenMsg, Listener, Mic, MicBlock, MicStream, Route, SayJob, Speaker,
+    Endpoint, Heard, ListenJob, ListenMsg, Listener, Mic, MicBlock, MicStream, Route, SayJob, Speaker,
     Synth, Synthesizer, UttId,
 };
 use std::collections::HashSet;
@@ -133,19 +133,6 @@ impl Speaker for FakeSpeaker {
     }
 }
 
-pub struct AckCall {
-    pub heard: String,
-    pub events: Sender<String>,
-}
-
-pub struct FakeAcker(pub Shared<Vec<AckCall>>);
-
-impl Acker for FakeAcker {
-    fn start(&self, _job: AckJob, heard: String, events: Sender<String>, _cancel: Arc<AtomicBool>) {
-        self.0.lock().unwrap().push(AckCall { heard, events });
-    }
-}
-
 // ---- a whole set ----
 
 pub fn endpoint(name: &str) -> Endpoint {
@@ -181,12 +168,11 @@ pub struct Fakes {
     pub listen: Shared<Vec<Session>>,
     pub synth: Shared<Vec<SynthCall>>,
     pub speaker: Shared<SpeakerSlot>,
-    pub acker: Shared<Vec<AckCall>>,
 }
 
 impl Fakes {
     pub fn new() -> Fakes {
-        Fakes { mic: shared(), listen: shared(), synth: shared(), speaker: shared(), acker: shared() }
+        Fakes { mic: shared(), listen: shared(), synth: shared(), speaker: shared() }
     }
 
     pub fn ports(&self, route: Route) -> Ports {
@@ -196,13 +182,12 @@ impl Fakes {
             speaker: Box::new(FakeSpeaker(self.speaker.clone())),
             listener: Box::new(FakeListener(self.listen.clone())),
             synth: Box::new(FakeSynth(self.synth.clone())),
-            acker: Box::new(FakeAcker(self.acker.clone())),
             route,
-            aec: false,
+            cut_in_by_voice: false,
         }
     }
 
-    pub fn jobs(&self, voice: bool, ack: bool) -> Jobs {
+    pub fn jobs(&self, voice: bool) -> Jobs {
         Jobs {
             listen: listen_job(),
             say: if voice {
@@ -210,7 +195,6 @@ impl Fakes {
             } else {
                 Err("voice mode needs a voice: /voice".into())
             },
-            ack: ack.then(|| AckJob { api: endpoint("mistral-small-latest"), family: "openai".into() }),
         }
     }
 }
