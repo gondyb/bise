@@ -145,6 +145,74 @@ pub fn unrepair(paths: &Paths) -> Value {
     json!({"manifests": removed, "shim": shim_removed.then_some(shim)})
 }
 
+/// The extension's files (relative path, bytes), sorted, without its tests
+/// and its build stamp.
+fn extension_files(src: &Path) -> Vec<(String, Vec<u8>)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            let rel = p.strip_prefix(root).unwrap_or(&p).to_string_lossy().to_string();
+            if rel == "test" || rel == "build.js" || rel == "build.json" || rel.starts_with('.') {
+                continue;
+            }
+            if p.is_dir() {
+                walk(root, &p, out);
+            } else if let Ok(b) = std::fs::read(&p) {
+                out.push((rel, b));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(src, src, &mut out);
+    out.sort();
+    out
+}
+
+/// A stable id of the extension's content (FNV-1a 64 over paths and bytes).
+pub fn extension_build(src: &Path) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for (rel, bytes) in extension_files(src) {
+        for b in rel.bytes().chain([0u8]).chain(bytes.iter().copied()).chain([0u8]) {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{:016x}", h)
+}
+
+/// Copy this version's extension into `dst` (`~/.bise/computer-use/extension`,
+/// the folder the user loads unpacked once) when its content changed, with
+/// build.js and build.json stamped: the running extension sees the new
+/// build.json and reloads itself (sw.js checkBuild). A Chrome that loaded
+/// the version's own folder never got a new build (launch's re-test).
+/// Returns whether it copied.
+pub fn sync_extension(src: &Path, dst: &Path) -> std::io::Result<bool> {
+    let build = extension_build(src);
+    let stamp = dst.join("build.json");
+    let current = std::fs::read_to_string(&stamp).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    if current.as_ref().and_then(|v| v["build"].as_str()) == Some(build.as_str()) && dst.join("manifest.json").is_file() {
+        return Ok(false);
+    }
+    // the code first, the stamp last: a worker never sees a new build.json
+    // next to old code
+    let old: Vec<String> = extension_files(dst).into_iter().map(|(r, _)| r).collect();
+    let new = extension_files(src);
+    for (rel, bytes) in &new {
+        let p = dst.join(rel);
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        std::fs::write(&p, bytes)?;
+    }
+    for rel in old.iter().filter(|r| !new.iter().any(|(n, _)| n == *r)) {
+        let _ = std::fs::remove_file(dst.join(rel));
+    }
+    std::fs::write(dst.join("build.js"), format!("// written by bise computer-use (sync_extension)\nexport const BUILD = \"{}\";\n", build))?;
+    std::fs::write(&stamp, json!({"build": build}).to_string() + "\n")?;
+    Ok(true)
+}
+
 /// `CFBundleShortVersionString` of an app bundle.
 pub fn app_version(app: &Path) -> Option<String> {
     let out = std::process::Command::new("plutil")
@@ -177,6 +245,37 @@ pub fn major(version: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// launch's re-test: Chrome kept running the first build of an
+    /// unpacked extension. Each version syncs into one folder with a build
+    /// stamp; same content, nothing written.
+    #[test]
+    fn the_extension_syncs_into_one_folder_with_a_build_stamp() {
+        let d = std::env::temp_dir().join(format!("cu-sync-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (src, dst) = (d.join("v1"), d.join("stable"));
+        std::fs::create_dir_all(src.join("lib")).unwrap();
+        std::fs::create_dir_all(src.join("test")).unwrap();
+        std::fs::write(src.join("manifest.json"), "{}").unwrap();
+        std::fs::write(src.join("lib/a.js"), "1").unwrap();
+        std::fs::write(src.join("test/t.mjs"), "x").unwrap();
+        std::fs::write(src.join("build.js"), "export const BUILD = \"dev\";").unwrap();
+        assert!(sync_extension(&src, &dst).unwrap());
+        let b1 = extension_build(&src);
+        let stamp: Value = serde_json::from_str(&std::fs::read_to_string(dst.join("build.json")).unwrap()).unwrap();
+        assert_eq!(stamp["build"], json!(b1));
+        assert!(std::fs::read_to_string(dst.join("build.js")).unwrap().contains(&b1));
+        assert!(!dst.join("test").exists(), "no tests in the loaded folder");
+        assert!(!sync_extension(&src, &dst).unwrap(), "same content: nothing written");
+        // a new version: new build, a file gone is removed
+        std::fs::write(src.join("lib/a.js"), "2").unwrap();
+        std::fs::write(dst.join("old.js"), "stale").unwrap();
+        assert!(sync_extension(&src, &dst).unwrap());
+        assert_ne!(extension_build(&src), b1);
+        assert_eq!(std::fs::read_to_string(dst.join("lib/a.js")).unwrap(), "2");
+        assert!(!dst.join("old.js").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn manifests_and_shim() {

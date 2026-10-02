@@ -146,6 +146,7 @@ pub fn main(args: &[String]) -> i32 {
         "uninstall" => {
             let mut v = off(&paths);
             let _ = std::fs::remove_dir_all(paths.dir());
+            let _ = std::fs::remove_dir_all(stable_extension_dir(&paths));
             v["left_to_you"] = json!([
                 "remove the bise extension in each browser (Extensions page)",
                 "remove \"bise Computer Use\" in System Settings > Privacy & Security > Accessibility and > Screen Recording",
@@ -189,6 +190,11 @@ fn off(paths: &Paths) -> Value {
 }
 
 fn run_broker(paths: &Paths, a: &[&str]) -> i32 {
+    // a new bise version brings its extension to the folder Chrome loads
+    // (the extension then reloads itself): only once set up, never before
+    if stable_extension_dir(paths).join("manifest.json").is_file() {
+        let _ = extension_dir(paths);
+    }
     let mut opts = Opts::new(paths.clone());
     if let Some(i) = a.iter().position(|x| *x == "--idle-exit") {
         opts.idle_exit = a.get(i + 1).and_then(|s| s.parse().ok()).map(Duration::from_secs).filter(|d| !d.is_zero());
@@ -309,7 +315,32 @@ pub fn extension_dir(paths: &Paths) -> Option<PathBuf> {
         }
     }
     c.push(paths.root.join("dev").join("try").join("computer-use").join("extension"));
-    c.into_iter().find(|p| p.join("manifest.json").is_file())
+    let src = c.into_iter().find(|p| p.join("manifest.json").is_file())?;
+    // the folder the user loads once: every version syncs into it and the
+    // extension reloads itself (browsers::sync_extension)
+    let stable = stable_extension_dir(paths);
+    match browsers::sync_extension(&src, &stable) {
+        Ok(_) => Some(stable),
+        Err(_) => Some(src),
+    }
+}
+
+/// The connected extension runs another build than its folder holds (an
+/// extension that says no build, or no stamp on disk: not stale).
+fn stale_build(paths: &Paths, running: &Value) -> bool {
+    let disk = std::fs::read_to_string(stable_extension_dir(paths).join("build.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v["build"].as_str().map(String::from));
+    match (running.as_str(), disk) {
+        (Some(r), Some(d)) => r != d,
+        _ => false,
+    }
+}
+
+/// `~/.bise/computer-use/extension`: where "Load unpacked" points.
+pub fn stable_extension_dir(paths: &Paths) -> PathBuf {
+    paths.root.join("computer-use").join("extension")
 }
 
 fn browser_rows(paths: &Paths) -> Value {
@@ -337,6 +368,7 @@ fn browser_rows(paths: &Paths) -> Value {
                 "manifest": browsers::manifest_state(b, paths),
                 "connected": conn.is_some(),
                 "extension_version": conn.as_ref().map(|c| c["extension_version"].clone()),
+                "extension_build": conn.as_ref().map(|c| c["extension_build"].clone()),
             })
         })
         .collect();
@@ -369,6 +401,10 @@ fn browser_rows(paths: &Paths) -> Value {
         row("extension", "not_yet", String::new(), None)
     } else if let (Some(why), false) = (&blocked, pick["connected"] == true) {
         row("extension", "failed", why.clone(), None)
+    } else if pick["connected"] == true && stale_build(paths, &pick["extension_build"]) {
+        // Chrome runs an older build than the folder it loaded: it reloads
+        // itself (sw.js checkBuild); until then the user can click ↻
+        row("extension", "waits", "an update is ready".into(), Some("reload_extension"))
     } else if pick["connected"] == true {
         row("extension", "done", format!("v{}", pick["extension_version"].as_str().unwrap_or("?")), None)
     } else if pick["manifest"] != "ok" {

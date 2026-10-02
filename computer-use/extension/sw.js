@@ -11,6 +11,7 @@ import { walk, render, pick, diff, describeLocator, TEXT_ROLES } from "./lib/ax.
 import { parseKeys, chordEvents, keyLabel } from "./lib/keys.js";
 import { summary, failure, withPlace, hostOf, refused, label } from "./lib/text.js";
 import { jpegSize } from "./lib/jpeg.js";
+import { BUILD } from "./build.js";
 
 const HOST = "dev.bise.computer_use";
 const MAX_TABS = 5;
@@ -129,7 +130,7 @@ async function hello(p) {
   else if (brand("Brave") || navigator.brave) [browser, b] = ["brave", brand("Brave")];
   const version = (b || brand("Chromium"))?.version || "";
   try {
-    p.postMessage({ hello: { browser, version, extension_version: chrome.runtime.getManifest().version } });
+    p.postMessage({ hello: { browser, version, extension_version: chrome.runtime.getManifest().version, build: BUILD } });
   } catch {
     // disconnected meanwhile
   }
@@ -788,6 +789,17 @@ async function act(agent, args) {
   const action = args.action;
   if (!ACTIONS.has(action)) fail("bad_args", `unknown action ${JSON.stringify(action)}; one of ${[...ACTIONS].join(", ")}`);
   const place = async () => hostOf((await chrome.tabs.get(tabId).catch(() => ({}))).url || "");
+  // close on a paused tab: the user is in it, so don't close it under
+  // him; give it to him instead (out of the group, no longer the agent's,
+  // no longer counted in its 5 tabs). A paused tab stuck the agent at its
+  // limit (launch's re-test #3).
+  if (t.paused && action === "close") {
+    const where = await place();
+    await detach(tabId, t);
+    tabs.delete(tabId);
+    await chrome.tabs.ungroup([tabId]).catch(() => {});
+    return { ok: true, changed: "", summary: withPlace("gave the tab to you", where), handed_over: true };
+  }
   if (t.paused) fail("paused", "the user is using this tab; wait until they give it back, or ask them", { summary: withPlace(failure(action, targetLabel(args), "paused"), await place()) });
   return serial(t, async () => {
     let el = null;
@@ -1111,10 +1123,32 @@ chrome.runtime.onInstalled.addListener(() => {});
 // waits for that hello instead of saying no_browser (WAKE_WAIT).
 chrome.alarms.create("bise-wake", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(() => {
+  checkBuild();
   if (!port && !timer) connect();
 });
 
+// A loaded-unpacked extension never picks up new files by itself: Chrome
+// kept running the first build while bise moved on (launch's re-test: the
+// per-letter snapshot fix and {css} -> bad_args never reached Chrome).
+// bise syncs each version into ~/.bise/computer-use/extension with a new
+// build id in build.js (what this code was loaded with) and build.json
+// (read from disk now): when they differ, reload. Never in the middle of
+// an action: the next alarm tries again.
+async function checkBuild() {
+  try {
+    const onDisk = (await (await fetch(chrome.runtime.getURL("build.json"), { cache: "no-store" })).json()).build;
+    const busy = [...tabs.values()].some((t) => t.acting);
+    if (onDisk && onDisk !== BUILD && !busy) {
+      note({ reload: { from: BUILD, to: onDisk } });
+      chrome.runtime.reload();
+    }
+  } catch {
+    // no build.json (an old copy): nothing to compare
+  }
+}
+checkBuild();
+
 // For the tests (test/e2e.mjs reads it through CDP on this worker).
-globalThis.bise = { agents, tabs, log, connected: () => !!port, detached };
+globalThis.bise = { agents, tabs, log, connected: () => !!port, detached, build: BUILD, checkBuild };
 
 connect();

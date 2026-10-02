@@ -152,8 +152,8 @@ export async function launch({ browser = "chrome", brokerPort, startUrl, windowS
 }
 
 /** Load the extension (pipe only) and give an evaluator on its worker. */
-export async function loadExtension(b) {
-  const { id } = await b.send("Extensions.loadUnpacked", { path: extDir });
+export async function loadExtension(b, dir = extDir) {
+  const { id } = await b.send("Extensions.loadUnpacked", { path: dir });
   let sw;
   for (let i = 0; i < 50 && !sw; i++) {
     const { targetInfos } = await b.send("Target.getTargets");

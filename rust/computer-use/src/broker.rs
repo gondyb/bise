@@ -90,6 +90,9 @@ struct BrowserLink {
     browser: Option<Browser>,
     version: String,
     extension_version: String,
+    /// the build its code was loaded with (hello.build): an older one than
+    /// ~/.bise/computer-use/extension means Chrome didn't reload it yet
+    extension_build: Option<String>,
     /// the browser's process (its relay's parent, in the hello): when the
     /// link ends and it still runs, only the extension's service worker
     /// stopped (MV3), and it comes back within 30 s
@@ -344,7 +347,7 @@ fn browser_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
         let mut inner = lock(&sh.inner);
         inner.next += 1;
         let id = inner.next;
-        inner.browsers.push(BrowserLink { id, w, browser: None, version: String::new(), extension_version: String::new(), pid: None });
+        inner.browsers.push(BrowserLink { id, w, browser: None, version: String::new(), extension_version: String::new(), extension_build: None, pid: None });
         id
     };
     for line in lines {
@@ -358,6 +361,7 @@ fn browser_loop(sh: &Arc<Shared>, w: Writer, lines: Lines) {
                     l.browser = Some(b);
                     l.version = str_of(h, "version").unwrap_or("").to_string();
                     l.extension_version = str_of(h, "extension_version").unwrap_or("").to_string();
+                    l.extension_build = str_of(h, "build").map(String::from);
                     l.pid = h.get("pid").and_then(Value::as_i64).and_then(|p| i32::try_from(p).ok()).filter(|p| *p > 1);
                 }
                 // the most recent browser comes first for `open`
@@ -1080,7 +1084,14 @@ fn browsers_json(sh: &Arc<Shared>) -> Value {
         .browsers
         .iter()
         .filter_map(|l| {
-            l.browser.map(|b| json!({"name": b.name, "version": l.version, "connected": true, "extension_version": l.extension_version}))
+            l.browser.map(|b| {
+                let mut v = json!({"name": b.name, "version": l.version, "connected": true, "extension_version": l.extension_version});
+                // the build it runs (sw.js build.js), when it says one
+                if let Some(build) = &l.extension_build {
+                    v["extension_build"] = json!(build);
+                }
+                v
+            })
         })
         .collect();
     let p = &sh.opts.paths;

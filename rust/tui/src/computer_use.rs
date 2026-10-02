@@ -458,6 +458,12 @@ pub(crate) fn rows(check: &Value, busy: &Busy) -> Vec<Row> {
                         (format!("add bise to {browser}"), h, o("open chrome://extensions"))
                     }
                     (_, Some("repair")) => ("the extension can't reach bise".to_string(), vec!["⏎ rewrites the native host".to_string()], o("repair it")),
+                    // a newer build is in its folder and Chrome didn't reload it
+                    (_, Some("reload_extension")) => (
+                        "an update is ready".to_string(),
+                        vec![format!("⏎ opens chrome://extensions · click ↻ on bise computer use"), "i'll see it here".to_string()],
+                        o("open chrome://extensions"),
+                    ),
                     _ => (given, vec![], None),
                 };
                 (label, d, h, a, false)
@@ -730,6 +736,7 @@ fn act(sc: &mut Screen, check: &Value, row: &Row) {
             open(&with_app("chrome://extensions"));
             sc.flash = Some((if copied { format!("opened {} path copied", dot()) } else { "opened".into() }, Instant::now()));
         }
+        Some("reload_extension") => open(&with_app("chrome://extensions")),
         Some("repair") => {
             let said = sc.said.clone();
             std::thread::spawn(move || {
