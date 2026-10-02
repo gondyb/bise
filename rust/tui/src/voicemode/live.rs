@@ -187,29 +187,6 @@ pub(crate) fn after_settings(app: &mut App, open: super::settings::Open, out: su
     }
 }
 
-/// ▸ hear it on /voice (only on the user's press): the sample sentence
-/// in the chosen voice, on the default speaker, off the UI thread.
-pub(crate) fn hear(job: super::SayJob, text: String) {
-    std::thread::spawn(move || {
-        let Ok(mut speaker) = super::audio::open_speaker() else { return };
-        let (tx, rx) = std::sync::mpsc::channel();
-        let cancel = std::sync::Arc::new(AtomicBool::new(false));
-        use super::Synthesizer;
-        super::tts::VoxtralTts.start(job, text, tx, cancel);
-        while let Ok(ev) = rx.recv() {
-            match ev {
-                super::Synth::Audio(pcm) => speaker.push(1, &pcm),
-                _ => break,
-            }
-        }
-        speaker.end(1);
-        let until = Instant::now() + std::time::Duration::from_secs(30);
-        while !speaker.done(1) && Instant::now() < until {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-    });
-}
-
 /// esc: voice mode ends (the mic closes when the controller drops).
 pub(crate) fn leave(app: &mut App) {
     if let Some(mut vm) = app.voice_mode.take() {

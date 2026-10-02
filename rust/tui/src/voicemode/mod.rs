@@ -31,6 +31,7 @@ pub mod listen; // voice-stt
 pub mod live; // voice-mode (lead): the app's side
 pub mod pane; // voice-tui
 pub mod route; // voice-audio
+pub mod sample; // voice-sample: ▸ hear it, one at a time
 pub mod settings; // voice-settings
 pub mod speak; // voice-tts
 pub mod timing; // voice-tts

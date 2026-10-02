@@ -23,7 +23,7 @@
 //! [`request`] then, at the next frame, [`take_request`] and [`show`].
 
 use super::config::{self, ListenMode, ReadAloud, VoiceModeConfig, SPEED_MAX, SPEED_MIN};
-use super::SayJob;
+use super::sample::Player;
 use crate::theme;
 use crate::App;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -817,14 +817,27 @@ pub fn draw_in(buf_frame: &mut Frame, screen: &Screen, now: Instant) {
 // ---- the loop ----
 
 /// Show the screen until it closes: keys, the hub's lines through `pump`,
-/// a change saved at once, ▸ hear it through `hear` (the TTS and the
-/// speaker; called only on the user's ⏎).
+/// a change saved at once, ▸ hear it through `player` (the TTS and the
+/// speaker; played only on the user's ⏎, one sample at a time). Leaving
+/// the screen cuts the sample playing.
 pub fn show(
     app: &mut App,
     terminal: &mut crate::links::Tui,
     open: Open,
     pump: &mut dyn FnMut(&mut App),
-    hear: &mut dyn FnMut(SayJob, String),
+    player: &mut Player,
+) -> io::Result<Out> {
+    let shown = show_until_closed(app, terminal, open, pump, player);
+    player.stop();
+    shown
+}
+
+fn show_until_closed(
+    app: &mut App,
+    terminal: &mut crate::links::Tui,
+    open: Open,
+    pump: &mut dyn FnMut(&mut App),
+    player: &mut Player,
 ) -> io::Result<Out> {
     use crossterm::event::{poll, read, Event};
     let cfg = config::load();
@@ -857,7 +870,7 @@ pub fn show(
         }
         let Some(Event::Key(k)) = crate::ctrlhint::for_handlers(read()?) else { continue };
         let step = screen.on_key(k, Instant::now());
-        match apply(&mut screen, step, app, hear) {
+        match apply(&mut screen, step, app, player) {
             Some(out) => return Ok(out),
             None => continue,
         }
@@ -865,7 +878,7 @@ pub fn show(
 }
 
 /// What a step does outside the screen; Some: it closes.
-fn apply(screen: &mut Screen, step: Step, app: &mut App, hear: &mut dyn FnMut(SayJob, String)) -> Option<Out> {
+fn apply(screen: &mut Screen, step: Step, app: &mut App, player: &mut Player) -> Option<Out> {
     match step {
         Step::Stay => None,
         Step::Save => {
@@ -876,7 +889,7 @@ fn apply(screen: &mut Screen, step: Step, app: &mut App, hear: &mut dyn FnMut(Sa
         }
         Step::Hear => {
             match config::say_job(&screen.cfg) {
-                Ok(job) => hear(job, sample(screen.sample_language().as_deref()).to_string()),
+                Ok(job) => player.play(job, sample(screen.sample_language().as_deref()).to_string()),
                 Err(e) => screen.said = Some(e),
             }
             None

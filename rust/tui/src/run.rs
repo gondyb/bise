@@ -449,7 +449,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
                             report_crash(app, &c, "a hub line");
                         }
                     },
-                    &mut |job, text| crate::voicemode::live::hear(job, text),
+                    &mut crate::voicemode::sample::Player::live(),
                 )
             });
             match shown {
