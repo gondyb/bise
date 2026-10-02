@@ -41,9 +41,10 @@ def main():
         # a slow turn: main runs `sleep 8`
         t.typed("[[bash: sleep 8]]")
         t.keys("Enter")
-        t.wait("tab queue   ⏎ steer", 20)
-        # tab queues: nothing goes to the hub
+        # tab queues: nothing goes to the hub; the key bar offers it only
+        # once the composer has text (5e3873d)
         t.typed("queued-one")
+        t.wait("tab queue   ⏎ steer", 20)
         t.keys("Tab")
         t.wait(" › queued-one", 10)
         t.typed("queued-two")
