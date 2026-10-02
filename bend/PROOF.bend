@@ -4451,3 +4451,24 @@ def Laws.edit_schemas():
 
 def Laws.edit_calls_ride_structured():
   {==}
+
+def Laws.image_scope_tool_text():
+  {==}
+
+def Laws.image_scope_run_typescript():
+  {==}
+
+def Laws.image_marker_newline_is_text():
+  {==}
+
+def Laws.image_part_unavailable_is_text():
+  {==}
+
+def Laws.image_part_filled():
+  {==}
+
+def Laws.image_part_cap():
+  {==}
+
+def Laws.image_why_checks():
+  {==}

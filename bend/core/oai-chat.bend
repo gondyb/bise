@@ -83,11 +83,11 @@ def msg_json.tool(ids: List<&2, String>, +content: String)
   match ids:
     case Con{+id, rest}:
       (J.obj(Con{J.kv("role", J.str("tool")),
-        Con{J.kv("content", W.img_content(Im.IOai{}, content)),
+        Con{J.kv("content", W.img_content_of("tool", Im.IOai{}, content)),
           Con{J.kv("tool_call_id", J.str(id)), Nil{}}}}), rest)
     case Nil{}:
       (J.obj(Con{J.kv("role", J.str("tool")),
-        Con{J.kv("content", W.img_content(Im.IOai{}, content)),
+        Con{J.kv("content", W.img_content_of("tool", Im.IOai{}, content)),
           Con{J.kv("tool_call_id", J.str("call_0")), Nil{}}}}), Nil{})
 
 def content_json.pick(empty: Bool, +text: String) -> J.Json:
@@ -190,7 +190,7 @@ def msg_json.pick(is_tool: Bool, is_asst: Bool, +role: String,
           msg_json.asst(content, calls, ids)
         case False{}:
           (J.obj(Con{J.kv("role", J.str(W.role_out(role))),
-            Con{J.kv("content", W.img_content(Im.IOai{}, content)), Nil{}}}), ids)
+            Con{J.kv("content", W.img_content_of(role, Im.IOai{}, content)), Nil{}}}), ids)
 
 def msg_json(m: W.WMsg, ids: List<&2, String>) -> J.Json & List<&2, String>:
   match m:

@@ -538,6 +538,19 @@ def img_content.pick(has: Bool, +st: Im.IStyle, +content: String) -> J.Json:
 def img_content(+st: Im.IStyle, +content: String) -> J.Json:
   img_content.pick(Im.has_image(content), st, content)
 
+# where a marker is an image (docs/images.md): the user's own input
+# (user, context) and a run_typescript result (its image blocks). Never in
+# another tool's result (bash output, a file read, sb inspect: a marker
+# there is text the agent printed, 2026-10-02), the system or the assistant.
+def img_scope(+role: String, +content: String) -> Bool:
+  Bool.or(String.eq(role, "user"), Bool.or(String.eq(role, "context"),
+    Bool.and(String.eq(role, "tool"),
+      String.starts_with(content, "tool run_typescript "))))
+
+def img_content_of(+role: String, +st: Im.IStyle, +content: String) -> J.Json:
+  img_content.pick(Bool.and(img_scope(role, content), Im.has_image(content)),
+    st, content)
+
 # ---- the way back: marked history reasoning becomes a thinking block ----
 # The harness history stores the assistant reasoning as MARKED TEXT.
 # The signed part of the provider block rides INSIDE the span, on its

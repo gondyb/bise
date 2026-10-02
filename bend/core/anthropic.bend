@@ -42,7 +42,7 @@ def tool_use_json(c: W.WCall) -> J.Json:
 def tool_result_json(+id: String, +content: String) -> J.Json:
   J.obj(Con{J.kv("type", J.str("tool_result")),
     Con{J.kv("tool_use_id", J.str(id)),
-    Con{J.kv("content", W.img_content(Im.IAnth{}, content)), Nil{}}}})
+    Con{J.kv("content", W.img_content_of("tool", Im.IAnth{}, content)), Nil{}}}})
 
 # a user message: one text block, or the parts when it carries images
 def user_blocks.pick(has: Bool, +content: String) -> List<&2, J.Json>:

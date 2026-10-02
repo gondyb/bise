@@ -145,6 +145,27 @@ content block only at the last step, the provider request.
   made a REPL of 802 MB, and the Bend heap never shrinks (an agent's
   repl-live sat at 1.8 GB). Now 120 MB, and the turn 0.5 s instead of 1.3 s
   (`tests/images_mem_e2e.py`). A request without marker costs one scan.
+- Since 2026-10-02 (task `image-tag`; three agents stuck on Anthropic's
+  400 "tool_result.content.2.image.source.base64: invalid base64 data"),
+  the wire-level `img_req` above is gone. The cause: an agent printed the
+  user's marker in bash output, wrapped by a note so that its path held a
+  newline; the wire scan saw the escaped newline and skipped it, the
+  message parse saw a real newline and made an image part, whose data went
+  out as the `@@BENDIMG:…@@` placeholder itself. Now:
+  - scope (`core/wire.bend` `img_scope`): markers become images only in
+    user and context messages and in `run_typescript` results; in any
+    other tool result (bash, file reads, `sb inspect`) a marker is text;
+  - a marker value may not hold a newline, a CR or a backslash (the
+    characters the wire escapes), so every scan agrees;
+  - each image is printed as ONE part placeholder, the JSON string
+    `"@@BENDPART:<style>|<mime>|<b64 path>|<name>@@"`; before every send,
+    `runtime/provider.bend` `img_body` checks each file (in the store,
+    there, non-empty, a multiple of 4 bytes, base64 in its first 64 bytes)
+    and puts in its place the image object with its file part, or a text
+    part `[image unavailable: <name> (<reason>)]`, for every family. The 20
+    most recent good images go (`Im.res_cap`, stepped as before); older
+    ones become such a text. Test: `tests/image_tag_e2e.py` (the fake
+    provider answers Anthropic's 400 for bad base64, like the real API).
 
 ### Display
 

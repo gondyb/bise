@@ -59,6 +59,7 @@ prints what the server would send for a turn ({"text", "reasoning",
 prints FILE as a Bend string literal (a LAWS fixture).
 Shapes: docs/research/providers.md §8 (the docs each one follows).
 """
+import base64
 import hashlib
 import http.server
 import json
@@ -763,6 +764,11 @@ class H(http.server.BaseHTTPRequestHandler):
                                 # approvals-edit: the request's tools, each
                                 # with its description, and the system text
                                 "tools": tool_list(family, body),
+                                # image-tag: where each Anthropic image block
+                                # sits (a tool_result's or a message's), and
+                                # the texts that stand for an image not sent
+                                "anth_images": anth_image_where(body) if family == "anthropic" else [],
+                                "unavailable": re.findall(r"\[image unavailable: .*?\)\]", json.dumps(body)),
                                 "tool_texts": [m["text"] for m in conv if m["role"] == "tool"],
                                 "system": "\n".join(m["text"] for m in conv if m["role"] == "system")}) + "\n")
 
@@ -820,6 +826,49 @@ def oai_error(where, message, code="invalid_value"):
     return {"error": {"message": message, "type": "invalid_request_error", "param": where, "code": code}}
 
 
+def b64_ok(data):
+    try:
+        return isinstance(data, str) and data != "" and len(base64.b64decode(data, validate=True)) > 0
+    except (ValueError, TypeError):
+        return False
+
+
+def anth_image_error(body):
+    """the Anthropic 400 for the first image block with bad base64, None
+    when every image is fine (messages.N.content.M[.tool_result.content.K])"""
+    def bad(b, where):
+        if isinstance(b, dict) and b.get("type") == "image" and not b64_ok((b.get("source") or {}).get("data")):
+            return {"type": "error", "error": {"type": "invalid_request_error",
+                                               "message": where + ".image.source.base64: invalid base64 data"}}
+        return None
+    for n, m in enumerate(body.get("messages", [])):
+        c = m.get("content")
+        for k, b in enumerate(c if isinstance(c, list) else []):
+            e = bad(b, "messages.%d.content.%d" % (n, k))
+            if e:
+                return e
+            inner = b.get("content") if isinstance(b, dict) and b.get("type") == "tool_result" else None
+            for j, ib in enumerate(inner if isinstance(inner, list) else []):
+                e = bad(ib, "messages.%d.content.%d.tool_result.content.%d" % (n, k, j))
+                if e:
+                    return e
+    return None
+
+
+def anth_image_where(body):
+    """'message' or 'tool_result' for each image block, in order"""
+    out = []
+    for m in body.get("messages", []):
+        c = m.get("content")
+        for b in c if isinstance(c, list) else []:
+            if isinstance(b, dict) and b.get("type") == "image":
+                out.append("message")
+            inner = b.get("content") if isinstance(b, dict) and b.get("type") == "tool_result" else None
+            out += ["tool_result" for ib in (inner if isinstance(inner, list) else [])
+                    if isinstance(ib, dict) and ib.get("type") == "image"]
+    return out
+
+
 def request_error(family, body):
     """BISE-147: what the real OpenAI APIs refuse beyond the names, None
     when the request is fine. Chat Completions: function tools with
@@ -827,7 +876,11 @@ def request_error(family, body):
     reasoning item without its encrypted_content or with an id (OpenAI
     looks the id up and finds nothing stored), a function_call_output
     whose call_id no function_call before it has, a function tool
-    without a name."""
+    without a name. Anthropic (2026-10-02, three agents stuck): an image
+    block whose data is not base64, in a message or a tool_result, gets
+    the real API's 400 with its path."""
+    if family == "anthropic":
+        return anth_image_error(body)
     if family == "openai-chat":
         if str(body.get("model", "")).startswith("gpt-6") and body.get("tools") and body.get("reasoning_effort") \
                 and body.get("reasoning_effort") != "none":

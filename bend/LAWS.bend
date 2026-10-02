@@ -3850,7 +3850,7 @@ law api_body_image_user_parts:
 MSG user : see <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
 END
 "))
-    == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"see \"},{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}]}]}"
+    == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"see \"},{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},\"@@BENDPART:o|image/png|/s/x.b64|[Image #1]@@\",{\"type\":\"text\",\"text\":\"</image>\"}]}]}"
     : String}
 
 # LAW: Anthropic - a tool result with a marker carries image blocks.
@@ -3859,10 +3859,10 @@ law api_body_image_anth_tool_result:
 MSG user : go
 MSG assistant : 
   CALL 1 run_typescript : {}
-MSG tool : <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
+MSG tool : tool run_typescript ok: <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
 END
 "))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"run_typescript\",\"input\":{},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_1\",\"content\":[{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"run_typescript\",\"input\":{},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_1\",\"content\":[{\"type\":\"text\",\"text\":\"tool run_typescript ok: \"},{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},\"@@BENDPART:a|image/png|/s/x.b64|[Image #1]@@\",{\"type\":\"text\",\"text\":\"</image>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: only the last `cap` loaded images are kept.
@@ -4261,3 +4261,46 @@ law compact_first_attempt_shares:
 
 law compact_retry_is_bare:
   {Rt.compact_first(Some{T.PComp{1, 2n, 2, "", True{}}}) == False{} : Bool}
+
+# LAW (image-tag, 2026-10-02): a marker in a tool's result is an image only
+# for run_typescript (its image blocks); bash output, a file read or sb
+# inspect printing the user's marker is text.
+law image_scope_tool_text:
+  {W.img_scope("tool", "tool bash ok: x") == False{} : Bool}
+
+law image_scope_run_typescript:
+  {W.img_scope("tool", "tool run_typescript ok: x") == True{} : Bool}
+
+# LAW: a marker value holding a newline is no marker (the wire escapes it,
+# so the wire scan and the message parse must agree it is text).
+law image_marker_newline_is_text:
+  {Im.img_paths(String.append(Im.img_open(),
+    "a\" path=\"p\nq\" mime=\"image/png\" b64=\"/s/1.b64\">"))
+    == Nil{} : List<&2, String>}
+
+# LAW: an image part the IO step could not fill becomes a text part with
+# its name and reason; a filled one gets its data.
+law image_part_unavailable_is_text:
+  {Im.body_fill(Im.body_segs("[{\"a\":1},\"@@BENDPART:a|image/png|/s/1.b64|[Image #1]@@\"]"),
+    Con{Im.IRBad{"file missing"}, Nil{}})
+    == "[{\"a\":1},{\"type\":\"text\",\"text\":\"[image unavailable: [Image #1] (file missing)]\"}]"
+    : String}
+
+law image_part_filled:
+  {Im.body_fill(Im.body_segs("[{\"a\":1},\"@@BENDPART:o|image/png|/s/1.b64|n@@\"]"),
+    Con{Im.IROk{"QUJD"}, Nil{}})
+    == "[{\"a\":1},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,QUJD\"}}]"
+    : String}
+
+# LAW: the 20 most recent good images go; an older one becomes text.
+law image_part_cap:
+  {Im.res_cap(Con{Im.IROk{"a"}, Con{Im.IRBad{"x"}, Con{Im.IROk{"b"}, Nil{}}}}, 1n)
+    == Con{Im.IRBad{"older than the 1 most recent images"}, Con{Im.IRBad{"x"},
+      Con{Im.IROk{"b"}, Nil{}}}} : List<&2, Im.IRes>}
+
+# LAW: a .b64 file is sent only if non-empty, a multiple of 4 bytes, base64
+law image_why_checks:
+  {Con{Im.img_why(0, ""), Con{Im.img_why(5, "QUJDR"), Con{Im.img_why(4, "da:a"),
+    Con{Im.img_why(4, "QUJD"), Nil{}}}}}
+    == Con{"empty file", Con{"invalid base64", Con{"invalid base64", Con{"", Nil{}}}}}
+    : List<&2, String>}

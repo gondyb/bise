@@ -42,10 +42,14 @@ def img_field.cut(m: Maybe<&2, Nat>, +s: String, +n: Nat) -> Maybe<&2, IField>:
 def img_field(+s: String, +sep: String) -> Maybe<&2, IField>:
   img_field.cut(Tx.find(s, sep, 0n), s, String.length(sep))
 
-# a value may not hold a quote, a '>' or a line break
+# a value may not hold a quote, a '>', a line break or a backslash: the
+# wire escapes exactly LF, CR and '\', so a marker reads the same in the
+# wire text and in the decoded message (2026-10-02: the check was the two
+# chars '\' 'n', a marker wrapped by a note kept a real newline in its path)
 def img_attr_ok(+v: String) -> Bool:
   Bool.not(Bool.or(String.contains(v, "\""),
-    Bool.or(String.contains(v, ">"), String.contains(v, "\\n"))))
+    Bool.or(String.contains(v, ">"), Bool.or(String.contains(v, "\n"),
+      Bool.or(String.contains(v, "\r"), String.contains(v, "\\"))))))
 
 def img_valid(+name: String, +path: String, +mime: String, +b64: String) -> Bool:
   Bool.and(String.starts_with(mime, "image/"),
@@ -355,6 +359,35 @@ def image_json(+st: IStyle, +mime: String, +b64: String) -> J.Json:
     case IResp{}:
       resp_image_json(mime, b64)
 
+# ---- the part placeholder: an image the IO step checks before sending ----
+# The adapters print each image as ONE JSON string in the content array,
+# "@@BENDPART:<style>|<mime>|<b64 path>|<name>@@". The IO step
+# (runtime/provider.bend, img_body) checks each file and puts in its place
+# the image object (its data: the file part) or a text part
+# "[image unavailable: <name> (<reason>)]". So no image part leaves without
+# its data, whatever produced it. 2026-10-02: a marker whose path held a
+# newline passed the per-message parse but not the wire-level scan, so the
+# placeholder itself went out as the base64, and Anthropic answered 400 on
+# every turn of three agents.
+
+def st_code(+st: IStyle) -> String:
+  match st:
+    case IOai{}:
+      "o"
+    case IAnth{}:
+      "a"
+    case IResp{}:
+      "r"
+
+def st_of(+c: String) -> IStyle:
+  Bool.pick(IStyle, String.eq(c, "a"), IAnth{},
+    Bool.pick(IStyle, String.eq(c, "r"), IResp{}, IOai{}))
+
+def img_part_ph(+st: IStyle, +name: String, +mime: String, +b64: String)
+    -> String:
+  String.concat(["@@BENDPART:", st_code(st), "|", mime, "|", b64, "|", name,
+    "@@"])
+
 def parts_blocks(+st: IStyle, parts: List<&2, IPart>) -> List<&2, J.Json>:
   match parts:
     case Nil{}:
@@ -365,7 +398,7 @@ def parts_blocks(+st: IStyle, parts: List<&2, IPart>) -> List<&2, J.Json>:
           Con{text_json_st(st, s), parts_blocks(st, rest)}
         case IImg{+name, +path, +mime, +b64}:
           Con{text_json_st(st, img_open_text(name, path)),
-            Con{image_json(st, mime, b64),
+            Con{J.str(img_part_ph(st, name, mime, b64)),
               Con{text_json_st(st, "</image>"), parts_blocks(st, rest)}}}
 
 # the content blocks of a text (markers split out)
@@ -428,3 +461,198 @@ def img_splice.pick(none: Bool, +body: String, +ls: List<&2, ILoaded>) -> String
 # the printed body with every placeholder replaced by its image data
 def img_splice(+body: String, +ls: List<&2, ILoaded>) -> String:
   img_splice.pick(List.is_empty(&2, ILoaded, ls), body, ls)
+
+# ---- the IO step's pure half: the part placeholders of a printed body ----
+
+type IPh is Data:
+  IPh{st: IStyle, mime: String, b64: String, name: String}
+
+# a body cut at its part placeholders, in order
+type IBSeg is Data:
+  IBText{s: String}
+  IBPart{ph: IPh}
+
+# what the IO step found for a placeholder: the file part, or why not
+type IRes is Data:
+  IROk{part: String}
+  IRBad{why: String}
+
+# a placeholder is always an item after the frame's text part: `,"@@BENDPART:`
+# (a placeholder written inside a text is escaped `\"`, never matched)
+def part_open() -> String:
+  ",\"@@BENDPART:"
+
+def ph_of.c(m: Maybe<&2, Nat>, +st: IStyle, +mime: String, +s: String) -> IPh:
+  match m:
+    case Some{+p}:
+      IPh{st, mime, String.take(s, p), String.drop(s, Nat.add(p, 1n))}
+    case None{}:
+      IPh{st, mime, s, ""}
+
+def ph_of.b(m: Maybe<&2, Nat>, +st: IStyle, +s: String) -> IPh:
+  match m:
+    case Some{+p}:
+      ph_of.c(Tx.find(String.drop(s, Nat.add(p, 1n)), "|", 0n), st,
+        String.take(s, p), String.drop(s, Nat.add(p, 1n)))
+    case None{}:
+      IPh{st, s, "", ""}
+
+# "<style>|<mime>|<b64 path>|<name>" (the name last: it may hold a '|')
+def ph_of(+s: String) -> IPh:
+  ph_of.b(Tx.find(String.drop(s, 2n), "|", 0n), st_of(String.take(s, 1n)),
+    String.drop(s, 2n))
+
+type IBW is Data:
+  IBGo{s: String}
+  IBAt{m: Maybe<&2, Nat>, s: String}
+  IBEnd{m: Maybe<&2, Nat>, s: String}
+
+def body_segs.go(fuel: Nat, st: IBW, +acc: List<&2, IBSeg>) -> List<&2, IBSeg>:
+  match fuel:
+    case 0n:
+      List.reverse(&2, IBSeg, acc)
+    case 1n+k:
+      match st:
+        case IBGo{+s}:
+          body_segs.go(k, IBAt{Tx.find(s, part_open(), 0n), s}, acc)
+        case IBAt{+m, +s}:
+          match m:
+            case None{}:
+              List.reverse(&2, IBSeg, Con{IBText{s}, acc})
+            case Some{+p}:
+              body_segs.go(k,
+                IBEnd{Tx.find(String.drop(s, Nat.add(p, 13n)), "@@\"", 0n),
+                  String.drop(s, Nat.add(p, 13n))},
+                Con{IBText{String.take(s, Nat.add(p, 1n))}, acc})
+        case IBEnd{+m, +s}:
+          match m:
+            # no end: not a placeholder after all, the text stays
+            case None{}:
+              List.reverse(&2, IBSeg,
+                Con{IBText{String.append("\"@@BENDPART:", s)}, acc})
+            case Some{+q}:
+              body_segs.go(k, IBGo{String.drop(s, Nat.add(q, 3n))},
+                Con{IBPart{ph_of(String.take(s, q))}, acc})
+
+# three steps per placeholder at most; a placeholder is 13+ chars
+def body_segs(+body: String) -> List<&2, IBSeg>:
+  body_segs.go(Nat.add(String.length(body), 8n), IBGo{body}, Nil{})
+
+def body_phs(segs: List<&2, IBSeg>) -> List<&2, IPh>:
+  match segs:
+    case Nil{}:
+      Nil{}
+    case Con{+g, +rest}:
+      match g:
+        case IBText{_}:
+          body_phs(rest)
+        case IBPart{+ph}:
+          Con{ph, body_phs(rest)}
+
+def ph_b64(+ph: IPh) -> String:
+  match ph:
+    case IPh{_, _, +b64, _}:
+      b64
+
+# a .b64 of the image store: inside it, a .b64 name, no way up
+def img_store_ok(+path: String, +dir: String) -> Bool:
+  Bool.and(String.starts_with(path, dir),
+    Bool.and(String.ends_with(path, ".b64"),
+      Bool.not(String.contains(path, "/../"))))
+
+def b64_char(+c: Char) -> Bool:
+  Bool.or(Char.is_digit(c), Bool.or(Char.is_upper(c), Bool.or(Char.is_lower(c),
+    Bool.or(U32.is_eq(Char.to_u32(c), 43), Bool.or(U32.is_eq(Char.to_u32(c), 47),
+      U32.is_eq(Char.to_u32(c), 61))))))
+
+def b64_all(cs: List<&2, Char>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{+c, rest}:
+      Bool.and(b64_char(c), b64_all(rest))
+
+# why a .b64 of `size` bytes whose first bytes are `head` cannot be sent,
+# "" when it can: a cheap check (the data never enters the heap)
+def img_why(+size: U32, +head: String) -> String:
+  Bool.pick(String, U32.is_eq(size, 0), "empty file",
+    Bool.pick(String, Bool.not(U32.is_eq(U32.mod(size, 4), 0)), "invalid base64",
+      Bool.pick(String, Bool.or(String.is_empty(head),
+        Bool.not(b64_all(String.to_list(head)))), "invalid base64", "")))
+
+def res_count(+rs: List<&2, IRes>) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case Con{+r, +rest}:
+      match r:
+        case IROk{_}:
+          1n+res_count(rest)
+        case IRBad{_}:
+          res_count(rest)
+
+def res_cap.go(rs: List<&2, IRes>, +drop: Nat, +why: String) -> List<&2, IRes>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case Con{+r, +rest}:
+      match r:
+        case IROk{+part}:
+          match drop:
+            case 0n:
+              Con{IROk{part}, res_cap.go(rest, 0n, why)}
+            case 1n+d:
+              Con{IRBad{why}, res_cap.go(rest, d, why)}
+        case IRBad{+w}:
+          Con{IRBad{w}, res_cap.go(rest, drop, why)}
+
+# the `cap` most recent images go (stepped, img_kept); the older ones
+# become text
+def res_cap(+rs: List<&2, IRes>, +cap: Nat) -> List<&2, IRes>:
+  res_cap.go(rs, Nat.sub(res_count(rs), img_kept(res_count(rs), cap)),
+    String.append("older than the ", String.append(Nat.show(cap),
+      " most recent images")))
+
+def unavailable_text(+name: String, +why: String) -> String:
+  String.concat(["[image unavailable: ", name, " (", why, ")]"])
+
+# a placeholder's JSON: the image object with its file part, or a text part
+def ph_json(+ph: IPh, r: IRes) -> String:
+  match ph:
+    case IPh{+st, +mime, +b64, +name}:
+      match r:
+        case IROk{+part}:
+          img_splice(J.stringify(image_json(st, mime, b64)),
+            Con{IL{b64, part}, Nil{}})
+        case IRBad{+why}:
+          J.stringify(text_json_st(st, unavailable_text(name, why)))
+
+def res_head(+rs: List<&2, IRes>) -> IRes:
+  match rs:
+    case Nil{}:
+      IRBad{"no image data"}
+    case Con{+r, _}:
+      r
+
+def res_tail(+rs: List<&2, IRes>) -> List<&2, IRes>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case Con{_, +rest}:
+      rest
+
+def body_fill.go(segs: List<&2, IBSeg>, +rs: List<&2, IRes>,
+    +acc: List<&2, String>) -> String:
+  match segs:
+    case Nil{}:
+      String.concat(List.reverse(&2, String, acc))
+    case Con{+g, +rest}:
+      match g:
+        case IBText{+s}:
+          body_fill.go(rest, rs, Con{s, acc})
+        case IBPart{+ph}:
+          body_fill.go(rest, res_tail(rs), Con{ph_json(ph, res_head(rs)), acc})
+
+# the body with each placeholder replaced (rs: one per placeholder, in order)
+def body_fill(segs: List<&2, IBSeg>, +rs: List<&2, IRes>) -> String:
+  body_fill.go(segs, rs, Nil{})

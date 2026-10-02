@@ -446,15 +446,19 @@ def got_attempt(g: Got) -> Pvp.Attempt:
     case Got{+a, _, _}:
       a
 
-# ---- images (docs/images.md): load the markers' base64 from the store ----
-# Each marker of the request names a .b64 file; the ones inside the image
-# store that are non-empty are kept (once per path), the 20 last, the
-# others turned into plain text (Im.img_defang). The body is printed with
-# placeholders, and each one gets a FILE PART (Http.file_part: the path and
+# ---- images (docs/images.md): check each image part of the printed body ----
+# The adapters print each image as a part placeholder (Im.img_part_ph). Here,
+# before every send, each one is checked: a .b64 of the image store, there,
+# non-empty, a multiple of 4 bytes, base64 in its first bytes. A good one
+# becomes the image object with a FILE PART (Http.file_part: the path and
 # the size), not the data: the HTTP client sends the file's bytes from a C
 # buffer at write time. The base64 never enters the Bend heap: as a String
 # it cost ~47 bytes of heap per char, so 20 screenshots made a request of
 # ~1.5 GB, and the heap never shrinks (repl-live at 1.8 GB on 2026-10-01).
+# The 20 most recent good ones go (Im.res_cap); any other becomes a text
+# part "[image unavailable: <name> (<reason>)]", for every family: an image
+# never leaves without its data (2026-10-02: one did, as its placeholder,
+# and Anthropic refused every turn of three agents).
 
 def img_cap() -> Nat:
   20n
@@ -464,118 +468,93 @@ def img_dir() -> IO(String):
     +d : String <- P.env_path("BEND_IMAGE_DIR", "/.bend-harness/images")
     IO.pure(String, String.append(d, "/"))
 
-def img_load.sized.n(empty: Bool, +n: U32, +path: String,
-    +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
-  match empty:
-    case True{}:
-      (False{}, acc)
-    case False{}:
-      (True{}, Con{Im.IL{path, Http.file_part(path, n)}, acc})
-
-def img_load.sized(r: Result<&1, &1, U32 & String, U32>, +path: String,
-    +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
+def head_of(r: Result<&1, &1, U32 & String, String>) -> String:
   match r:
-    case Done{+n}:
-      img_load.sized.n(U32.is_eq(n, 0), n, path, acc)
+    case Done{+s}:
+      s
     case Fail{_}:
-      (False{}, acc)
+      ""
 
-def img_load.size(fs: File & Result<&1, &1, U32 & String, U32>, +path: String,
-    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
+def img_check.why(+why: String, +path: String, +n: U32) -> Im.IRes:
+  Bool.pick(Im.IRes, String.is_empty(why), Im.IROk{Http.file_part(path, n)},
+    Im.IRBad{why})
+
+def img_check.head(fr: File & Result<&1, &1, U32 & String, String>,
+    +path: String, +n: U32) -> IO(Im.IRes):
+  match fr:
+    case (f, r):
+      do IO<Im.IRes>:
+        c : Unit <- File.close(f)
+        IO.pure(Im.IRes, img_check.why(Im.img_why(n, head_of(r)), path, n))
+
+def img_check.size(fs: File & Result<&1, &1, U32 & String, U32>,
+    +path: String) -> IO(Im.IRes):
   match fs:
     case (f, r):
-      do IO<Bool & List<&2, Im.ILoaded>>:
-        c : Unit <- File.close(f)
-        IO.pure(Bool & List<&2, Im.ILoaded>, img_load.sized(r, path, acc))
+      match r:
+        case Fail{_}:
+          do IO<Im.IRes>:
+            c : Unit <- File.close(f)
+            IO.pure(Im.IRes, Im.IRBad{"unreadable file"})
+        case Done{+n}:
+          do IO<Im.IRes>:
+            fr : File & Result<&1, &1, U32 & String, String> <- File.read(f, 64)
+            img_check.head(fr, path, n)
 
-def img_load.opened(o: Result<&1, &1, U32 & String, File>, +path: String,
-    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
+def img_check.opened(o: Result<&1, &1, U32 & String, File>, +path: String)
+    -> IO(Im.IRes):
   match o:
     case Fail{_}:
-      IO.pure(Bool & List<&2, Im.ILoaded>, (False{}, acc))
+      IO.pure(Im.IRes, Im.IRBad{"file missing"})
     case Done{f}:
-      do IO<Bool & List<&2, Im.ILoaded>>:
+      do IO<Im.IRes>:
         fs : File & Result<&1, &1, U32 & String, U32> <- File.size(f)
-        img_load.size(fs, path, acc)
+        img_check.size(fs, path)
 
-def img_load.one.pick(have: Bool, ok_path: Bool, +path: String,
-    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
-  match have:
-    case True{}:
-      IO.pure(Bool & List<&2, Im.ILoaded>, (True{}, acc))
+def img_check.pick(ok: Bool, +path: String) -> IO(Im.IRes):
+  match ok:
     case False{}:
-      match ok_path:
-        case True{}:
-          do IO<Bool & List<&2, Im.ILoaded>>:
-            o : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
-            img_load.opened(o, path, acc)
-        case False{}:
-          IO.pure(Bool & List<&2, Im.ILoaded>, (False{}, acc))
+      IO.pure(Im.IRes, Im.IRBad{"not in the image store"})
+    case True{}:
+      do IO<Im.IRes>:
+        o : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
+        img_check.opened(o, path)
 
-def img_load.one(+path: String, +dir: String, +acc: List<&2, Im.ILoaded>)
-    -> IO(Bool & List<&2, Im.ILoaded>):
-  img_load.one.pick(Bool.not(String.is_empty(Im.img_lookup(path, acc))),
-    Bool.and(String.starts_with(path, dir),
-      Bool.and(String.ends_with(path, ".b64"),
-        Bool.not(String.contains(path, "/../")))),
-    path, acc)
+# one image's .b64: its file part, or why it cannot go
+def img_check(+path: String, +dir: String) -> IO(Im.IRes):
+  img_check.pick(Im.img_store_ok(path, dir), path)
 
-def img_load.next(r: Bool & List<&2, Im.ILoaded>, +flags: List<&2, Bool>)
-    -> List<&2, Bool> & List<&2, Im.ILoaded>:
-  match r:
-    case (f, acc):
-      (Con{f, flags}, acc)
-
-# flags (reversed) and the loaded images
 @unsafe
-def img_load(paths: List<&2, String>, +dir: String, +flags: List<&2, Bool>,
-    +acc: List<&2, Im.ILoaded>) -> IO(List<&2, Bool> & List<&2, Im.ILoaded>):
-  match paths:
+def img_checks(phs: List<&2, Im.IPh>, +dir: String,
+    +acc: List<&2, Im.IRes>) -> IO(List<&2, Im.IRes>):
+  match phs:
     case Nil{}:
-      IO.pure(List<&2, Bool> & List<&2, Im.ILoaded>, (flags, acc))
-    case Con{+p, rest}:
-      do IO<List<&2, Bool> & List<&2, Im.ILoaded>>:
-        r : Bool & List<&2, Im.ILoaded> <- img_load.one(p, dir, acc)
-        img_load.go(img_load.next(r, flags), rest, dir)
+      IO.pure(List<&2, Im.IRes>, List.reverse(&2, Im.IRes, acc))
+    case Con{+ph, rest}:
+      do IO<List<&2, Im.IRes>>:
+        r : Im.IRes <- img_check(Im.ph_b64(ph), dir)
+        img_checks(rest, dir, Con{r, acc})
 
 @unsafe
-def img_load.go(st: List<&2, Bool> & List<&2, Im.ILoaded>,
-    rest: List<&2, String>, +dir: String)
-    -> IO(List<&2, Bool> & List<&2, Im.ILoaded>):
-  match st:
-    case (fl, ac):
-      img_load(rest, dir, fl, ac)
-
-type ImgReq is Data:
-  ImgReq{request: String, loaded: List<&2, Im.ILoaded>}
-
-def img_req.of(r: List<&2, Bool> & List<&2, Im.ILoaded>, +request: String)
-    -> ImgReq:
-  match r:
-    case (rflags, loaded):
-      ImgReq{Im.img_defang(request,
-        Im.img_keep(List.reverse(&2, Bool, rflags), img_cap())), loaded}
-
-@unsafe
-def img_req.load(+request: String) -> IO(ImgReq):
-  do IO<ImgReq>:
+def img_body.fill(+segs: List<&2, Im.IBSeg>) -> IO(String):
+  do IO<String>:
     +dir : String <- img_dir()
-    r : List<&2, Bool> & List<&2, Im.ILoaded> <- img_load(Im.img_paths(request),
-      dir, Nil{}, Nil{})
-    IO.pure(ImgReq, img_req.of(r, request))
+    rs : List<&2, Im.IRes> <- img_checks(Im.body_phs(segs), dir, Nil{})
+    IO.pure(String, Im.body_fill(segs, Im.res_cap(rs, img_cap())))
 
-# a request without marker costs one scan
+# a body without image part costs one scan
 @unsafe
-def img_req.pick(has: Bool, +request: String) -> IO(ImgReq):
+def img_body.pick(has: Bool, +json: String) -> IO(String):
   match has:
     case True{}:
-      img_req.load(request)
+      img_body.fill(Im.body_segs(json))
     case False{}:
-      IO.pure(ImgReq, ImgReq{request, Nil{}})
+      IO.pure(String, json)
 
+# the printed body, each image part checked and filled (or made text)
 @unsafe
-def img_req(+request: String) -> IO(ImgReq):
-  img_req.pick(Im.has_image(request), request)
+def img_body(+json: String) -> IO(String):
+  img_body.pick(String.contains(json, Im.part_open()), json)
 
 # a request whose tool calls were not all answered (a history cut by a
 # restart): the guard answered them; one line in the debug log and one
@@ -597,8 +576,7 @@ def unpaired_log(bad: Bool, +call: Nat, +req: U32) -> IO(Unit):
 # names the call in the debug log
 @unsafe
 def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
-    +key: String, +pv: Pvp.Prov, +call: Nat,
-    +imgs: List<&2, Im.ILoaded>, +req: U32)
+    +key: String, +pv: Pvp.Prov, +call: Nat, +req: U32)
     -> IO(Out & Rem.RemoteRes):
   match fuel:
     case 0n:
@@ -625,7 +603,8 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
               Osp.light_if(Bool.not(String.is_empty(P.env_or(osr, ""))),
                 Api.wire_body(st, Api.with_cache_key(Pvp.cache_field(names), ckey,
                   Api.api_body_for(st, model, facts, W.pair_wire(wreq))))))
-            +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
+            +filled : String <- img_body(json)
+            +body : String <- IO.pure(String, Enc.utf8.encode(filled))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
             hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
@@ -640,21 +619,14 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             model_call.step(got_for(W.req_tools(wreq),
                 Pvp.prov_display(mfile, prov), key, g), nu, k, tries, req,
               k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request,
-                key, pv, call, imgs, req))
+                key, pv, call, req))
 
-def model_call.img(ir: ImgReq, n: Out, +key: String, +pv: Pvp.Prov,
-    +call: Nat, +req: U32) -> IO(Out & Rem.RemoteRes):
-  match ir:
-    case ImgReq{+request, +imgs}:
-      model_call.try(Pvp.max_attempts(), 0n, n, request, key, pv, call,
-        imgs, req)
-
+@unsafe
 def model_call.go(n: Out, +request: String, +key: String, +pv: Pvp.Prov,
     +req: U32) -> IO(Out & Rem.RemoteRes):
   do IO<Out & Rem.RemoteRes>:
     +call : Nat <- IO.now()
-    ir : ImgReq <- img_req(request)
-    model_call.img(ir, n, key, pv, call, req)
+    model_call.try(Pvp.max_attempts(), 0n, n, request, key, pv, call, req)
 
 # a provider with a key_env needs that variable set; one with
 # key_env = "" (a local server) calls without a key. No key: one line

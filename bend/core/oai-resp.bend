@@ -91,7 +91,7 @@ def items_calls(cs: List<&2, W.WCall>) -> List<&2, J.Json>:
 def item_output(+id: String, +content: String) -> J.Json:
   J.obj(Con{J.kv("type", J.str("function_call_output")),
     Con{J.kv("call_id", J.str(id)),
-    Con{J.kv("output", W.img_content(Im.IResp{}, content)), Nil{}}}})
+    Con{J.kv("output", W.img_content_of("tool", Im.IResp{}, content)), Nil{}}}})
 
 # the plain text between two spans: a whitespace-only gap is no item
 def seg_text.pick(empty: Bool, +t: String) -> List<&2, J.Json>:
@@ -159,7 +159,7 @@ def msg_items.plain(is_sys: Bool, +role: String, +content: String,
     case True{}:
       RP{Con{item_msg("developer", J.str(content)), Nil{}}, ids}
     case False{}:
-      RP{Con{item_msg(W.role_out(role), W.img_content(Im.IResp{}, content)),
+      RP{Con{item_msg(W.role_out(role), W.img_content_of(role, Im.IResp{}, content)),
         Nil{}}, ids}
 
 def msg_items.pick(is_tool: Bool, is_asst: Bool, +role: String,
