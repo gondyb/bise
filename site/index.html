@@ -139,7 +139,8 @@
   .card, .feed .card { border-left:2px solid var(--acc); padding-left:calc(3ch - 2px); }
   .card .t { color:var(--acc); font-weight:700; }
   .card.answered { border-left-color:var(--faint); } .card.answered .t { color:var(--dim); font-weight:400; }
-  .panel { padding:18px 2ch; border-left:1px solid var(--faint); }
+  .panel { padding:18px 2ch; border-left:1px solid var(--faint); position:relative; }
+  .panel .seed { position:absolute; color:var(--acc); pointer-events:none; line-height:1; font-size:12px; opacity:0; }
   .panel .h { color:var(--faint); margin-bottom:8px; white-space:nowrap; }
   .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
   /* the composer pane, like the product: a divider with "you → main" and the state, the typing area
@@ -1286,11 +1287,34 @@ const follow = (box, stuck, instant) => { if (stuck) box.scrollTo({ top: box.scr
 const atBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 const add = (html, cls) => { const stuck = atBottom(feed); const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); follow(feed, stuck); return d; };
 const rows = {};
+let seeding = false;
 function agent(n, mark, name, info) {
-  let r = rows[name];
-  if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); }
-  r.innerHTML = `<span><span class="faint">${n < 0 ? -n : n ? n + SEED : 0}</span> ${mark === "∿" ? `<span class="gust" data-g="1"></span>` : mark} ${name}</span><span class="faint">${info}</span>`;
+  let r = rows[name], fresh = false;
+  if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); fresh = !seeding; }
+  r.innerHTML = `<span><span class="faint">${n < 0 ? -n : n ? n + SEED : 0}</span> <span class="mk">${mark === "∿" ? `<span class="gust" data-g="1"></span>` : mark}</span> <span class="nm">${name}</span></span><span class="faint">${info}</span>`;
   r.dataset.busy = mark === "∿" ? "1" : "";
+  if (fresh) requestAnimationFrame(() => puff(r));
+}
+// a new agent: its name blushes, and a few seeds blow off its mark, like a dandelion in the wind
+function puff(r) {
+  const nm = r.querySelector(".nm"), mk = r.querySelector(".mk"), panel = r.closest(".panel");
+  if (!nm || !panel) return;
+  const acc = getComputedStyle(nm).getPropertyValue("--acc").trim() || "#f4a6b0";
+  nm.animate([{ color: acc }, { color: acc, offset: .35 }, { color: getComputedStyle(nm).color }], { duration: 1600, easing: "ease-out" });
+  if (reduced) return;
+  const p = panel.getBoundingClientRect(), m = mk.getBoundingClientRect(), x0 = m.left - p.left + m.width / 2, y0 = m.top - p.top + m.height / 2;
+  for (let i = 0; i < 9; i++) {
+    const s = document.createElement("span");
+    s.className = "seed"; s.textContent = i % 3 ? "·" : "*"; s.style.left = x0 + "px"; s.style.top = y0 + "px";
+    panel.append(s);
+    // the wind blows right and a bit up: the seeds fan out that way, never back over the feed
+    const a = -1.25 + (i / 8) * 1.9 + (Math.random() - .5) * .25, d = 26 + Math.random() * 34;
+    const dx = Math.cos(a) * d + 10, dy = Math.sin(a) * d * .8 - 6;
+    s.animate([{ transform: "translate(-50%,-50%) scale(.6)", opacity: 0 },
+               { transform: `translate(calc(-50% + ${dx * .35}px), calc(-50% + ${dy * .35}px)) scale(1)`, opacity: 1, offset: .2 },
+               { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${(Math.random() - .5) * 90}deg) scale(.8)`, opacity: 0 }],
+              { duration: 1000 + Math.random() * 500, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" }).onfinish = () => s.remove();
+  }
 }
 function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="gust" data-g="5"></span> ${n} working` : ""; gustDraw(); }
 // the composer: the bar turns blush while there is text, the placeholder shows when it's empty
@@ -1304,6 +1328,7 @@ const fsleep = (ms) => sleep(ms / FLOW_SPEED * jitter());
 // the session opens mid-day, never empty: one job done, two at work, agents talking
 const SEED = 3;
 function seed() {
+  seeding = true; setTimeout(() => { seeding = false; });
   feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
   agent(0, `<span class="acc">:*</span>`, "main", "");
   agent(-1, `<span class="acc">✓</span>`, "flaky-login", "12m");
