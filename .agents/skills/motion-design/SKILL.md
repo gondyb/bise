@@ -29,7 +29,9 @@ when a new review teaches you something.
   - the pixel kiss face from `rust/tui/src/voicemode/kiss.rs` (41×9 half blocks, sideways `:*`), with its
     poses (rest smile, listen, think, speak, kiss, blink, wink);
   - the site's pencil cloud (`site/index.html`, `.lcloud`);
-  - sticky notes, pen tallies, the `✓✓` and `ψ` glyphs of the real UI.
+  - sticky notes, pen tallies, the `✓✓` and `ψ` glyphs of the real UI. A note is a slip of warm paper
+    with a strip of translucent tape and a soft lifted shadow, no outline: boxes with a plain border were
+    judged ugly. Show notes only after the card's word has landed, long enough to read (~1.5 s each).
   Build new characters from these. A dead face = the same pixel face, X eyes and a frown; a heart = a pixel
   sprite (9×8) that leaves the lips and floats up. A heart drawn inside the 41×9 grid read as a blob.
 
