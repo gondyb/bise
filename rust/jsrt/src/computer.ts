@@ -321,7 +321,9 @@
   }
 
   class Tab extends Page {
-    userTouched?: boolean;
+    // false for a tab you just opened; computer.browser.tabs() refreshes it
+    // (was undefined on open(), launch #6)
+    userTouched: boolean = false;
     constructor(target: string, info?: Json) {
       super(target, info);
       if (info && info.user_touched !== undefined) this.userTouched = !!info.user_touched;

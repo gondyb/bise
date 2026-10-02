@@ -180,9 +180,10 @@ fn status() {
 #[test]
 fn browser_open() {
     let b = Box::new(true);
-    let p = "const t = await computer.browser.open('https://shop.test'); return [t.target, t.id, t.url, t.title].join('|')";
+    let p = "const t = await computer.browser.open('https://shop.test'); return [t.target, t.id, t.url, t.title, t.userTouched].join('|')";
     let r = r#"{"target":"tab:7","url":"https://shop.test/","title":"Shop"}"#;
-    assert_eq!(b.ok(p, &[("open", r#"{"url":"https://shop.test"}"#, r)]), "tab:7|7|https://shop.test/|Shop");
+    // userTouched is false on a tab just opened, not undefined (launch #6)
+    assert_eq!(b.ok(p, &[("open", r#"{"url":"https://shop.test"}"#, r)]), "tab:7|7|https://shop.test/|Shop|false");
     let p2 = "const t = await computer.browser.open('https://shop.test', { browser: 'edge' }); return t.target";
     assert_eq!(b.ok(p2, &[("open", r#"{"url":"https://shop.test","browser":"edge"}"#, r)]), "tab:7");
 }
