@@ -67,12 +67,21 @@ when a new review teaches you something.
      thread and the composer.
 
    Widen the screen only when a key line must not wrap (70 columns for main's brief).
+   For the first full view of the UI, Gabriel wanted it squarer and roomier still (72 × 24 cells, ~1.2:1):
+   the history must not feel cramped. Then center the finished history vertically in its box by adding
+   blank rows above it (a film-only cheat), and put a blank line between your ask and main's answer.
 7. **Camera on the UI.** Define the camera by the width of screen it shows (`w` in screen px), not by a
    zoom factor, so a whole line or message is always in frame in every format.
    - The first time the UI appears: close on the input while it's typed, glide to the thread when it lands,
      to the agents panel while they pop, then end on the whole UI and hold ~1 s.
    - Elsewhere: start on the whole UI, then push in on the detail that matters (main's brief). Make sure the
      full detail is readable.
+   - A long UI moment can be split around a text card: UI (your ask, main's answer, the chips), then
+     "you talk, / I run the agents.", then back to the UI (the agents pop into the panel, zoom out). He
+     preferred this to one long uninterrupted shot.
+   - Close-ups must not cut text at the frame's edge. Frame them on a structural line: the history close-up
+     stops at the divider, the panel close-up starts at it. Let the camera go past the screen's edge
+     (paper shows) rather than clamp it back onto half a word.
    - A fast "whip" is fine from a text card into the UI. Between two UI moments, glide in one shot: a whip
      between two UI shots looked broken.
 8. **Show what's new.** A new chip or agent row gets a pink flash plus a small scale pop (1.4 → 1 with a
