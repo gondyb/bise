@@ -1,15 +1,15 @@
 //! The `$` popup of the composer: pick a skill by name, as in Codex.
 //!
-//! The list is the skills index the Bend REPL writes at startup
-//! (runtime/skills.bend: `name<TAB>description<TAB>path` per line, at
-//! `$BEND_SKILLS_INDEX`, else bise's (`bise_home::Home::skills_index`)). The
-//! file is shared by every REPL, so it is close to, not exactly, what the
-//! agent in focus sees. Picking inserts `$name ` in the text; the model
-//! reads the mention (nothing loads the skill on the client side).
+//! The list is the TUI's own scan of the skill folders the agents read
+//! (runtime/skills.bend: the workspace's `.agents/skills`, the loaded
+//! plugins' skills, bise's `prompts/skills`, `~/.agents/skills`,
+//! `~/.vibe/skills`; first name kept), rebuilt when a SKILL.md comes,
+//! goes or changes ([`index`]). Picking inserts `$name ` in the text; the
+//! model reads the mention (nothing loads the skill on the client side).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Skill {
@@ -18,7 +18,8 @@ pub(crate) struct Skill {
 }
 
 /// The index lines, first occurrence of a name kept (the scan visits
-/// several skill folders), in file order.
+/// several skill folders), in file order (the tests' own index).
+#[cfg(test)]
 pub(crate) fn parse_index(text: &str) -> Vec<Skill> {
     let mut out: Vec<Skill> = Vec::new();
     for line in text.lines() {
@@ -49,11 +50,104 @@ fn short(desc: &str) -> String {
     }
 }
 
-fn index_path() -> Option<PathBuf> {
-    Some(bise_home::Home::from_env().skills_index())
+/// The skill folders of `workspace`, in the agents' order (runtime/
+/// skills.bend: the session's index, then the shared one): the
+/// workspace's `.agents/skills`, (then the loaded plugins' skills, `scan`)
+/// bise's built-in `prompts/skills`, then `~/.agents/skills` and
+/// `~/.vibe/skills`.
+fn skill_dirs(workspace: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![workspace.join(".agents/skills")];
+    dirs.extend(builtin_prompts());
+    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".agents/skills"));
+        dirs.push(home.join(".vibe/skills"));
+    }
+    dirs
 }
 
-type Cache = Option<(PathBuf, Option<SystemTime>, Vec<Skill>)>;
+/// The app root's `prompts/skills` (main's built-in skills, bise-demo).
+fn builtin_prompts() -> Option<PathBuf> {
+    let root = bend_plugins::resolve::builtin_root()?;
+    Some(root.parent()?.join("prompts/skills")).filter(|p| p.is_dir())
+}
+
+/// A SKILL.md's `name:` and `description:` lines, as the scan reads them
+/// (the first of each, tabs, CRs and quotes dropped, both non-empty).
+pub(crate) fn parse_skill(text: &str) -> Option<Skill> {
+    let field = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key))
+            .map(|v| v.trim_start().chars().filter(|c| !matches!(c, '\t' | '\r' | '"')).collect::<String>())
+            .filter(|v| !v.is_empty())
+    };
+    let name = field("name:")?;
+    let desc = field("description:")?;
+    (!name.contains(char::is_whitespace)).then(|| Skill { name, desc: short(desc.trim()) })
+}
+
+/// Stats only: each folder's `<skill>/SKILL.md` with its size and mtime,
+/// and the plugins' fingerprint (a plugin enabled, added or edited).
+fn fingerprint(workspace: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bend_plugins::resolve::fingerprint(&bend_plugins::resolve::Roots::standard(Some(workspace))).hash(&mut h);
+    for d in skill_dirs(workspace) {
+        d.hash(&mut h);
+        for f in skill_files(&d) {
+            let Ok(m) = std::fs::metadata(&f) else { continue };
+            f.hash(&mut h);
+            m.len().hash(&mut h);
+            m.modified().ok().hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+fn skill_files(dir: &Path) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path().join("SKILL.md"))
+        .filter(|f| f.is_file())
+        .collect();
+    v.sort();
+    v
+}
+
+/// Every skill of `workspace`'s folders, read now, first name kept.
+fn scan(workspace: &Path) -> Vec<Skill> {
+    let mut out: Vec<Skill> = Vec::new();
+    let mut push = |s: Skill| {
+        if !out.iter().any(|o| o.name == s.name) {
+            out.push(s);
+        }
+    };
+    let dirs = skill_dirs(workspace);
+    for f in skill_files(&dirs[0]) {
+        if let Some(s) = std::fs::read_to_string(&f).ok().as_deref().and_then(parse_skill) {
+            push(s);
+        }
+    }
+    let res = bend_plugins::resolve::resolve(&bend_plugins::resolve::Roots::standard(Some(workspace)));
+    for p in res.loaded() {
+        for s in &p.skills {
+            push(Skill { name: s.name.clone(), desc: short(s.description.trim()) });
+        }
+    }
+    for d in &dirs[1..] {
+        for f in skill_files(d) {
+            if let Some(s) = std::fs::read_to_string(&f).ok().as_deref().and_then(parse_skill) {
+                push(s);
+            }
+        }
+    }
+    out
+}
+
+/// (workspace, last stat check, fingerprint, skills)
+type Cache = Option<(PathBuf, Instant, u64, Vec<Skill>)>;
 static CACHE: Mutex<Cache> = Mutex::new(None);
 
 #[cfg(test)]
@@ -63,26 +157,32 @@ thread_local! {
     pub(crate) static TEST_INDEX: std::cell::RefCell<Option<Vec<Skill>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// The skills of the index, re-read when the file changes.
-pub(crate) fn index() -> Vec<Skill> {
+/// The skills of `workspace`'s skill folders and plugins, what its
+/// agents list (no index file: the shared one the REPLs write holds only
+/// the user folders, and only as of the last REPL start). Rebuilt when
+/// the folders' stats move (a SKILL.md added, edited or removed), checked
+/// when the `$` popup asks after a second without asking (it asks at
+/// every frame while open): no timer, no watcher.
+pub(crate) fn index(workspace: &Path) -> Vec<Skill> {
     #[cfg(test)]
     if let Some(list) = TEST_INDEX.with(|t| t.borrow().clone()) {
         return list;
     }
-    let Some(path) = index_path() else {
-        return Vec::new();
-    };
-    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((p, t, list)) = cache.as_ref() {
-        if *p == path && *t == mtime {
+    if let Some((w, t, _, list)) = cache.as_ref() {
+        if w == workspace && t.elapsed() < Duration::from_secs(1) {
             return list.clone();
         }
     }
-    let list = std::fs::read_to_string(&path)
-        .map(|t| parse_index(&t))
-        .unwrap_or_default();
-    *cache = Some((path, mtime, list.clone()));
+    let fp = fingerprint(workspace);
+    if let Some((w, t, f, list)) = cache.as_mut() {
+        if w == workspace && *f == fp {
+            *t = Instant::now();
+            return list.clone();
+        }
+    }
+    let list = scan(workspace);
+    *cache = Some((workspace.to_path_buf(), Instant::now(), fp, list.clone()));
     list
 }
 
@@ -157,6 +257,35 @@ mcp-builder\tGuide for MCP servers\t/a/m/SKILL.md
 
     fn names(v: Vec<&Skill>) -> Vec<&str> {
         v.into_iter().map(|s| s.name.as_str()).collect()
+    }
+
+    /// The workspace's skills: a SKILL.md added shows, edited shows its
+    /// new text, removed goes; the stats move each time and stay put
+    /// while nothing changes.
+    #[test]
+    fn the_scan_follows_the_workspace_skills() {
+        let ws = std::env::temp_dir().join(format!("tui-skills-scan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ws);
+        let dir = ws.join(".agents/skills/gamma");
+        std::fs::create_dir_all(&dir).unwrap();
+        let find = |ws: &Path| scan(ws).into_iter().find(|s| s.name == "gamma");
+        let empty = fingerprint(&ws);
+        assert_eq!(find(&ws), None);
+        std::fs::write(dir.join("SKILL.md"), "---\nname: gamma\ndescription: \"First\" text\n---\nbody\n").unwrap();
+        let added = fingerprint(&ws);
+        assert_ne!(added, empty);
+        assert_eq!(fingerprint(&ws), added);
+        assert_eq!(find(&ws).map(|s| s.desc), Some("First text".into()));
+        std::fs::write(dir.join("SKILL.md"), "---\nname: gamma\ndescription: Second, longer\n---\n").unwrap();
+        assert_ne!(fingerprint(&ws), added);
+        assert_eq!(find(&ws).map(|s| s.desc), Some("Second, longer".into()));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(fingerprint(&ws), empty);
+        assert_eq!(find(&ws), None);
+        // no description, or a name with a space: not a skill
+        assert_eq!(parse_skill("name: a\n"), None);
+        assert_eq!(parse_skill("name: a b\ndescription: d\n"), None);
+        let _ = std::fs::remove_dir_all(&ws);
     }
 
     #[test]

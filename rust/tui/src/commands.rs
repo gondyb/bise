@@ -614,7 +614,10 @@ pub(crate) fn skill_items(app: &App) -> Vec<PopItem> {
     let Some((start, q)) = skills::token(&app.ed.text, app.ed.cursor) else {
         return Vec::new();
     };
-    let all = skills::index();
+    let ws = crate::sb::workspace(app)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let all = skills::index(&ws);
     skills::filter(&all, &q)
         .into_iter()
         .map(|s| {

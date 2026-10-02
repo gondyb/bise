@@ -231,13 +231,15 @@ struct Shell {
     /// step, `bise login`) relaunches it at its next idle, same session
     /// (BISE-266).
     spawn_keys: BTreeMap<String, u64>,
-    /// The plugins each live REPL was spawned with (its workspace, and
-    /// `bend_plugins::resolve::fingerprint` of its roots, by agent dir): a
-    /// plugin installed, removed, enabled or edited since relaunches it at
-    /// its next idle, same session, so it gets the new tools and skills.
-    /// Never the TUI: only the REPL restarts (the user: a recording or a
-    /// draft in progress must survive).
-    spawn_plugins: BTreeMap<String, (PathBuf, u64)>,
+    /// The plugins and skills each live REPL was spawned with (its
+    /// workspace, whether it is main, and the fingerprints of its plugin
+    /// and skill roots, by agent dir): a plugin installed, removed, enabled or
+    /// edited since, or a SKILL.md added, edited or removed in a skill
+    /// folder its prompt reads, relaunches it at its next idle, same
+    /// session, so it gets the new tools and skills. Never the TUI: only
+    /// the REPL restarts (the user: a recording or a draft in progress
+    /// must survive).
+    spawn_plugins: BTreeMap<String, PromptInputs>,
     /// The last plugins check (every 2 s on the tick).
     plugins_checked: Option<std::time::Instant>,
     /// The small model failed and agent_model answered: role lines use
@@ -824,6 +826,7 @@ impl Shell {
                 }
             }
             Effect::Say { agent, text } => {
+                self.skills_before_turn(&agent);
                 let line = format!("say {}\n", wire_escape(&text));
                 if !self.repl_write(&agent, &line) {
                     log_line(
@@ -1166,32 +1169,78 @@ impl Shell {
         self.switch_idle_repls();
     }
 
-    /// The plugins of a live REPL changed since it was spawned (design:
-    /// docs/plugins.md "Reload on change"): it relaunches at its next idle,
-    /// same session and port, like a key change; a busy one finishes its
-    /// turn first. At most every 2 s unless `now`.
+    /// The plugins or skills of a live REPL changed since it was spawned
+    /// (design: docs/plugins.md "Reload on change"): it relaunches at its
+    /// next idle, same session and port, like a key change; a busy one
+    /// finishes its turn first. On the tick (`now` false, at most every
+    /// 2 s) only the plugins are compared; when an agent goes idle (`now`)
+    /// the skill folders too (no timer for them: they are checked again
+    /// right before a turn, `skills_before_turn`).
     fn plugins_changed(&mut self, now: bool) {
         if !now && self.plugins_checked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
             return;
         }
         self.plugins_checked = Some(std::time::Instant::now());
-        let mut by_ws: BTreeMap<PathBuf, u64> = BTreeMap::new();
+        let mut plugins_by_ws: BTreeMap<PathBuf, u64> = BTreeMap::new();
+        let mut skills_by_ws: BTreeMap<(PathBuf, bool), u64> = BTreeMap::new();
         let mut stale = Vec::new();
-        for (d, (ws, h)) in &self.spawn_plugins {
+        for (d, fp) in &self.spawn_plugins {
             if !self.repls.contains_key(d) || self.switching.contains_key(d) || self.reload_repls.contains(d) {
                 continue;
             }
-            let cur = *by_ws.entry(ws.clone()).or_insert_with(|| plugins_fingerprint(ws));
-            if cur != *h {
+            let plugins = *plugins_by_ws.entry(fp.ws.clone()).or_insert_with(|| plugins_fingerprint(&fp.ws));
+            let skills_moved = now && {
+                let cur = *skills_by_ws
+                    .entry((fp.ws.clone(), fp.main))
+                    .or_insert_with(|| skills_fingerprint(&skill_roots(&fp.ws, &self.opts.app_root, fp.main)));
+                cur != fp.skills
+            };
+            if plugins != fp.plugins || skills_moved {
                 stale.push(d.clone());
             }
         }
         for d in stale {
-            log_line(&self.opts.paths, &format!("plugins changed: the REPL of {} relaunches at its next idle", d));
+            log_line(
+                &self.opts.paths,
+                &format!("plugins or skills changed: the REPL of {} relaunches at its next idle", d),
+            );
             self.reload_repls.insert(d);
         }
         if !self.reload_repls.is_empty() {
             self.switch_idle_repls();
+        }
+    }
+
+    /// A turn is about to start on `agent`'s idle REPL (a `say`): when a
+    /// skill folder its prompt reads moved since its spawn (a SKILL.md
+    /// added, edited or removed while it sat idle), it relaunches first,
+    /// same session, and the `say` waits in the switch queue for the new
+    /// REPL, so this very turn has the fresh skills. Stats only, once per
+    /// turn: no timer.
+    fn skills_before_turn(&mut self, agent: &str) {
+        let Some(dir) = self.dir_of(agent) else {
+            return;
+        };
+        if self.switching.contains_key(&dir) {
+            return;
+        }
+        let Some(fp) = self.spawn_plugins.get(&dir) else {
+            return;
+        };
+        let cur = skills_fingerprint(&skill_roots(&fp.ws, &self.opts.app_root, fp.main));
+        if cur == fp.skills && !self.reload_repls.contains(&dir) {
+            return;
+        }
+        let Some(r) = self.repls.get_mut(&dir) else {
+            return;
+        };
+        if r.stream.write_all(b"reload\n").is_ok() {
+            self.reload_repls.remove(&dir);
+            log_line(
+                &self.opts.paths,
+                &format!("plugins or skills changed: the REPL of {} relaunches before its turn", dir),
+            );
+            self.switching.insert(dir, Vec::new());
         }
     }
 
@@ -1369,8 +1418,14 @@ impl Shell {
         let keys = self.opts.spawn_env.map(|f| f()).unwrap_or_default();
         self.spawn_keys.insert(dir.clone(), hash_keys(&keys));
         let ws = PathBuf::from(&a.ws.path);
-        let fp = plugins_fingerprint(&ws);
-        self.spawn_plugins.insert(dir.clone(), (ws, fp));
+        let spawned = PromptInputs {
+            plugins: plugins_fingerprint(&ws),
+            skills: skills_fingerprint(&skill_roots(&ws, &self.opts.app_root, a.is_main)),
+            ws,
+            main: a.is_main,
+        };
+        let fp = spawned.combined();
+        self.spawn_plugins.insert(dir.clone(), spawned);
         for (k, v) in keys {
             match v {
                 Some(v) => cmd.env(k, v),
@@ -2459,8 +2514,70 @@ fn prompt_is_stale(adir: &Path, fp: u64) -> bool {
     std::fs::read_to_string(adir.join(PROMPT_PLUGINS_FILE)).map(|s| s.trim() != fp.to_string()).unwrap_or(true)
 }
 
+/// What a live REPL's prompt was built from: its workspace, whether it is
+/// main, the plugins fingerprint of its roots and the skills fingerprint
+/// of the skill folders its startup scan reads.
+struct PromptInputs {
+    ws: PathBuf,
+    main: bool,
+    plugins: u64,
+    skills: u64,
+}
+
+impl PromptInputs {
+    /// The one number kept in `<agent dir>/prompt-plugins.fp`.
+    fn combined(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.plugins.hash(&mut h);
+        self.skills.hash(&mut h);
+        h.finish()
+    }
+}
+
 fn plugins_fingerprint(ws: &Path) -> u64 {
     bend_plugins::resolve::fingerprint(&bend_plugins::resolve::Roots::standard(Some(ws)))
+}
+
+/// The skill folders a REPL's startup scan reads (runtime/skills.bend
+/// `scan_script`): `~/.agents/skills`, `~/.vibe/skills`,
+/// `<ws>/.agents/skills` and, for main, the app root's `prompts/skills`
+/// (the plugins' skills are in the plugins fingerprint).
+fn skill_roots(ws: &Path, app_root: &Path, is_main: bool) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+        let home = PathBuf::from(home);
+        roots.push(home.join(".agents/skills"));
+        roots.push(home.join(".vibe/skills"));
+    }
+    roots.push(ws.join(".agents/skills"));
+    if is_main {
+        roots.push(app_root.join("prompts/skills"));
+    }
+    roots
+}
+
+/// Each root, then each `<root>/<skill>/SKILL.md` (sorted) with its size
+/// and mtime; a missing root or file hashes as absent.
+fn skills_fingerprint(roots: &[PathBuf]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for root in roots {
+        root.hash(&mut h);
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(root).into_iter().flatten().flatten().map(|e| e.path()).collect();
+        dirs.sort();
+        for d in dirs {
+            let Ok(m) = std::fs::metadata(d.join("SKILL.md")) else { continue };
+            d.hash(&mut h);
+            m.len().hash(&mut h);
+            m.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .hash(&mut h);
+        }
+    }
+    h.finish()
 }
 
 fn hash_keys(keys: &[(String, Option<String>)]) -> u64 {
@@ -2475,6 +2592,34 @@ mod tests {
     use super::*;
 
     /// `bin/sb` of an older hub (a script) becomes a link to the exe, in
+    /// A SKILL.md added, edited or removed in a root moves the skills
+    /// fingerprint; nothing changing, or a folder without SKILL.md, does not.
+    #[test]
+    fn the_skills_fingerprint_moves_when_a_skill_comes_goes_or_changes() {
+        let d = std::env::temp_dir().join(format!("sb-skills-fp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let roots = vec![d.join("user"), d.join("ws/.agents/skills")];
+        let empty = skills_fingerprint(&roots);
+        std::fs::create_dir_all(d.join("ws/.agents/skills/notes")).unwrap();
+        assert_eq!(skills_fingerprint(&roots), empty, "a folder without SKILL.md is no skill");
+        let f = d.join("ws/.agents/skills/a/SKILL.md");
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, "---\nname: a\ndescription: one\n---\n").unwrap();
+        let added = skills_fingerprint(&roots);
+        assert_ne!(added, empty);
+        assert_eq!(skills_fingerprint(&roots), added, "stable while nothing changes");
+        std::fs::write(&f, "---\nname: a\ndescription: two longer\n---\n").unwrap();
+        let edited = skills_fingerprint(&roots);
+        assert_ne!(edited, added);
+        std::fs::remove_dir_all(f.parent().unwrap()).unwrap();
+        assert_eq!(skills_fingerprint(&roots), empty);
+        // main reads the app root's prompts/skills too, a task does not
+        let ws = d.join("ws");
+        assert!(skill_roots(&ws, &d, true).contains(&d.join("prompts/skills")));
+        assert!(!skill_roots(&ws, &d, false).contains(&d.join("prompts/skills")));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     /// one rename (no temp file left); only a link is dropped for an
     /// older version's hub.
     #[test]

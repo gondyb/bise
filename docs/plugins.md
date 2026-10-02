@@ -225,6 +225,27 @@ Only REPLs restart: the TUI and the hub keep running. Test:
 `tests/plugins_reload_e2e.py` (install → relaunch at idle, the
 conversation kept, the plugin loaded; nothing changes → no relaunch; a
 disable → a relaunch).
+
+Skills follow the same path, with no timer. The hub also keeps, per live
+REPL, a fingerprint of the skill folders its startup scan reads
+(runtime/skills.bend: `~/.agents/skills`, `~/.vibe/skills`,
+`<workspace>/.agents/skills`, for main the app root's `prompts/skills`;
+each `<skill>/SKILL.md` path with its size and mtime, stats only). It
+compares it when an agent goes idle and right before a turn starts (the
+`say` of an idle agent, `skills_before_turn`): a SKILL.md added, edited
+or removed relaunches the REPL first, same session, and the `say` waits
+in the switch queue, so the turn right after the change already lists
+the new skill. `prompt-plugins.fp` holds both fingerprints, so the
+restored session takes a fresh prompt. The workspace is the agent's
+`BEND_WORKDIR` (its hub workspace): a task working in a `gate.sh new`
+worktree still reads the shared folder's `.agents/skills`, like its
+plugins and AGENTS.md. The TUI's `$` popup scans the same folders
+itself (and the loaded plugins' skills), rebuilt when their stats move,
+checked when the popup asks after a second without asking
+(`rust/tui/src/skills.rs`). Tests: `tests/skills_reload_e2e.py` (no
+change → no relaunch; add, edit, remove → that turn's prompt has it),
+`tests/tui_skills_reload_tmux.py` (`$` shows an added skill, an edited
+description, not a removed one).
 - `/plugins` in the TUI prints the workspace's static listing (the
   single-agent TUI, gone with BISE-113, also showed its session's
   `D/report.txt`).

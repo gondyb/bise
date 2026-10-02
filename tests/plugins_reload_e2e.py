@@ -49,7 +49,7 @@ def main():
         shutil.copytree(os.path.join(e2e.ROOT, "rust/plugins/tests/fixtures/hello-plugin"),
                         os.path.join(user, "hello-plugin"))
         log = os.path.join(E.state, "hub.log")
-        c.wait(lambda: "plugins changed: the REPL of main relaunches" in open(log).read(), 30,
+        c.wait(lambda: "plugins or skills changed: the REPL of main relaunches" in open(log).read(), 30,
                "the hub sees the new plugin")
         c.wait(lambda: repl_pid(E) not in (None, before), 60, "main's REPL relaunched")
         c.wait_idle("main")
