@@ -322,6 +322,9 @@ pub struct VoiceMode {
     wave_at: Instant,
     /// the agent's work this turn, minified for the pane's right side
     work: Vec<super::Work>,
+    /// your last turn sent, as transcribed (the pane shows it above the
+    /// answer until you talk again)
+    question: Option<String>,
     /// your voice may cut the agent off on speakers (Ports::cut_in_by_voice)
     cut_in_by_voice: bool,
     /// what the agent said since your last turn (the echo check) and
@@ -425,6 +428,7 @@ impl VoiceMode {
             agent_wave: VecDeque::new(),
             wave_at: now,
             work: Vec::new(),
+            question: None,
         };
         vm.start_listener();
         Ok(vm)
@@ -986,6 +990,7 @@ impl VoiceMode {
             return;
         }
         self.turns += 1;
+        self.question = Some(text.clone());
         self.acts.push(Act::Send { agent: self.agent.clone(), text: text.clone() });
         self.after_send();
     }
@@ -1107,6 +1112,7 @@ impl VoiceMode {
 
     pub fn view(&self, now: Instant) -> PaneView {
         let phase = self.phase(now);
+        let question = self.question.clone().filter(|_| !self.you_talk(&phase));
         let (who, words) = if self.captions_you || self.shown_speech().is_none() {
             let mut w: Vec<(String, WordState)> =
                 self.heard.split_whitespace().map(|x| (x.to_string(), WordState::Heard)).collect();
@@ -1135,7 +1141,17 @@ impl VoiceMode {
             heard_answer: self.heard_answer.as_ref().map(|(l, _)| l.clone()),
             work: self.work.clone(),
             kiss_ms: self.said_whole_at.map(|t| now.saturating_duration_since(t).as_millis() as u64),
+            question,
         }
+    }
+
+    /// You talk again (your voice, a cut-in, the floor held, words not
+    /// sent yet): the pane is yours, the last question steps aside.
+    fn you_talk(&self, phase: &Phase) -> bool {
+        self.spoke
+            || self.holding
+            || !self.heard.trim().is_empty()
+            || matches!(phase, Phase::Hearing | Phase::AboutToAnswer { .. } | Phase::Holding | Phase::CutIn)
     }
 
     /// The agent's message being said (or last said), lit in the thread.

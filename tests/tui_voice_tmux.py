@@ -3,7 +3,8 @@ provider, with no mic, no sound and no network (BISE_VOICE_FAKE: a
 recorded sentence plays as the mic, the listener hears a scripted line,
 the voice is a silent tone on a device-less speaker): ctrl+r twice opens
 voice mode, the sentence then the silence end the turn, main answers,
-its answer is in the thread, esc ends voice mode with its line.
+its answer is in the thread, the pane keeps your last question above
+it (voice-lastq), esc ends voice mode with its line.
 
 python3 -u tests/tui_voice_tmux.py
 """
@@ -12,7 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_tmux import tui_session, run, MAIN_IDLE  # noqa: E402
+from tui_tmux import tui_session, run, pane_rows, MAIN_IDLE  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WAV = os.path.join(HERE, "..", "rust", "tui", "src", "voicemode", "testdata", "sentence.wav")
@@ -30,6 +31,12 @@ def main():
         # the recorded sentence (~3 s), then silence: the turn goes
         sc = t.wait("ack: voice-marker check the build", timeout=30)
         print("---- the turn was sent, main answered ----\n" + sc)
+        # voice-lastq: the pane keeps your last question above the answer
+        sc = t.wait_re(r"│ +\S.* {3}voice-marker check the build")
+        rows = pane_rows(sc.splitlines())
+        q = next(i for i, r in enumerate(rows) if r.endswith("voice-marker check the build"))
+        assert rows[q - 1].endswith("you"), rows
+        assert rows[q + 3].endswith(":* main"), rows
         # esc: voice mode ends, its line in the thread
         time.sleep(1.0)
         t.keys("Escape")

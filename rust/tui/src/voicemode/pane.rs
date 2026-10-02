@@ -121,6 +121,10 @@ fn draw_big(buf: &mut Buffer, area: Rect, v: &PaneView, t_ms: u64, form: Form) {
     }
     let cx = area.x + CAPS_X;
     let cw = (area.right().saturating_sub(cx + 1) as usize).min(CAPTION_W);
+    if let Some(q) = &v.question {
+        draw_asked(buf, area, top, q, v, t_ms, form);
+        return;
+    }
     put(buf, cx, top + 1, area.right(), &speaker(v, form));
     // the work: its own column right of the captions when the pane has
     // room for it (the captions' place stays blank while it works: the
@@ -151,6 +155,83 @@ fn draw_big(buf: &mut Buffer, area: Rect, v: &PaneView, t_ms: u64, form: Form) {
             put(buf, wx, first + i as u16, area.right(), &l.spans);
         }
     }
+}
+
+// ---- your last question above the answer (voice-lastq, the user) ----
+
+/// Your question's lines (the rest is cut, `…` at the end).
+pub const QUESTION_LINES: usize = 2;
+/// Under the question: a blank row, then the agent's name, then its words.
+const ANSWER_ROW: u16 = QUESTION_LINES as u16 + 2;
+
+/// The captions' column once your turn is sent, until you talk again
+/// (designer): row 0 `you` (accent), rows 1-2 your question dim (settled:
+/// the answer is the live thing), a blank row always (the answer's top
+/// stays put between turns), row 4 `:* main`, rows 5-8 its words or, at
+/// 95/80 while it works, its work; the work column at 150 as before.
+fn draw_asked(buf: &mut Buffer, area: Rect, top: u16, q: &str, v: &PaneView, t_ms: u64, form: Form) {
+    let cx = area.x + CAPS_X;
+    let cw = (area.right().saturating_sub(cx + 1) as usize).min(CAPTION_W);
+    let you = fg(theme::accent(), form);
+    let you = if form.no_color { you.add_modifier(Modifier::BOLD) } else { you };
+    put(buf, cx, top, area.right(), &[Span::styled("you", you)]);
+    for (i, l) in question_lines(q, cw, QUESTION_LINES).into_iter().enumerate() {
+        put(buf, cx, top + 1 + i as u16, area.right(), &[Span::styled(l, fg(theme::dim(), form))]);
+    }
+    let agent = match &v.who {
+        Who::Agent(a) => a.clone(),
+        Who::You => v.agent.clone(),
+    };
+    put(buf, cx, top + ANSWER_ROW, area.right(), &speaker(&PaneView { who: Who::Agent(agent), ..v.clone() }, form));
+    let n = (kiss::H - ANSWER_ROW - 1) as usize;
+    let wx = cx + CAPTION_W as u16 + WORK_GAP;
+    let column = work_shows(v) && area.right() > wx + WORK_MIN_W;
+    let rows: Vec<Line<'static>> = match (&v.phase, &v.who) {
+        (Phase::Working, _) if column => Vec::new(),
+        (Phase::Working, _) if work_shows(v) => work_lines(&v.work, cw, n, t_ms, form),
+        (_, Who::Agent(_)) => captions(&v.words, cw, form),
+        (_, Who::You) => Vec::new(),
+    };
+    let skip = rows.len().saturating_sub(n);
+    for (i, l) in rows.into_iter().skip(skip).enumerate() {
+        put(buf, cx, top + ANSWER_ROW + 1 + i as u16, area.right(), &l.spans);
+    }
+    put(buf, cx, top + kiss::H, area.right(), &status(v, t_ms, form, STATUS_WAVE));
+    if column {
+        let ww = (area.right() - wx - 1).min(WORK_W) as usize;
+        let rows = work_lines(&v.work, ww, kiss::H as usize, t_ms, form);
+        let first = top + kiss::H + 1 - rows.len() as u16;
+        for (i, l) in rows.into_iter().enumerate() {
+            put(buf, wx, first + i as u16, area.right(), &l.spans);
+        }
+    }
+}
+
+/// `q` wrapped at `w` cells, at most `n` lines; cut: the last line ends
+/// with `…` (the start is what you recognise).
+pub fn question_lines(q: &str, w: usize, n: usize) -> Vec<String> {
+    let w = w.max(2);
+    let mut lines: Vec<String> = vec![String::new()];
+    for word in q.split_whitespace() {
+        let word = if word.width() > w { cut(word, w) } else { word.to_string() };
+        let line = lines.last_mut().expect("one line at least");
+        if line.is_empty() {
+            line.push_str(&word);
+        } else if line.width() + 1 + word.width() <= w {
+            line.push(' ');
+            line.push_str(&word);
+        } else {
+            lines.push(word);
+        }
+    }
+    lines.retain(|l| !l.is_empty());
+    if lines.len() > n {
+        lines.truncate(n);
+        if let Some(last) = lines.last_mut() {
+            *last = if last.width() < w { format!("{last}…") } else { format!("{}…", cut(last, w - 1)) };
+        }
+    }
+    lines
 }
 
 // ---- the work, minified (round 2, the user: the mocks' D history) ----

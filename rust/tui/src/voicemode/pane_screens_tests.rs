@@ -165,6 +165,7 @@ fn sample(phase: Phase) -> PaneView {
         heard_answer: None,
         work: sample_work(),
         kiss_ms: None,
+        question: None,
     }
 }
 
@@ -253,6 +254,38 @@ fn voice_mode_captures() {
                 std::fs::write(dir.join(format!("{name}.txt")), rows.join("\n") + "\n").unwrap();
                 std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
                 index.push_str(&format!("{name}\n"));
+            }
+        }
+        // voice-lastq: your last question above the answer (40 and 30 rows)
+        let long = "can you check why the signup is slow on mobile and whether the hero images are the cause";
+        let asked: Vec<(&str, Phase, &str)> = vec![
+            ("working", Phase::Working, "check the build and tell me what failed"),
+            ("speaking", Phase::Speaking, "check the build and tell me what failed"),
+            ("after", Phase::Listening, "check the build and tell me what failed"),
+            ("long", Phase::Speaking, long),
+        ];
+        for (aname, p, q) in &asked {
+            for (w, h) in [(148u16, 19u16), (93, 19), (78, 19), (148, 14), (93, 14), (78, 14)] {
+                let mut v = sample(if *p == Phase::Listening { Phase::Speaking } else { p.clone() });
+                v.phase = p.clone();
+                v.question = Some(q.to_string());
+                if *p == Phase::Working {
+                    v.who = Who::You;
+                    v.words.clear();
+                }
+                if *p == Phase::Listening {
+                    v.words.iter_mut().for_each(|x| x.1 = WordState::Said);
+                }
+                let area = Rect::new(0, 0, w, h + 1);
+                let mut buf = Buffer::empty(area);
+                draw_in(&mut buf, Rect { height: h, ..area }, &v, 0, form);
+                buf.set_line(0, h, &keys(&v, w), w);
+                let rows: Vec<String> = buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string()).collect();
+                let name = format!("asked-{aname}-{w}x{}-{fname}", h + 1);
+                std::fs::write(dir.join(format!("{name}.txt")), rows.join("\u{a}") + "\u{a}").unwrap();
+                std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
+                index.push_str(&name);
+                index.push('\u{a}');
             }
         }
     }

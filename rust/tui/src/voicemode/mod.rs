@@ -318,6 +318,10 @@ pub struct PaneView {
     /// cut, voice mode not muted); None once you talk or a new speech or
     /// turn starts (voice-kiss: the end-of-turn kiss)
     pub kiss_ms: Option<u64>,
+    /// voice-lastq (the user): your last turn as transcribed, from the
+    /// moment it is sent, shown above the agent's answer until you talk
+    /// again (None while you talk: the captions are your live words)
+    pub question: Option<String>,
 }
 
 /// One line of the agent's work this turn, for the pane's right side.

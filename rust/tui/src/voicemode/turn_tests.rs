@@ -737,3 +737,49 @@ fn a_block_heard_in_the_voice_tail_is_dropped_even_when_pumped_late() {
     r.tick();
     assert!(!r.sent().contains(&"audio".to_string()));
 }
+
+#[test]
+fn the_last_question_shows_from_its_transcript_until_you_talk_again() {
+    let mut r = Rig::new(Route::Headphones);
+    assert_eq!(r.vm.view(r.now()).question, None, "nothing asked yet");
+    r.talk(500);
+    r.hear(" check the build");
+    r.tick();
+    assert_eq!(r.vm.view(r.now()).question, None, "your live words, not a question");
+    r.quiet(1600);
+    assert_eq!(r.vm.view(r.now()).question, None, "about to answer: still yours");
+    r.flushed();
+    assert_eq!(sends(&r.tick()), ["check the build"]);
+    assert_eq!(r.vm.view(r.now()).question.as_deref(), Some("check the build"), "as soon as the transcript is in");
+    r.vm.on_turn("main", true);
+    assert_eq!(r.phase(), Phase::Working);
+    assert_eq!(r.vm.view(r.now()).question.as_deref(), Some("check the build"), "while it works");
+    r.message("It builds.");
+    r.tick();
+    r.synth_all(0, 48_000);
+    r.clock(1, 300);
+    r.tick();
+    let v = r.vm.view(r.now());
+    assert_eq!((v.phase.clone(), v.question.as_deref()), (Phase::Speaking, Some("check the build")), "while it speaks");
+    // you cut in: the pane is yours again
+    r.talk(200);
+    r.hear(" wait");
+    r.talk(300);
+    assert_eq!(r.vm.view(r.now()).question, None, "a cut-in is talking again");
+    r.quiet(1600);
+    r.flushed();
+    r.tick();
+    assert_eq!(r.vm.view(r.now()).question.as_deref(), Some("wait"), "the next turn replaces it");
+}
+
+#[test]
+fn noise_brings_the_last_question_back() {
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" check the build");
+    r.talk(300);
+    assert_eq!(r.vm.view(r.now()).question, None);
+    r.quiet(1600);
+    r.flushed();
+    r.tick();
+    assert_eq!(r.vm.view(r.now()).question.as_deref(), Some("check the build"));
+}

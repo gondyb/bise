@@ -42,6 +42,7 @@ fn view(phase: Phase) -> PaneView {
         heard_answer: None,
         work: Vec::new(),
         kiss_ms: None,
+        question: None,
     }
 }
 
@@ -531,4 +532,103 @@ fn round_5_it_smiles_at_rest_and_blows_a_kiss_when_the_agent_is_done() {
     // thinking keeps the turning *
     let w = view(Phase::Working);
     assert!(face_is(&draw(&w, 3 * kiss::TURN_MS, MOVING), Pose::Think, 3 * kiss::TURN_MS, false));
+}
+
+// ---- your last question above the answer (voice-lastq) ----
+
+#[test]
+fn the_question_wraps_in_two_lines_and_a_longer_one_ends_with_an_ellipsis() {
+    assert_eq!(question_lines("check the build", 28, 2), ["check the build"]);
+    let q = "can you check why the signup is slow on mobile and whether the images are the cause";
+    let l = question_lines(q, 28, 2);
+    assert_eq!(l.len(), 2);
+    assert!(l[0].starts_with("can you check why the"), "the start is kept: {l:?}");
+    assert!(l[1].ends_with('…'), "{l:?}");
+    assert!(l.iter().all(|x| x.width() <= 28), "{l:?}");
+    // a full last line: the ellipsis takes its last cell
+    let l = question_lines("aaaaaaaaaa bbbbbbbbbb cccccccccc", 10, 2);
+    assert_eq!(l, ["aaaaaaaaaa", "bbbbbbbbb…"]);
+    assert!(question_lines("   ", 28, 2).is_empty());
+}
+
+fn asked(phase: Phase, q: &str) -> PaneView {
+    let mut v = view(phase.clone());
+    v.question = Some(q.into());
+    if phase == Phase::Working {
+        v.who = Who::You;
+        v.words.clear();
+    }
+    v
+}
+
+#[test]
+fn the_question_sits_above_the_answer_with_a_blank_row_between() {
+    for w in [148u16, 93, 78] {
+        for h in [19u16, 14] {
+            let v = asked(Phase::Speaking, "check the build");
+            let (rows, buf) = draw_text(&v, w, h, 0, STILL);
+            let (yy, xy) = find(&rows, "you").unwrap_or_else(|| panic!("{w}x{h}: {rows:#?}"));
+            let (yq, xq) = find(&rows, "check the build").unwrap();
+            let (ym, xm) = find(&rows, ":* main").unwrap();
+            let (ya, _) = find(&rows, "on it.").unwrap();
+            assert_eq!((xy, xq, xm), (48, 48, 48), "one column at {w}x{h}");
+            assert_eq!((yq, ym, ya), (yy + 1, yy + 4, yy + 5), "you, the question, a blank row, the answer at {w}x{h}: {rows:#?}");
+            assert!(rows[yy + 2].len() <= 48 || rows[yy + 2][..].trim_end().width() <= 48, "row 2 empty for a 1-line question");
+            assert!(rows[yy + 3].width() <= 48, "the blank row");
+            assert_eq!(buf[(48, yy as u16)].fg, theme::accent(), "'you' in accent");
+            assert_eq!(buf[(48, yq as u16)].fg, theme::dim(), "the question dim");
+            assert!(find(&rows, "hold space to cut in").is_some() || find(&rows, "speaking").is_some(), "the status row stays");
+        }
+    }
+}
+
+#[test]
+fn while_it_works_the_question_stays_and_the_work_goes_under_it_or_in_its_column() {
+    // 150: the work column, the captions' place blank under ':* main'
+    let mut v = asked(Phase::Working, "check the build");
+    v.work = vec![Work { kind: WorkKind::Tool, text: "bash cargo test".into(), state: WorkState::Running }];
+    let (rows, _) = draw_text(&v, 148, 19, 0, STILL);
+    let (yq, _) = find(&rows, "check the build").unwrap();
+    let (yw, xw) = find(&rows, "bash cargo test").unwrap();
+    assert_eq!(xw, 48 + 28 + 4 + 2, "the work column: {rows:#?}");
+    assert!(yw > yq);
+    assert!(find(&rows, "main is on it").is_some());
+    // 95/80: under the question, after ':* main'
+    for w in [93u16, 78] {
+        let (rows, _) = draw_text(&v, w, 19, 0, STILL);
+        let (yq, _) = find(&rows, "check the build").unwrap();
+        let (ym, _) = find(&rows, ":* main").unwrap();
+        let (yw, xw) = find(&rows, "bash cargo test").unwrap();
+        assert_eq!((ym, yw, xw), (yq + 3, yq + 4, 50), "at {w}: {rows:#?}");
+    }
+}
+
+#[test]
+fn a_long_question_is_cut_and_a_long_answer_keeps_its_last_lines() {
+    let mut v = asked(Phase::Speaking, "can you check why the signup is slow on mobile and whether the images are the cause");
+    v.words = words("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree", WordState::Said);
+    let (rows, _) = draw_text(&v, 93, 19, 0, STILL);
+    let (yy, _) = find(&rows, "you").unwrap();
+    assert!(rows[yy + 2].ends_with('…'), "{rows:#?}");
+    assert!(find(&rows, "twentythree").is_some(), "the newest words show");
+    assert!(find(&rows, "one two").is_none(), "the oldest scroll away");
+    // nothing of the answer over the status row
+    let (ys, _) = find(&rows, "hold space to cut in").or_else(|| find(&rows, "speaking")).unwrap();
+    assert!(rows[ys - 1].contains("twentythree") || rows[ys - 2].contains("twentythree"), "{rows:#?}");
+}
+
+#[test]
+fn no_question_today_s_pane_and_none_in_the_lanes() {
+    let (with, _) = draw_text(&asked(Phase::Speaking, "check the build"), 93, LANES_H, 0, STILL);
+    assert!(find(&with, "check the build").is_none(), "the lanes are live audio only");
+    let (before, _) = draw_text(&view(Phase::Speaking), 93, 19, 0, STILL);
+    assert!(find(&before, ":* main").is_some_and(|(_, x)| x == 48));
+}
+
+#[test]
+fn no_color_the_label_bold_the_question_plain() {
+    let (rows, buf) = draw_text(&asked(Phase::Speaking, "check the build"), 93, 19, 0, NO_COLOR);
+    let (yy, _) = find(&rows, "you").unwrap();
+    assert!(buf[(48, yy as u16)].modifier.contains(Modifier::BOLD));
+    assert!(!buf[(48, yy as u16 + 1)].modifier.contains(Modifier::DIM));
 }
