@@ -120,8 +120,12 @@ when a new review teaches you something.
 
 - **Code, not a timeline editor:** one HTML page per film; each shot is a pure function
   `render(localTime, duration) -> html`; a film is a sequence of shots (`seq([[dur, shot], …])`). This makes
-  every frame reproducible, lets you freeze any time with `#<film>=<seconds>`, and later renders to MP4
-  (Remotion or a headless frame dump).
+  every frame reproducible, lets you freeze any time with `#<film>=<seconds>`, and renders to MP4 by a
+  headless frame dump. What works: the page in a capture mode (one frame-sized viewport, `renderAt(id, t)`), Puppeteer
+  with the system Chrome screenshots every frame at 2x, and ffmpeg scales down with lanczos and encodes H.264 High,
+  yuv420p, CRF 16, `-tune animation`, faststart. That gives crisp text at X's sizes (1080×1080 for 1:1, about 2 MB
+  for 11 s) at ~7 frames a second. Give Gabriel a download button on the player, not a command.
+  Anything time-based must come from the film time, never the wall clock (e.g. a line boil), or frames differ.
 - **One render, every format:** 1:1 (launch), 4:5, 9:16, 16:9 via `window.FRAME`, with sizes in units of
   the short side. Check at least 1:1 and 9:16.
 - **A player for review:** play/pause, ±1 frame (30 fps), a full-width timeline with scene marks, keys
