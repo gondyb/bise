@@ -215,14 +215,18 @@ fn work_line(x: &Work, w: usize, t_ms: u64, form: Form) -> Line<'static> {
     Line::from(s)
 }
 
-/// The kiss's pose and color for the phase.
+/// The kiss's pose and color for the phase. Round 5 (the user): it
+/// smiles at rest and blows a kiss for [`kiss::KISS_MS`] once the agent's
+/// voice ended on its own (`kiss_ms`, set by the turn; you talking,
+/// typing or muting ends it at once: the phase changes).
 fn pose(v: &PaneView) -> (Pose, Color) {
+    let kiss = v.kiss_ms.filter(|&ms| ms < kiss::KISS_MS).map(Pose::Kiss);
     match v.phase {
-        Phase::Listening | Phase::Hearing | Phase::AboutToAnswer { .. } | Phase::Holding => (Pose::Listen, theme::accent()),
+        Phase::Listening => (kiss.unwrap_or(Pose::Listen), theme::accent()),
+        Phase::Hearing | Phase::AboutToAnswer { .. } | Phase::Holding | Phase::CutIn => (Pose::Talk, theme::accent()),
         Phase::Working => (Pose::Think, theme::accent()),
         Phase::Speaking => (Pose::Speak, theme::accent()),
-        Phase::CutIn => (Pose::Cut, theme::accent()),
-        Phase::HoldToTalk => (Pose::Rest, theme::accent()),
+        Phase::HoldToTalk => (kiss.unwrap_or(Pose::Rest), theme::accent()),
         Phase::Muted | Phase::Typing | Phase::Failed(_) => (Pose::Rest, theme::faint()),
     }
 }

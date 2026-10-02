@@ -476,3 +476,59 @@ fn the_work_rows_styles() {
         assert!(work_lines(&work(), w, 9, 0, MOVING).iter().all(|l| l.width() <= w), "{w}");
     }
 }
+
+/// The face drawn in the pane is `kiss::frame(pose)`: each of its rows
+/// sits at the kiss's column.
+fn face_is(rows: &[String], pose: Pose, t: u64, still: bool) -> bool {
+    let f = kiss::frame(pose, t, 0.0, still);
+    (0..rows.len()).any(|y0| {
+        f.iter().enumerate().all(|(r, fr)| {
+            // the rows are trimmed at the end
+            rows.get(y0 + r).is_some_and(|row| {
+                row.chars().skip(KISS_X as usize).take(kiss::W as usize).collect::<String>().trim_end() == fr.trim_end()
+            })
+        })
+    })
+}
+
+#[test]
+fn round_5_it_smiles_at_rest_and_blows_a_kiss_when_the_agent_is_done() {
+    let draw = |v: &PaneView, t: u64, form: Form| draw_text(v, 120, height(40), t, form).0;
+    let mut v = view(Phase::Listening);
+    // at rest: the smile, breathing
+    assert!(face_is(&draw(&v, 0, MOVING), Pose::Listen, 0, false));
+    assert!(face_is(&draw(&v, kiss::BREATH_MS, MOVING), Pose::Listen, kiss::BREATH_MS, false));
+    // the agent's voice ended on its own 450 ms ago: the :* and its puff
+    v.kiss_ms = Some(450);
+    let rows = draw(&v, 0, MOVING);
+    assert!(face_is(&rows, Pose::Kiss(450), 0, false), "{rows:#?}");
+    assert!(!face_is(&rows, Pose::Listen, 0, false));
+    // the same on hold to talk (speakers)
+    v.phase = Phase::HoldToTalk;
+    assert!(face_is(&draw(&v, 0, MOVING), Pose::Kiss(450), 0, false));
+    // NO_COLOR: the same shapes
+    v.phase = Phase::Listening;
+    assert!(face_is(&draw(&v, 0, NO_COLOR), Pose::Kiss(450), 0, false));
+    // reduce motion: no kiss, the still smile
+    assert!(face_is(&draw(&v, 0, STILL), Pose::Listen, 0, true));
+    // after KISS_MS: the smile breathes again
+    v.kiss_ms = Some(kiss::KISS_MS);
+    assert!(face_is(&draw(&v, 0, MOVING), Pose::Listen, 0, false));
+    // you start talking during the kiss: the 'you talk' smile at once;
+    // cutting in too (no line any more)
+    v.kiss_ms = Some(200);
+    for p in [Phase::Hearing, Phase::Holding, Phase::AboutToAnswer { fill: 0.4 }, Phase::CutIn] {
+        let mut w = view(p.clone());
+        w.kiss_ms = Some(200);
+        assert!(face_is(&draw(&w, 0, MOVING), Pose::Talk, 0, false), "{p:?}");
+    }
+    // muted or typing: no kiss, the smile still
+    for p in [Phase::Muted, Phase::Typing] {
+        let mut w = view(p.clone());
+        w.kiss_ms = Some(200);
+        assert!(face_is(&draw(&w, 0, MOVING), Pose::Rest, 0, false), "{p:?}");
+    }
+    // thinking keeps the turning *
+    let w = view(Phase::Working);
+    assert!(face_is(&draw(&w, 3 * kiss::TURN_MS, MOVING), Pose::Think, 3 * kiss::TURN_MS, false));
+}

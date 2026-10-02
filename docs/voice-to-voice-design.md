@@ -16,9 +16,12 @@ D's big kiss inside it, the thread above.
   leaves. Header `● voice mode 2:14`; divider `you ⇄ main · voice mode · headphones`; the
   transcript lines `· voice mode · 14:02 …` / `· voice mode ended · 7 min · …`.
 - **The pane:** the composer grows to half the screen (12 rows at 100 × 40). Left: the big
-  kiss, 41 × 9 cells in half blocks (listening: the `*` breathes; thinking: it turns; speaking:
-  the mouth opens with the level and up to 3 arcs `)))` open beside it; cut in: it shuts to a
-  line). Right: who talks (`you` in accent, `:* main`), then the words as they're said
+  kiss, 41 × 9 cells in half blocks (round 5, the user: at rest the face smiles, sideways like
+  the logo, so `:)`, and breathes; you talking or cutting in: the smile held a little rounder;
+  thinking: the `*` comes back and turns; speaking: the mouth opens with the level and up to 3
+  arcs `)))` open beside it; when main's voice ends on its own, a 1 s kiss: the lips press,
+  pucker, the `:*` blows a small `*` up and away, the smile again; the eyes blink every 4.2 s,
+  never while it speaks or kisses; reduced motion: the still smile, no kiss). Right: who talks (`you` in accent, `:* main`), then the words as they're said
   (≤ 28 cells a line, so 80 columns fit), then a status row. The thread stays above.
 - **While main works:** the kiss turns its `*` and the status row says `∿ main is on it`; the
   minified work shows beside it (§0.1, the user brought it back after trying it).
