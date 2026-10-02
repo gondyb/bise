@@ -307,8 +307,10 @@ fn pose(v: &PaneView) -> (Pose, Color) {
         Phase::Hearing | Phase::AboutToAnswer { .. } | Phase::Holding | Phase::CutIn => (Pose::Talk, theme::accent()),
         Phase::Working => (Pose::Think, theme::accent()),
         Phase::Speaking => (Pose::Speak, theme::accent()),
-        Phase::HoldToTalk => (kiss.unwrap_or(Pose::Rest), theme::accent()),
-        Phase::Muted | Phase::Typing | Phase::Failed(_) => (Pose::Rest, theme::faint()),
+        // voice-mute (the user): your mic off is yours, the face is the
+        // agent's: it smiles and kisses in its color
+        Phase::HoldToTalk | Phase::Muted => (kiss.unwrap_or(Pose::Rest), theme::accent()),
+        Phase::Typing | Phase::Failed(_) => (Pose::Rest, theme::faint()),
     }
 }
 
@@ -325,7 +327,7 @@ fn speaker(v: &PaneView, form: Form) -> Vec<Span<'static>> {
     };
     match (&v.phase, &v.who) {
         (Phase::Working, _) => agent(&v.agent),
-        (Phase::Muted, _) => vec![Span::styled("you", fg(theme::faint(), form))],
+        (_, Who::You) if v.muted => vec![Span::styled("you", fg(theme::faint(), form))],
         (_, Who::You) => vec![Span::styled("you", fg(theme::accent(), form))],
         (_, Who::Agent(a)) => agent(a),
     }
@@ -391,6 +393,16 @@ fn status(v: &PaneView, t_ms: u64, form: Form, wave_n: usize) -> Vec<Span<'stati
     if let Some(h) = &v.heard_answer {
         return vec![Span::styled(h.clone(), fg(theme::text(), form))];
     }
+    // voice-mute (designer): the agent's state as usual, then your
+    // ` · ○ muted` faint; alone at rest it is the news: dim
+    if v.muted && v.phase != Phase::Muted {
+        let mut s = match &v.phase {
+            Phase::Speaking => vec![d("speaking")],
+            _ => status(&PaneView { muted: false, ..v.clone() }, t_ms, form, wave_n),
+        };
+        s.push(f(" · ○ muted"));
+        return s;
+    }
     match &v.phase {
         Phase::Listening | Phase::Hearing => {
             vec![blink(t_ms, form), sp(), d("listening"), sp(), wave_span(&you_wave(v), wave_n, theme::accent(), form)]
@@ -408,7 +420,7 @@ fn status(v: &PaneView, t_ms: u64, form: Form, wave_n: usize) -> Vec<Span<'stati
         // the arcs are the kiss's (beside its mouth), not a status
         Phase::Speaking => vec![d(if v.route == Route::Headphones { "speaking" } else { "hold space to cut in" })],
         Phase::CutIn => vec![blink(t_ms, form), sp(), f("you cut in"), sp(), wave_span(&you_wave(v), wave_n, theme::accent(), form)],
-        Phase::Muted => vec![f("○ muted")],
+        Phase::Muted => vec![d("○ muted")],
         Phase::Typing => vec![f("typing: the mic waits")],
         Phase::HoldToTalk => vec![d("hold space to talk")],
         Phase::Failed(line) => vec![Span::styled(line.clone(), fg(theme::error(), form))],
@@ -466,7 +478,10 @@ fn you_lane(v: &PaneView, t_ms: u64, form: Form, n: usize) -> Vec<Span<'static>>
     let d = |s: &str| Span::styled(s.to_string(), fg(theme::dim(), form));
     let f = |s: &str| Span::styled(s.to_string(), dimmed(theme::faint(), form));
     let (name, wave, tail): (Span<'static>, Span<'static>, Vec<Span<'static>>) = match &v.phase {
-        Phase::Muted => (f("you"), wave_span(&[], n, theme::faint(), form), vec![f("○ muted")]),
+        // voice-mute: your lane greys whatever the agent does on its own;
+        // `○ muted` dim at rest (the only news), faint while the agent acts
+        Phase::Muted => (f("you"), wave_span(&[], n, theme::faint(), form), vec![d("○ muted")]),
+        _ if v.muted => (f("you"), wave_span(&[], n, theme::faint(), form), vec![f("○ muted")]),
         Phase::Listening | Phase::Hearing | Phase::Holding => (
             d("you"),
             wave_span(&you_wave(v), n, theme::accent(), form),
@@ -590,6 +605,7 @@ pub fn keys(v: &PaneView, width: u16) -> Line<'static> {
     let wide = width >= 98;
     let mut s = vec![Span::raw(" ")];
     match &v.phase {
+        _ if v.muted => s.extend([k("m"), Span::raw(" "), d("unmute"), gap(), k("esc"), Span::raw(" "), d("leave")]),
         Phase::AboutToAnswer { .. } => {
             s.extend([d("keep talking, or"), gap(), k("space"), Span::raw(" "), d("send now")]);
             if wide {
@@ -619,7 +635,7 @@ pub fn header(v: &PaneView) -> Vec<Span<'static>> {
     let form = Form::now();
     let secs = v.elapsed.as_secs();
     let time = Span::styled(format!("{}:{:02}", secs / 60, secs % 60), fg(theme::dim(), form));
-    if v.phase == Phase::Muted {
+    if v.muted || v.phase == Phase::Muted {
         vec![Span::styled("○ voice mode", dimmed(theme::faint(), form)), Span::raw(" "), time]
     } else {
         let st = fg(theme::accent(), form);
@@ -652,7 +668,7 @@ pub fn divider(v: &PaneView) -> Vec<Span<'static>> {
 /// `NO_COLOR`: bold, then plain at the breath's low; muted: rule.
 fn bar_style(v: &PaneView, t_ms: u64, form: Form) -> Style {
     let breathes = matches!(v.phase, Phase::Listening | Phase::Hearing | Phase::AboutToAnswer { .. } | Phase::CutIn);
-    if matches!(v.phase, Phase::Muted | Phase::Typing) {
+    if v.muted || matches!(v.phase, Phase::Muted | Phase::Typing) {
         return Style::default().fg(theme::rule());
     }
     if !breathes || form.still {

@@ -524,8 +524,8 @@ impl VoiceMode {
 
     /// m: the mic off or on again.
     pub fn toggle_mute(&mut self) {
+        // the kiss plays on: your mic is yours, the face is the agent's
         self.muted = !self.muted;
-        self.said_whole_at = None;
         if self.muted {
             self.reset_turn();
             self.listen(ListenMsg::Clear);
@@ -1071,7 +1071,15 @@ impl VoiceMode {
         if self.typing {
             return Phase::Typing;
         }
+        // voice-mute (the user): your mic is off, not the agent's face:
+        // it still speaks and works (your side greys, PaneView::muted)
         if self.muted {
+            if self.speaking() {
+                return Phase::Speaking;
+            }
+            if self.awaiting && self.turn_running {
+                return Phase::Working;
+            }
             return Phase::Muted;
         }
         if self.cut_at.is_some_and(|t| now.duration_since(t) < CUT_SHOWN) {
@@ -1142,6 +1150,7 @@ impl VoiceMode {
             work: self.work.clone(),
             kiss_ms: self.said_whole_at.map(|t| now.saturating_duration_since(t).as_millis() as u64),
             question,
+            muted: self.muted,
         }
     }
 

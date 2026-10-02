@@ -255,7 +255,8 @@ pub enum Phase {
     Speaking,
     /// you cut in: the mouth shuts to a line, `you cut in`
     CutIn,
-    /// m: the mic is off
+    /// m: the mic is off and the agent neither talks nor works (while
+    /// it does, the phase is Speaking / Working with `PaneView::muted`)
     Muted,
     /// tab: you type, the mic waits
     Typing,
@@ -322,6 +323,10 @@ pub struct PaneView {
     /// moment it is sent, shown above the agent's answer until you talk
     /// again (None while you talk: the captions are your live words)
     pub question: Option<String>,
+    /// voice-mute (the user): your mic is off (m). Only your side greys
+    /// (the bar, `○ muted`, your lane, the header's `○`); the agent's
+    /// face keeps its phase: it speaks, thinks and kisses as usual.
+    pub muted: bool,
 }
 
 /// One line of the agent's work this turn, for the pane's right side.

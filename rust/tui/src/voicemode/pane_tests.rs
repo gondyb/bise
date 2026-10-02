@@ -29,6 +29,7 @@ fn view(phase: Phase) -> PaneView {
         }
     };
     PaneView {
+        muted: phase == Phase::Muted,
         phase,
         agent: "main".into(),
         who,
@@ -523,15 +524,90 @@ fn round_5_it_smiles_at_rest_and_blows_a_kiss_when_the_agent_is_done() {
         w.kiss_ms = Some(200);
         assert!(face_is(&draw(&w, 0, MOVING), Pose::Talk, 0, false), "{p:?}");
     }
-    // muted or typing: no kiss, the smile still
-    for p in [Phase::Muted, Phase::Typing] {
-        let mut w = view(p.clone());
-        w.kiss_ms = Some(200);
-        assert!(face_is(&draw(&w, 0, MOVING), Pose::Rest, 0, false), "{p:?}");
-    }
+    // typing: no kiss, the smile still
+    let mut w = view(Phase::Typing);
+    w.kiss_ms = Some(200);
+    assert!(face_is(&draw(&w, 0, MOVING), Pose::Rest, 0, false));
+    // voice-mute: your mic off, the kiss plays on, then the smile still
+    let mut w = view(Phase::Muted);
+    w.kiss_ms = Some(450);
+    assert!(face_is(&draw(&w, 0, MOVING), Pose::Kiss(450), 0, false));
+    w.kiss_ms = None;
+    assert!(face_is(&draw(&w, 0, MOVING), Pose::Rest, 0, false));
     // thinking keeps the turning *
     let w = view(Phase::Working);
     assert!(face_is(&draw(&w, 3 * kiss::TURN_MS, MOVING), Pose::Think, 3 * kiss::TURN_MS, false));
+}
+
+// ---- voice-mute: your mic off greys only your side ----
+
+/// The kiss's cells (its column, the pane's rows) that are drawn.
+fn kiss_colors(b: &Buffer, h: u16) -> Vec<Color> {
+    let mut out = Vec::new();
+    for y in 0..h {
+        for x in KISS_X..KISS_X + kiss::W {
+            let c = &b[(x, y)];
+            if !c.symbol().trim().is_empty() {
+                out.push(c.fg);
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn muted_while_the_agent_speaks_its_face_speaks_and_only_your_side_greys() {
+    theme::set_mode(Mode::Dark);
+    let text = |s: Vec<Span>| s.iter().map(|s| s.content.to_string()).collect::<String>();
+    let h = height(40);
+    for (p, pose, status) in [
+        (Phase::Speaking, Pose::Speak, "speaking · ○ muted"),
+        (Phase::Working, Pose::Think, "∿ main is on it · ○ muted"),
+    ] {
+        let mut v = view(p.clone());
+        v.muted = true;
+        let (rows, b) = draw_text(&v, 120, h, 0, STILL);
+        // the face: the agent's pose, in the accent, never faint
+        assert!(face_is(&rows, pose, 0, true), "{p:?}: {rows:#?}");
+        let colors = kiss_colors(&b, h);
+        assert!(!colors.is_empty() && colors.iter().all(|c| *c == theme::accent()), "{p:?}: {colors:?}");
+        // the agent's state, then your `○ muted`
+        let (sy, sx) = find(&rows, status).unwrap_or_else(|| panic!("{p:?}: {status:?} in {rows:#?}"));
+        let (_, mx) = find(&rows[sy..=sy], "○ muted").expect("muted");
+        assert_eq!(b[(mx as u16, sy as u16)].fg, theme::faint(), "{p:?}: the mute faint beside the agent's state");
+        assert_ne!(b[(sx as u16 + 2, sy as u16)].fg, theme::faint(), "{p:?}: the agent's state as usual");
+        // your side: the bar still (rule), the header's `○`, m unmutes
+        assert_eq!(b[(0, 0)].fg, theme::rule(), "{p:?}");
+        assert_eq!(b[(0, 0)], draw_text(&v, 120, h, BREATH_MS / 2, STILL).1[(0, 0)]);
+        assert_eq!(text(header(&v)), "○ voice mode 2:14");
+        assert_eq!(keys(&v, 120).to_string(), " m unmute   esc leave");
+    }
+    // speaking, moving: the ring and its arcs move as unmuted
+    let mut v = view(Phase::Speaking);
+    v.muted = true;
+    let mut u = v.clone();
+    u.muted = false;
+    for t in [0, 400, 900] {
+        let face = |v: &PaneView| kiss_colors(&draw_text(v, 120, h, t, MOVING).1, h);
+        let rows = |v: &PaneView| draw_text(v, 120, h, t, MOVING).0;
+        let cut = |r: Vec<String>| r.iter().map(|r| r.chars().take((KISS_X + kiss::W) as usize).collect::<String>()).collect::<Vec<_>>();
+        assert_eq!(cut(rows(&v)), cut(rows(&u)), "the same face at {t} ms");
+        assert_eq!(face(&v), face(&u));
+    }
+    // at rest: the smile in the accent, `○ muted` under it
+    let m = view(Phase::Muted);
+    let (rows, b) = draw_text(&m, 120, h, 0, STILL);
+    assert!(face_is(&rows, Pose::Rest, 0, true), "{rows:#?}");
+    assert!(kiss_colors(&b, h).iter().all(|c| *c == theme::accent()));
+    let (sy, sx) = find(&rows, "○ muted").expect("muted at rest");
+    assert_eq!(b[(sx as u16, sy as u16)].fg, theme::dim(), "alone at rest it reads: dim");
+    // the lanes: your lane greys, the agent's speaks
+    let (rows, b) = draw_text(&v, 98, LANES_H, 0, STILL);
+    let (y, x) = find(&rows, "you").expect("your lane");
+    assert_eq!(b[(x as u16, y as u16)].fg, theme::faint());
+    assert!(rows[y].ends_with("○ muted"), "{rows:#?}");
+    assert!(rows[y + 1].contains("speaking"), "{rows:#?}");
+    assert!(!rows[y + 1].contains("muted"), "{rows:#?}");
 }
 
 // ---- your last question above the answer (voice-lastq) ----

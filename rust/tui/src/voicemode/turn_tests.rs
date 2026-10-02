@@ -442,6 +442,38 @@ fn mute_and_typing_close_the_ears() {
 }
 
 #[test]
+fn muted_the_agent_still_works_speaks_and_kisses() {
+    // voice-mute (the user): your mic off greys your side, not its face
+    let mut r = Rig::new(Route::Headphones);
+    r.turn(" what broke");
+    r.vm.on_turn("main", true);
+    r.tick();
+    r.vm.toggle_mute();
+    r.sent(); // your turn's audio, before the mute
+    assert_eq!(r.phase(), Phase::Working, "it thinks while you are muted");
+    assert!(r.vm.view(r.now()).muted);
+    r.message("It waits now.");
+    r.tick();
+    assert_eq!(r.phase(), Phase::Speaking, "it speaks while you are muted");
+    let v = r.vm.view(r.now());
+    assert!(v.muted);
+    assert_eq!(v.who, Who::Agent("main".into()));
+    r.synth_all(0, 24_000);
+    r.tick();
+    r.done(1);
+    r.vm.on_turn("main", false);
+    r.tick();
+    let v = r.vm.view(r.now());
+    assert_eq!(v.phase, Phase::Muted, "at rest");
+    assert!(v.kiss_ms.is_some(), "the end-of-turn kiss plays muted too");
+    assert!(!r.sent().contains(&"audio".to_string()), "the mic stayed off");
+    // m again: you are back, its face unchanged
+    r.vm.toggle_mute();
+    assert!(!r.vm.view(r.now()).muted);
+    assert!(r.vm.view(r.now()).kiss_ms.is_some());
+}
+
+#[test]
 fn leaving_stops_the_voice_and_counts_the_turns() {
     let mut r = Rig::new(Route::Headphones);
     r.turn(" one");

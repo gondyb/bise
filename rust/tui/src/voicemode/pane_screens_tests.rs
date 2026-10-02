@@ -152,6 +152,7 @@ fn sample(phase: Phase) -> PaneView {
         }
     };
     PaneView {
+        muted: phase == Phase::Muted,
         phase,
         agent: "main".into(),
         who,
@@ -254,6 +255,23 @@ fn voice_mode_captures() {
                 std::fs::write(dir.join(format!("{name}.txt")), rows.join("\n") + "\n").unwrap();
                 std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
                 index.push_str(&format!("{name}\n"));
+            }
+        }
+        // voice-mute: your mic off while the agent speaks, works, rests
+        for (mname, p) in [("speaking", Phase::Speaking), ("working", Phase::Working), ("rest", Phase::Muted)] {
+            for (w, h) in [(148u16, 19u16), (93, 19), (78, 19), (148, LANES_H), (78, LANES_H)] {
+                let mut v = sample(p.clone());
+                v.muted = true;
+                let area = Rect::new(0, 0, w, h + 1);
+                let mut buf = Buffer::empty(area);
+                draw_in(&mut buf, Rect { height: h, ..area }, &v, 0, form);
+                buf.set_line(0, h, &keys(&v, w), w);
+                let rows: Vec<String> = buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string()).collect();
+                let name = format!("muted-{mname}-{w}x{}-{fname}", h + 1);
+                std::fs::write(dir.join(format!("{name}.txt")), rows.join("\u{a}") + "\u{a}").unwrap();
+                std::fs::write(dir.join(format!("{name}.ans")), ansi(&buf, !no_color)).unwrap();
+                index.push_str(&name);
+                index.push('\u{a}');
             }
         }
         // voice-lastq: your last question above the answer (40 and 30 rows)
