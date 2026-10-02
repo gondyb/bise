@@ -167,7 +167,8 @@ impl Row {
     /// What the row is for, under the list for the row under the cursor.
     fn hint(self) -> &'static str {
         match self {
-            Row::Dictation => "one ctrl+r: you talk, it types in the composer.",
+            // designer: the keys block says what ctrl+r does
+            Row::Dictation => "off, ctrl+r twice still opens voice mode.",
             Row::Stt => "the model that writes down what you say, for dictation and voice mode. ⏎ for another provider or a key.",
             Row::Voice => "the voice that answers. ⏎ says a sample.",
             Row::Language => "the language you speak, and the one it answers in. auto detects it.",
@@ -619,7 +620,8 @@ impl Screen {
             Row::Language => (language_name(c.language.as_deref()), text),
             Row::Who => (format!("{} {} the words are kept, never the audio", self.who.hears(), d), theme::dim()),
             Row::Dictation => (
-                (if self.dictation { "on · ctrl+r: you talk, it types" } else { "off" }).replace('·', d),
+                // designer: just on/off, the keys block says the rest
+                (if self.dictation { "on" } else { "off" }).into(),
                 if self.dictation { text } else { theme::dim() },
             ),
         }
@@ -631,8 +633,7 @@ impl Screen {
             return self.privacy_lines(w);
         }
         let dim = |t: String| Line::from(s(t, theme::dim()));
-        let mut v =
-            vec![title("voice"), dim("ctrl+r twice starts voice mode with the agent in view. esc leaves.".into())];
+        let mut v = vec![title("voice")];
         v.push(Line::raw(""));
         let nw = ROWS.iter().map(|r| r.name().width()).max().unwrap_or(0) + 3;
         for (i, row) in ROWS.iter().enumerate() {
@@ -689,6 +690,8 @@ impl Screen {
             v.push(Line::raw(""));
             v.push(Line::from(s(t.clone(), theme::error())));
         }
+        v.push(Line::raw(""));
+        v.extend(shortcuts(w));
         v.push(Line::raw(""));
         let enter = match self.row() {
             Row::Voice => "{enter} hear it · ",
@@ -758,6 +761,44 @@ fn s(t: impl Into<String>, c: Color) -> Span<'static> {
 
 fn title(t: impl Into<String>) -> Line<'static> {
     Line::from(Span::styled(t.into(), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)))
+}
+
+/// The voice keys, at the bottom of `/voice` (designer's words): key in
+/// text color, its words dim.
+const SHORTCUTS: [(&str, &[&str]); 3] = [
+    ("ctrl+r", &["dictation: you talk, it types. any key stops."]),
+    ("ctrl+r twice", &["voice mode, with the agent in view"]),
+    ("in voice mode", &["space sends", "hold space keeps the floor", "m mutes", "esc leaves"]),
+];
+
+/// [`SHORTCUTS`] at width `w`: one line each; words too long for the
+/// line go on under them at the words' column, cut at a ` · `.
+fn shortcuts(w: u16) -> Vec<Line<'static>> {
+    // two spaces after the longest key: the voice mode keys fit one line
+    // in the 80-column screen
+    let kw = SHORTCUTS.iter().map(|(k, _)| k.width()).max().unwrap_or(0) + 2;
+    let room = (w as usize).saturating_sub(2 + kw).max(1);
+    let sep = format!(" {} ", dot());
+    let mut v = Vec::new();
+    for (key, parts) in SHORTCUTS {
+        let mut rows: Vec<String> = vec![String::new()];
+        for p in parts {
+            let last = rows.last_mut().expect("one row");
+            if last.is_empty() {
+                last.push_str(p);
+            } else if last.width() + sep.width() + p.width() <= room {
+                last.push_str(&sep);
+                last.push_str(p);
+            } else {
+                rows.push(p.to_string());
+            }
+        }
+        for (i, r) in rows.into_iter().enumerate() {
+            let k = if i == 0 { pad(key, kw) } else { " ".repeat(kw) };
+            v.push(Line::from(vec![Span::raw("  "), s(k, theme::text()), s(cut(&r, room), theme::dim())]));
+        }
+    }
+    v
 }
 
 fn keyline(t: &str) -> Line<'static> {

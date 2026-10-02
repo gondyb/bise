@@ -1407,7 +1407,7 @@ fn extras(o: &Onb) -> Vec<String> {
     // BISE-298: the voice screen's providers
     let voice = ["mistral", "openai", "elevenlabs"].iter().any(|id| has(id));
     if !voice {
-        v.push("voice input (ctrl+r): a Mistral, OpenAI or ElevenLabs key · /voice".to_string());
+        v.push("voice (ctrl+r): a Mistral, OpenAI or ElevenLabs key · /voice".to_string());
     }
     v
 }

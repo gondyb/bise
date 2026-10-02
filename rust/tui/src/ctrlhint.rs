@@ -255,9 +255,13 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
     if crate::sb::palette::has_agents(app) {
         p.push(("ctrl+s", "find agent"));
     }
+    // voice (designer): dictation when it is on; voice mode always (two
+    // ctrl+r open it with dictation off too). Before the generic keys
+    // below: a full line drops those first
     if app.voice.enabled {
-        p.push(("ctrl+r", "talk"));
+        p.push(("ctrl+r", "dictate"));
     }
+    p.push(("ctrl+r twice", "voice mode"));
     // a code block on screen: ctrl+y copies it (codeblock.rs)
     if crate::codeblock::any_on_screen(app) {
         p.push(("ctrl+y", "copy code"));
@@ -894,10 +898,39 @@ mod frame_tests {
     }
 
     fn screen_held(app: &mut App, h: Held) -> Buffer {
+        screen_held_at(app, h, 120)
+    }
+
+    fn screen_held_at(app: &mut App, h: Held, w: u16) -> Buffer {
         app.hold = Hold::of(h, Instant::now() - Duration::from_secs(1));
-        let b = screen(app, 120, 40);
+        let b = screen(app, w, 40);
         app.hold = Hold::default();
         b
+    }
+
+    /// Ctrl held: `ctrl+r dictate` when dictation is on, `ctrl+r twice
+    /// voice mode` always (designer's words), before the generic keys: a
+    /// full line drops those first.
+    #[test]
+    fn ctrl_held_shows_the_voice_keys() {
+        let mut app = busy_app();
+        let bar = |app: &mut App, w: u16| {
+            let t = text(&screen_held_at(app, Held::Ctrl, w));
+            t.into_iter().rev().find(|l| l.contains("ctrl+c")).unwrap_or_default()
+        };
+        app.voice.enabled = true;
+        let p = ctrl_pairs(&app);
+        let at = |k: &str| p.iter().position(|x| x.0 == k).unwrap_or(usize::MAX);
+        assert!(p.contains(&("ctrl+r", "dictate")) && p.contains(&("ctrl+r twice", "voice mode")), "{p:?}");
+        assert!(at("ctrl+r") < at("ctrl+r twice") && at("ctrl+r twice") < at("ctrl+v") && at("ctrl+s") < at("ctrl+r"), "{p:?}");
+        let wide = bar(&mut app, 200);
+        assert!(wide.contains("ctrl+r dictate") && wide.contains("ctrl+r twice voice mode"), "{wide}");
+        // dictation off: voice mode only (two ctrl+r open it all the same)
+        app.voice.enabled = false;
+        let p = ctrl_pairs(&app);
+        assert!(!p.iter().any(|x| x.0 == "ctrl+r") && p.contains(&("ctrl+r twice", "voice mode")), "{p:?}");
+        let off = bar(&mut app, 200);
+        assert!(!off.contains("dictate") && off.contains("ctrl+r twice voice mode"), "{off}");
     }
 
     /// BISE-277: option held in the thread: `⌥0 main`, `⌥1 docs` in the

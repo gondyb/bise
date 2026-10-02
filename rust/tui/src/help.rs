@@ -61,6 +61,7 @@ pub(crate) const TIPS: &[&str] = &[
     "esc puts your draft away, ↑ brings it back",
     "shift+⏎ adds a new line",
     "ctrl+r speaks into the composer (turn it on with /voice)",
+    "ctrl+r twice starts voice mode: talk with the agent in view",
     "/theme switches between light and dark",
 ];
 
@@ -150,9 +151,15 @@ pub(crate) const ROWS: &[Row] = &[
     r(SELECT, "ctrl+shift+x|cmd+x", "cut"),
     r(SELECT, "esc", "drop the selection"),
     r(SELECT, "shift+drag", "the terminal's own selection (outside the app)"),
-    r(VOICE, "ctrl+r", "speech-to-text into the composer (turn it on with /voice)").top(),
+    r(VOICE, "ctrl+r", "dictation into the composer (turn it on with /voice)").top(),
     r(VOICE, "any key", "while recording: stop, keep the text"),
     r(VOICE, "esc|ctrl+c", "while recording: stop and drop the text"),
+    r(VOICE, "ctrl+r twice", "voice mode: talk with the agent in view").top(),
+    r(VOICE, "space", "in voice mode: send now"),
+    r(VOICE, "hold space", "in voice mode: keep the floor, or cut in on speakers"),
+    r(VOICE, "m", "in voice mode: mute"),
+    r(VOICE, "tab", "in voice mode: type instead"),
+    r(VOICE, "esc|ctrl+c", "leave voice mode"),
     r(TERM, "ctrl+`|ctrl+space", "show or hide the terminal panel: a shell in the workspace, kept running while hidden").top(),
     r(TERM, "any key", "while shown: goes to the shell, ctrl+c included"),
     r(TERM, "shift+pgup|shift+pgdn|wheel", "scroll its history"),
@@ -668,6 +675,27 @@ mod tests {
         assert!(all.contains(" /inbox ") && !all.contains("open the inbox item with that number"), "{all}");
         assert!(all.contains(" ⌥ + 0…9 "), "the panel numbers");
         assert!(!all.contains(" ctrl+x "), "a /shortcuts-only row");
+    }
+
+    /// The voice keys: dictation, ctrl+r twice for voice mode (in /help
+    /// too), and voice mode's own keys (designer's words).
+    #[test]
+    fn help_says_ctrl_r_twice_and_the_voice_mode_keys() {
+        let v: Vec<(&str, &str)> = ROWS.iter().filter(|r| r.section == VOICE).map(|r| (r.keys, r.action)).collect();
+        for want in [
+            ("ctrl+r", "dictation into the composer (turn it on with /voice)"),
+            ("ctrl+r twice", "voice mode: talk with the agent in view"),
+            ("space", "in voice mode: send now"),
+            ("hold space", "in voice mode: keep the floor, or cut in on speakers"),
+            ("m", "in voice mode: mute"),
+            ("tab", "in voice mode: type instead"),
+            ("esc|ctrl+c", "leave voice mode"),
+        ] {
+            assert!(v.contains(&want), "{want:?} in {v:?}");
+        }
+        let all = text(&page_lines(Page::Help, "", &[], 80, false, true));
+        assert!(all.contains(" ctrl+r twice ") && all.contains("voice mode: talk with the agent in view"), "{all}");
+        assert!(TIPS.contains(&"ctrl+r twice starts voice mode: talk with the agent in view"));
     }
 
     /// Book §4 and §16: lowercase words (keys may name a capital letter,

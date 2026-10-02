@@ -453,6 +453,34 @@ fn a_speech_model_is_named_never_its_id() {
     let s = screen(Open::Settings);
     let f = frame(&s, 95, 40);
     assert!(f.contains("speech to text   Mistral · Voxtral Transcribe 3") && !f.contains("voxtral-transcribe"), "{f}");
-    // the subtitle never repeats the dictation row, and fits one line at 95
-    assert!(f.contains("ctrl+r twice starts voice mode with the agent in view. esc leaves."), "{f}");
+}
+
+/// The keys block (designer's words): what to try, at the bottom; the
+/// dictation row says only on or off.
+#[test]
+fn the_voice_screen_shows_the_shortcuts() {
+    let s = screen(Open::Settings);
+    let f = frame(&s, 150, 40);
+    for want in [
+        "ctrl+r         dictation: you talk, it types. any key stops.",
+        "ctrl+r twice   voice mode, with the agent in view",
+        "in voice mode  space sends · hold space keeps the floor · m mutes · esc leaves",
+    ] {
+        assert!(f.contains(want), "{want}:\n{f}");
+    }
+    let row = f.lines().find(|l| l.contains("dictation ") && !l.contains("ctrl+r")).expect("the dictation row");
+    assert!(row.trim_end().ends_with(" on"), "{row}");
+    assert!(!f.contains("ctrl+r twice starts"), "no subtitle:\n{f}");
+    // at 80: the voice mode keys go on under, at the words' column
+    let f = frame(&s, 80, 29);
+    let lines: Vec<&str> = f.lines().collect();
+    let at = lines.iter().position(|l| l.contains("in voice mode")).expect("in voice mode");
+    assert!(lines[at].contains("space sends"), "{f}");
+    let words = lines[at].find("space sends").unwrap();
+    assert!(lines[at + 1].len() > words && lines[at + 1][..words].trim().is_empty(), "{f}");
+    let both = format!("{} {}", lines[at], lines[at + 1]);
+    for want in ["hold space keeps the floor", "m mutes", "esc leaves"] {
+        assert!(both.contains(want), "{want}:\n{f}");
+    }
+    assert!(f.lines().all(|l| l.chars().count() <= 80), "{f}");
 }

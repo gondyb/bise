@@ -114,11 +114,12 @@ impl Mode {
 
     /// The keys of this mode in an agent's view (book §13 "Key bar in an
     /// agent's view"): `esc back to main` first; working, the book's set
-    /// `esc back to main   ⏎ steer   ctrl+c interrupt`.
+    /// `esc back to main   tab queue   ⏎ steer   ctrl+c interrupt` (tab
+    /// and ⏎ only with text in the composer, [`render_with`]).
     fn agent_pairs(self) -> Vec<Pair> {
         match self {
             Mode::Default | Mode::Images => std::iter::once(BACK).chain(self.pairs().iter().copied()).collect(),
-            Mode::Steer => vec![BACK, ("⏎", "steer"), ("ctrl+c", "interrupt")],
+            Mode::Steer => vec![BACK, ("tab", "queue"), ("⏎", "steer"), ("ctrl+c", "interrupt")],
             m => m.pairs().to_vec(),
         }
     }
@@ -354,6 +355,11 @@ fn render_with(mode: Mode, width: u16, tip: Option<&str>, bar: Bar) -> Line<'sta
         let at = pairs.iter().position(|p| p.0 == "⏎").map_or(pairs.len(), |i| i + 1);
         pairs.insert(at, pair);
     }
+    // designer: `tab queue` and `⏎ steer` only with text to queue or
+    // steer (both do nothing on an empty composer)
+    if mode == Mode::Steer && !typing {
+        pairs.retain(|p| p.0 != "tab" && p.0 != "⏎");
+    }
     let pairs = fit(pairs, width, agent);
     let (Line { mut spans, .. }, used) = pairs_line(&pairs, width);
     if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
@@ -495,6 +501,10 @@ mod tests {
 
     #[test]
     fn no_tip_while_typing_or_in_another_mode() {
+        // (designer) working: tab queue / ⏎ steer only with text, in
+        // main's view and an agent's
+        assert_eq!(text(&render(Mode::Steer, 120, true, false, None)), "tab queue   ⏎ steer   ctrl+c interrupt");
+        assert_eq!(text(&render(Mode::Steer, 120, false, false, None)), "ctrl+c interrupt");
         assert!(!text(&render(Mode::Default, 100, true, false, Some(TIP))).contains("tip"));
         assert!(!text(&render(Mode::Steer, 100, false, false, Some(TIP))).contains("tip"));
     }
@@ -529,8 +539,11 @@ mod tests {
         assert_eq!(s, "@ file   $ skills   / commands   /inbox");
         let s = text(&render_with(Mode::Default, 120, None, bar(INBOX, true)));
         assert_eq!(s, "esc back to main   @ file   $ skills   / commands   ctrl+1 inbox");
-        let s = text(&render_with(Mode::Steer, 120, None, bar(INBOX, false)));
+        let typing = |inbox, agent| Bar { typing: true, ..bar(inbox, agent) };
+        let s = text(&render_with(Mode::Steer, 120, None, typing(INBOX, false)));
         assert_eq!(s, "tab queue   ⏎ steer   ctrl+1 inbox   ctrl+c interrupt");
+        let s = text(&render_with(Mode::Steer, 120, None, bar(INBOX, false)));
+        assert_eq!(s, "ctrl+1 inbox   ctrl+c interrupt");
         let s = text(&render_with(Mode::Images, 120, None, bar(INBOX, false)));
         assert_eq!(s, "ctrl+v paste image   @ file   $ skills   / commands   ctrl+1 inbox");
         // nothing in the inbox: no pair
@@ -564,8 +577,10 @@ mod tests {
         let what = idle.spans.iter().find(|x| x.content == " back to main").unwrap();
         assert_eq!(what.style.fg, Some(theme::dim()));
         assert!(!s.contains("tip"), "no tip in an agent's view");
+        let working = text(&render(Mode::Steer, 120, true, true, None));
+        assert_eq!(working, "esc back to main   tab queue   ⏎ steer   ctrl+c interrupt");
         let working = text(&render(Mode::Steer, 120, false, true, None));
-        assert_eq!(working, "esc back to main   ⏎ steer   ctrl+c interrupt");
+        assert_eq!(working, "esc back to main   ctrl+c interrupt");
         let archived = text(&render(Mode::Archived, 120, false, true, None));
         assert_eq!(archived, "esc back to main", "the placeholder says /restore");
     }
