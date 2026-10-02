@@ -49,6 +49,20 @@ def main():
         t.typed("\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (x + 1, y + 1, x + 1, y + 1))
         time.sleep(0.5)
         assert open(log).read().split() == ["https://guide.example/start"], open(log).read()
+        # a local url with a port, in bold, in code and bare (launch's
+        # message): each its own OSC 8, without the stars or the period
+        t.typed("here **http://127.0.0.1:4748/hero-cine.html**. and `http://localhost:5173/a` or http://127.0.0.1:4748/user-stories.html.")
+        t.keys("Enter")
+        t.wait("ack: here http://127.0.0.1:4748/hero-cine.html.")
+        sc = t.screen(colors=True)
+        for url in ("http://127.0.0.1:4748/hero-cine.html", "http://localhost:5173/a", "http://127.0.0.1:4748/user-stories.html"):
+            assert ";" + url + "\x1b\\" in sc, "no OSC 8 for %s in %r" % (url, sc[-3000:])
+        assert ";http://127.0.0.1:4748/hero-cine.html*" not in sc and ";http://127.0.0.1:4748/user-stories.html.\x1b" not in sc
+        rows = t.screen().splitlines()
+        y = max(i for i, r in enumerate(rows) if "ack: here http://127.0.0.1:4748/hero-cine.html" in r)
+        x = rows[y].find("127.0.0.1:4748/hero") + 3
+        t.typed("\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (x + 1, y + 1, x + 1, y + 1))
+        wait_until(lambda: "http://127.0.0.1:4748/hero-cine.html" in open(log).read(), 10, lambda: "the click opens the bold url")
         print("PASS tui links")
 
 

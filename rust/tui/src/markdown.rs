@@ -84,6 +84,18 @@ fn link_spans(spans: &mut Vec<Span<'static>>, label: &str, url: &str, fg: Color,
     }
 }
 
+/// The spans of an emphasis (`**…**`, `*…*`) in `st`: its links, code
+/// and nested emphasis parsed as anywhere else, so `**http://…**` is a
+/// link; a link inside keeps the emphasis's color.
+fn emphasis(spans: &mut Vec<Span<'static>>, inner: &str, st: Style, links: bool) {
+    for mut sp in spans_of(inner, st, links) {
+        if crate::links::tag_of(sp.style.add_modifier) > 0 && sp.style.fg == Some(theme::dim()) {
+            sp.style = sp.style.fg(st.fg.unwrap_or(theme::text()));
+        }
+        spans.push(sp);
+    }
+}
+
 // inline styles in the OpenCode markdown colors: **strong** is
 // markdownStrong (orange), *emph* is markdownEmph (yellow), `code` is
 // markdownCode (green); links (`[label](url)`, `<url>`, a bare
@@ -154,8 +166,11 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
                 }
                 let code: String = cs[i + 1..j].iter().collect();
                 let mut st = Style::default().fg(theme::ok()).add_modifier(Modifier::BOLD);
-                // a code span that is a local file is its link (BISE-264)
-                if let Some(file) = crate::file_links::target(code.trim()).filter(|_| links) {
+                // a code span that is a url, or a local file (BISE-264), is its link
+                if links && crate::links::is_bare_url(code.trim()) {
+                    let tag = crate::links::add(code.trim());
+                    st = crate::links::link_style(st, theme::ok(), tag);
+                } else if let Some(file) = crate::file_links::target(code.trim()).filter(|_| links) {
                     let tag = crate::links::add(&crate::file_links::url_of(&file));
                     st = crate::links::link_style(st, theme::ok(), tag);
                 }
@@ -172,10 +187,8 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
                     if !plain.is_empty() {
                         spans.push(Span::styled(std::mem::take(&mut plain), base));
                     }
-                    spans.push(Span::styled(
-                        cs[i + 2..j].iter().collect::<String>(),
-                        base.add_modifier(Modifier::BOLD).fg(theme::accent()),
-                    ));
+                    let inner: String = cs[i + 2..j].iter().collect();
+                    emphasis(&mut spans, &inner, base.add_modifier(Modifier::BOLD).fg(theme::accent()), links);
                     i = j + 2;
                     continue;
                 }
@@ -185,10 +198,8 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
                 if !plain.is_empty() {
                     spans.push(Span::styled(std::mem::take(&mut plain), base));
                 }
-                spans.push(Span::styled(
-                    cs[i + 1..j].iter().collect::<String>(),
-                    base.add_modifier(Modifier::ITALIC).fg(theme::text()),
-                ));
+                let inner: String = cs[i + 1..j].iter().collect();
+                emphasis(&mut spans, &inner, base.add_modifier(Modifier::ITALIC).fg(theme::text()), links);
                 i = j + 1;
                 continue;
             }

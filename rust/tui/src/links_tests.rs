@@ -64,7 +64,8 @@ fn urls_keep_their_parentheses_and_titles_are_dropped() {
 #[test]
 fn what_is_not_a_link_stays_text() {
     for s in [
-        "`https://in.code/x` and `[a](https://b.c)`",
+        // a code span that is one url is a link (a_url_in_bold_italic_or_code_is_a_link)
+        "`curl https://in.code/x` and `[a](https://b.c)`",
         "[a](javascript:alert(1)) [b](relative/path.md) [c]() [d](<not a url>)",
         "nohttps://x.y and http:// alone, <not a link>",
         "[a] (https://spaced.out)",
@@ -330,4 +331,59 @@ fn the_feed_links_a_url_without_its_trailing_quote() {
     let (p, urls) = parts("(see https://en.wikipedia.org/wiki/A_(b)), or 'https://y.dev/c'!");
     assert_eq!(urls, vec!["https://en.wikipedia.org/wiki/A_(b)", "https://y.dev/c"]);
     assert_eq!(p.iter().filter(|x| x.1.is_some()).count(), 2);
+}
+
+#[test]
+fn a_local_url_with_a_port_is_a_link() {
+    // the user's: a page served on 127.0.0.1, its port and path
+    for u in [
+        "http://127.0.0.1:4748/hero-cine.html",
+        "http://localhost:3000",
+        "http://localhost:5173/app?x=1#top",
+        "https://192.168.1.20:8443/a/b",
+        "http://[::1]:8080/x",
+    ] {
+        assert_eq!(bare(&format!("open {}", u)).as_deref(), Some(u), "{u}");
+        assert_eq!(bare(&format!("open {}.", u)).as_deref(), Some(u), "{u}.");
+        assert_eq!(bare(&format!("({})", u)).as_deref(), Some(u), "({u})");
+        let (p, urls) = parts(&format!("see {}.", u));
+        assert_eq!(urls, vec![u.to_string()], "{u}");
+        assert_eq!(p.iter().find(|x| x.1.is_some()).map(|x| x.0.as_str()), Some(u));
+    }
+}
+
+#[test]
+fn a_url_in_bold_italic_or_code_is_a_link() {
+    // launch's message: **url**. and a second one in bold
+    let s = "La dernière version est ici : **http://127.0.0.1:4748/hero-cine.html**. Les prompts viennent de **http://127.0.0.1:4748/user-stories.html**.";
+    let (p, urls) = parts(s);
+    assert_eq!(urls, vec!["http://127.0.0.1:4748/hero-cine.html", "http://127.0.0.1:4748/user-stories.html"]);
+    let linked: Vec<&str> = p.iter().filter(|x| x.1.is_some()).map(|x| x.0.as_str()).collect();
+    assert_eq!(linked, urls.iter().map(String::as_str).collect::<Vec<_>>());
+    let joined: String = p.iter().map(|x| x.0.as_str()).collect();
+    assert!(joined.contains("hero-cine.html. Les"), "the stars go, the period stays plain: {joined}");
+    // the link keeps the bold's look
+    let (sp, _) = spans("**see http://localhost:3000/x**");
+    let l = sp.iter().find(|x| links::tag_of(x.style.add_modifier) > 0).unwrap();
+    assert_eq!(l.content, "http://localhost:3000/x");
+    assert!(l.style.add_modifier.contains(Modifier::BOLD | Modifier::UNDERLINED), "{:?}", l.style);
+    assert_eq!(l.style.fg, Some(theme::accent()));
+    // italic, inline code, a link label in bold
+    for (s, u) in [
+        ("*http://localhost:8080/a*", "http://localhost:8080/a"),
+        ("run `http://127.0.0.1:4748/x.html` now", "http://127.0.0.1:4748/x.html"),
+        ("**[the page](http://127.0.0.1:4748/p)**", "http://127.0.0.1:4748/p"),
+        ("**go: `https://x.dev/a`**", "https://x.dev/a"),
+    ] {
+        let (p, urls) = parts(s);
+        assert_eq!(urls, vec![u.to_string()], "{s}");
+        assert_eq!(p.iter().filter(|x| x.1.is_some()).count(), 1, "{s}: {p:?}");
+    }
+    // a code span with more than a url stays code
+    let (_, urls) = parts("`curl http://localhost:3000`");
+    assert!(urls.is_empty());
+    // the bold text around a url stays bold
+    let (sp, _) = spans("**voir http://a.dev ici**");
+    assert!(sp.iter().all(|x| x.style.add_modifier.contains(Modifier::BOLD)), "{sp:?}");
+    assert_eq!(sp.iter().map(|x| x.content.as_ref()).collect::<String>(), "voir http://a.dev ici");
 }
