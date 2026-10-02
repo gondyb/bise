@@ -80,7 +80,10 @@ export function walk(nodes, opts = {}) {
       const last = entries[entries.length - 1];
       const joins = last && last.role === "text" && last.parent === parent && last.depth === depth && last.raw !== undefined;
       const raw = String(node.name?.value ?? "");
-      if (joins && raw !== "" && (!name || name !== parentName)) {
+      // only letter-by-letter pieces join: words and phrases keep their own
+      // line and ref (a clock span next to a run of words must stay
+      // targetable on its own)
+      if (joins && raw !== "" && raw.trim().length <= 1 && (!name || name !== parentName)) {
         last.raw += raw;
         last.name = oneLine(last.raw);
         last.line = line(last);
